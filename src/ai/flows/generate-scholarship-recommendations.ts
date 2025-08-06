@@ -13,11 +13,13 @@ import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 
 const ScholarshipRecommendationInputSchema = z.object({
-  gpa: z.number().describe('The applicant\'s GPA.'),
-  major: z.string().describe('The applicant\'s major.'),
-  interests: z.string().describe('The applicant\'s interests, separated by commas.'),
-  essay: z.string().describe('The applicant\'s essay.'),
-  resume: z.string().describe('The applicant\'s resume as a data URI.'),
+  gpa: z.number().describe("The applicant's GPA."),
+  major: z.string().describe("The applicant's major."),
+  interests: z.string().describe("The applicant's interests, separated by commas."),
+  activities: z.string().describe("The applicant's activities, such as sports (e.g., soccer, wrestling) or clubs."),
+  school: z.string().describe("The school the applicant attends."),
+  essay: z.string().describe("The applicant's essay."),
+  resume: z.string().describe("The applicant's resume as a data URI."),
   transcripts: z.string().describe('The applicant transcripts as a data URI.'),
 });
 
@@ -32,7 +34,7 @@ const ScholarshipRecommendationOutputSchema = z.object({
       applicationDeadline: z.string().describe('The application deadline for the scholarship.'),
       amount: z.string().describe('The amount of the scholarship.'),
     })
-  ).describe('A list of scholarship recommendations based on the applicant\'s profile information.'),
+  ).describe("A list of scholarship recommendations based on the applicant's profile information."),
 });
 
 export type ScholarshipRecommendationOutput = z.infer<typeof ScholarshipRecommendationOutputSchema>;
@@ -49,11 +51,13 @@ const prompt = ai.definePrompt({
   output: {schema: ScholarshipRecommendationOutputSchema},
   prompt: `You are an AI assistant that recommends scholarships to students based on their qualifications.
 
-  Given the following applicant profile, generate a list of scholarship recommendations. Include the scholarship name, a brief description, eligibility criteria, application deadline and the amount of the scholarship.
+  Given the following applicant profile, generate a list of scholarship recommendations. Include the scholarship name, a brief description, eligibility criteria, application deadline and the amount of the scholarship. Pay special attention to matching based on GPA, activities, and school.
 
   Applicant GPA: {{{gpa}}}
   Applicant Major: {{{major}}}
+  Applicant School: {{{school}}}
   Applicant Interests: {{{interests}}}
+  Applicant Activities: {{{activities}}}
   Applicant Essay: {{{essay}}}
   Applicant Resume: {{media url=resume}}
   Applicant Transcripts: {{media url=transcripts}}
