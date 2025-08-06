@@ -13,7 +13,7 @@ export default function Home() {
   const features = [
     {
       icon: <FileText className="h-10 w-10 text-primary" />,
-      title: 'Simplified Applications',
+      title: 'Apply for a Scholarship',
       description:
         'Easily upload your transcripts, resumes, and essays to a single platform.',
     },
@@ -21,13 +21,13 @@ export default function Home() {
       icon: <Target className="h-10 w-10 text-primary" />,
       title: 'Intelligent Matching',
       description:
-        'Our AI-powered tool matches your profile to the most relevant scholarship opportunities.',
+        'Our tool matches your profile to the most relevant scholarship opportunities.',
     },
     {
       icon: <Users className="h-10 w-10 text-primary" />,
-      title: 'Seamless Review Process',
+      title: 'Hyper Local Scholarships',
       description:
-        'A dedicated portal for reviewers to score applications and collaborate.',
+        'The Lake Travis Education Foundation is committed to the students of the Lake Travis Independent School District. One of the ways that we support our students is by providing named scholarships that allow us to help them in their post-secondary journeys.',
     },
     {
       icon: <CheckCircle className="h-10 w-10 text-primary" />,
@@ -57,15 +57,15 @@ export default function Home() {
         <section className="bg-secondary/50 py-20 md:py-32">
           <div className="container mx-auto px-4 text-center md:px-6">
             <h1 className="text-4xl font-extrabold tracking-tight md:text-6xl">
-              Your Future Starts Here.
+              Scholarship Applications Open in February 2026.
             </h1>
             <p className="mx-auto mt-4 max-w-2xl text-lg text-muted-foreground md:text-xl">
-              ScholarShip is the easiest way to find and apply for scholarships.
-              Focus on your dreams, we'll handle the applications.
+              ScholarShip connects LTISD students to Lake Travis Education Foundation Scholarships.
+              <br />Good Luck!
             </p>
             <div className="mt-8">
               <Button size="lg" asChild>
-                <Link href="/signup">Get Started for Free</Link>
+                <Link href="/signup">Review Scholarships Now</Link>
               </Button>
             </div>
           </div>
@@ -76,7 +76,7 @@ export default function Home() {
             <div className="mb-12 text-center">
               <h2 className="text-3xl font-bold">Why Choose ScholarShip?</h2>
               <p className="mt-2 text-muted-foreground">
-                Everything you need for your scholarship journey.
+                Scholarships open in Spring 2026. You will be alerted if you are selected. Award presentations are in May. Scholarships are sent directly to your school of choice. 
               </p>
             </div>
             <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
