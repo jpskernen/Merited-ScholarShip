@@ -7,26 +7,28 @@ import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
 import { Sparkles, FileText, UserCircle } from 'lucide-react';
+import { getApplicant } from '@/lib/applicants';
+import { notFound } from 'next/navigation';
+import Link from 'next/link';
 
 export default async function ApplicationReviewPage({ params }: { params: { id: string } }) {
-  // Mock data for a single application
-  const application = {
-    id: params.id,
-    applicantName: 'John Smith',
-    gpa: 3.9,
-    major: 'Computer Science',
-    scholarship: 'Future Leaders Scholarship',
-    essay: 'My journey into computer science began with a simple curiosity about how video games were made. This spark led me to explore programming, and I quickly discovered a passion for solving complex problems through code. Throughout high school, I have dedicated myself to honing my skills, participating in hackathons, and even developing a small mobile app to help my local food bank organize donations. I believe technology has the power to drive positive change, and I am eager to contribute to this field. This scholarship would not only alleviate the financial burden of my education but also validate my commitment to using technology for good.',
-    // These would be data URIs in a real scenario
-    resume: 'placeholder-for-resume.pdf',
-    transcript: 'placeholder-for-transcript.pdf',
-  };
+  const application = await getApplicant(params.id);
 
-  const summary = await summarizeApplication({
+  if (!application) {
+    notFound();
+  }
+
+  // Ensure resume and transcripts are treated as data URIs for the AI model
+  // For now, we'll use placeholder strings if they are URLs.
+  // In a real app, you might fetch the content and convert it to a data URI.
+  const resumeForAI = application.resume.startsWith('http') ? 'data:text/plain;base64,' : application.resume;
+  const transcriptForAI = application.transcripts.startsWith('http') ? 'data:text/plain;base64,' : application.transcripts;
+
+  const summaryResult = await summarizeApplication({
     gpa: application.gpa,
     essay: application.essay,
-    resume: application.resume,
-    transcript: application.transcript,
+    resume: resumeForAI,
+    transcript: transcriptForAI,
   });
 
 
@@ -35,7 +37,7 @@ export default async function ApplicationReviewPage({ params }: { params: { id: 
       <div>
         <h1 className="text-3xl font-bold">Review Application: {application.id}</h1>
         <p className="text-muted-foreground">
-          For scholarship: <span className="font-semibold">{application.scholarship}</span>
+          Applicant: <span className="font-semibold">{application.name}</span>
         </p>
       </div>
 
@@ -49,7 +51,7 @@ export default async function ApplicationReviewPage({ params }: { params: { id: 
             <CardContent>
                 <div className="space-y-4">
                      <p className="text-sm text-muted-foreground p-4 bg-secondary rounded-lg">
-                        {summary.summary}
+                        {summaryResult.summary}
                      </p>
                      <Button variant="outline">
                         <Sparkles className="mr-2 h-4 w-4" />
@@ -65,9 +67,10 @@ export default async function ApplicationReviewPage({ params }: { params: { id: 
             </CardHeader>
             <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div><span className="font-semibold">Name:</span> {application.applicantName}</div>
+                    <div><span className="font-semibold">Name:</span> {application.name}</div>
                     <div><span className="font-semibold">GPA:</span> {application.gpa}</div>
                     <div><span className="font-semibold">Major:</span> {application.major}</div>
+                    <div><span className="font-semibold">School:</span> {application.school}</div>
                 </div>
                 <Separator/>
                 <h4 className="font-semibold">Personal Essay</h4>
@@ -80,8 +83,16 @@ export default async function ApplicationReviewPage({ params }: { params: { id: 
               <CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5" /> Documents</CardTitle>
             </CardHeader>
             <CardContent className="flex gap-4">
-                <Button variant="secondary">View Resume</Button>
-                <Button variant="secondary">View Transcripts</Button>
+                {application.resume && (
+                  <Button variant="secondary" asChild>
+                    <Link href={application.resume} target="_blank" rel="noopener noreferrer">View Resume</Link>
+                  </Button>
+                )}
+                {application.transcripts && (
+                  <Button variant="secondary" asChild>
+                     <Link href={application.transcripts} target="_blank" rel="noopener noreferrer">View Transcripts</Link>
+                  </Button>
+                )}
             </CardContent>
           </Card>
 
@@ -136,4 +147,3 @@ export default async function ApplicationReviewPage({ params }: { params: { id: 
     </div>
   );
 }
-
