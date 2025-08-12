@@ -56,7 +56,7 @@ export default function Home() {
       <main className="flex-1">
         <section className="bg-secondary/50 py-20 md:py-32">
           <div className="container mx-auto px-4 text-center md:px-6">
-            <h1 className="text-4xl font-extrabold tracking-tight md:text-6xl">
+            <h1 className="text-4xl font-extrabold tracking-tight md:text-6xl text-black">
               Scholarship Applications Open in February 2026.
             </h1>
             <p className="mx-auto mt-4 max-w-2xl text-lg text-muted-foreground md:text-xl">
