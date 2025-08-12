@@ -56,10 +56,10 @@ export default function Home() {
       <main className="flex-1">
         <section className="bg-secondary/50 py-20 md:py-32">
           <div className="container mx-auto px-4 text-center md:px-6">
-            <h1 className="text-4xl font-extrabold tracking-tight md:text-6xl text-black">
+            <h1 className="text-4xl font-extrabold tracking-tight md:text-6xl text-white">
               Scholarship Applications Open in February 2026.
             </h1>
-            <p className="mx-auto mt-4 max-w-2xl text-lg text-muted-foreground md:text-xl">
+            <p className="mx-auto mt-4 max-w-2xl text-lg text-black md:text-xl">
               Scholarships open in Spring 2026. You can prepare by asking for two letters of recommendation, setting up reminders to obtain your transcripts from your counselor and review potential scholarship now.
             </p>
             <div className="mt-8">
