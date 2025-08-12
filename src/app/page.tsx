@@ -21,11 +21,11 @@ export default function Home() {
       icon: <Target className="h-10 w-10 text-primary" />,
       title: 'Intelligent Matching',
       description:
-        'Our tool matches your profile to the most relevant scholarship opportunities.',
+        'View Scholarship opportunities',
     },
     {
       icon: <Users className="h-10 w-10 text-primary" />,
-      title: 'Hyper Local Scholarships',
+      title: 'Fund a scholarship',
       description:
         'The Lake Travis Education Foundation is committed to the students of the Lake Travis Independent School District. One of the ways that we support our students is by providing named scholarships that allow us to help them in their post-secondary journeys.',
     },
@@ -60,8 +60,7 @@ export default function Home() {
               Scholarship Applications Open in February 2026.
             </h1>
             <p className="mx-auto mt-4 max-w-2xl text-lg text-muted-foreground md:text-xl">
-              ScholarShip connects LTISD students to Lake Travis Education Foundation Scholarships.
-              <br />Good Luck!
+              Scholarships open in Spring 2026. You can prepare by asking for two letters of recommendation, setting up reminders to obtain your transcripts from your counselor and review potential scholarship now.
             </p>
             <div className="mt-8">
               <Button size="lg" asChild>
