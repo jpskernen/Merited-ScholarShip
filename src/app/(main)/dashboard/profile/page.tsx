@@ -1,83 +1,6 @@
-const express = require('express');
-const multer = require('multer');
-const path = require('path');
-const fileType = require('file-type'); // For file signature analysis
-// Import your Google Cloud Storage library and malware scanning library
 
-const router = express.Router();
+'use client';
 
-// Configure Multer for file uploads
-const upload = multer({
-  storage: multer.memoryStorage(), // Store files in memory for processing
-  limits: { fileSize: 10 * 1024 * 1024 }, // Limit file size (e.g., 10MB)
-});
-
-router.post('/upload', upload.fields([
-  { name: 'resume', maxCount: 1 },
-  { name: 'transcripts', maxCount: 1 },
-  { name: 'essays', maxCount: 1 },
-]), async (req, res) => {
-  try {
-    const uploadedFiles = req.files;
-
-    if (!uploadedFiles) {
-      return res.status(400).json({ error: 'No files uploaded' });
-    }
-
-    const fileUrls = {};
-
-    for (const fileType in uploadedFiles) {
-      const fileArray = uploadedFiles[fileType];
-      if (fileArray && fileArray.length > 0) {
-        const file = fileArray[0];
-
-        // 1. File Type Validation
-        const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword']; // Example allowed types
-        const detectedFileType = await fileType.fromBuffer(file.buffer);
-
-        if (!detectedFileType || !allowedTypes.includes(detectedFileType.mime)) {
-          // You might also want to check file.mimetype from multer
-          return res.status(400).json({ error: `Invalid file type for ${fileType}` });
-        }
-
-        // 2. Malware Scanning
-        // Integrate with your malware scanning service here
-        // Example:
-        // const scanResult = await malwareScanner.scan(file.buffer);
-        // if (scanResult.isInfected) {
-        //   return res.status(400).json({ error: `Malware detected in ${fileType}` });
-        // }
-
-        // 3. Upload to Google Cloud Storage
-        // Use the Google Cloud Storage client library to upload file.buffer
-        // const bucket = storage.bucket('your-bucket-name');
-        // const blob = bucket.file(`uploads/${Date.now()}-${file.originalname}`);
-        // const blobStream = blob.createWriteStream();
-        // blobStream.end(file.buffer);
-        // await new Promise((resolve, reject) => {
-        //   blobStream.on('finish', resolve);
-        //   blobStream.on('error', reject);
-        // });
-        // const publicUrl = `https://storage.googleapis.com/your-bucket-name/uploads/${Date.now()}-${file.originalname}`;
-        // fileUrls[`${fileType}Url`] = publicUrl;
-
-        // For now, just return a placeholder URL
-        fileUrls[`${fileType}Url`] = `placeholder-url-for-${file.originalname}`;
-      }
-    }
-
-    res.status(200).json(fileUrls);
-
-  } catch (error) {
-    console.error('Error uploading files:', error);
-    res.status(500).json({ error: 'File upload failed' });
-  }
-});
-
-// Add your /api/submit-application endpoint here
-// This endpoint will receive form data and file URLs and save to the database
-
-module.exports = router;
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -89,7 +12,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { FileUp, Info } from 'lucide-react';
+import { FileUp } from 'lucide-react';
 
 export default function ProfilePage() {
   return (

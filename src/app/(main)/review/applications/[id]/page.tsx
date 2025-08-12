@@ -1,3 +1,5 @@
+
+import { summarizeApplication } from '@/ai/flows/summarize-applications';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
@@ -6,7 +8,7 @@ import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
 import { Sparkles, FileText, UserCircle } from 'lucide-react';
 
-export default function ApplicationReviewPage({ params }: { params: { id: string } }) {
+export default async function ApplicationReviewPage({ params }: { params: { id: string } }) {
   // Mock data for a single application
   const application = {
     id: params.id,
@@ -15,7 +17,18 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
     major: 'Computer Science',
     scholarship: 'Future Leaders Scholarship',
     essay: 'My journey into computer science began with a simple curiosity about how video games were made. This spark led me to explore programming, and I quickly discovered a passion for solving complex problems through code. Throughout high school, I have dedicated myself to honing my skills, participating in hackathons, and even developing a small mobile app to help my local food bank organize donations. I believe technology has the power to drive positive change, and I am eager to contribute to this field. This scholarship would not only alleviate the financial burden of my education but also validate my commitment to using technology for good.',
+    // These would be data URIs in a real scenario
+    resume: 'placeholder-for-resume.pdf',
+    transcript: 'placeholder-for-transcript.pdf',
   };
+
+  const summary = await summarizeApplication({
+    gpa: application.gpa,
+    essay: application.essay,
+    resume: application.resume,
+    transcript: application.transcript,
+  });
+
 
   return (
     <div className="space-y-8">
@@ -36,7 +49,7 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
             <CardContent>
                 <div className="space-y-4">
                      <p className="text-sm text-muted-foreground p-4 bg-secondary rounded-lg">
-                        John Smith is a high-achieving student with a 3.9 GPA, intending to major in Computer Science. His essay highlights a strong passion for technology, evidenced by participation in hackathons and the development of a mobile app for a local food bank. His profile demonstrates both technical aptitude and a commitment to community service, aligning well with the criteria for the Future Leaders Scholarship.
+                        {summary.summary}
                      </p>
                      <Button variant="outline">
                         <Sparkles className="mr-2 h-4 w-4" />
@@ -123,3 +136,4 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
     </div>
   );
 }
+
