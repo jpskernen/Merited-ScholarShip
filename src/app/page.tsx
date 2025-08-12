@@ -73,7 +73,6 @@ export default function Home() {
         <section id="features" className="py-20 md:py-24">
           <div className="container mx-auto px-4 md:px-6">
             <div className="mb-12 text-center">
-              <h2 className="text-3xl font-bold">Why Choose ScholarShip?</h2>
               <p className="mt-2 text-black">
                 Scholarships open in Spring 2026. You will be alerted if you are selected. Award presentations are in May. Scholarships are sent directly to your school of choice. 
               </p>
@@ -86,7 +85,7 @@ export default function Home() {
                   </CardHeader>
                   <CardContent className="text-center">
                     <h3 className="text-lg font-semibold">{feature.title}</h3>
-                    <p className="mt-2 text-sm text-black">
+                    <p className="mt-2 text-sm text-white">
                       {feature.description}
                     </p>
                   </CardContent>
