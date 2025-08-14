@@ -7,21 +7,21 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { AppLogo } from '@/components/shared/AppLogo';
-import { GraduationCap, FileText, Target, Users, CheckCircle, Heart } from 'lucide-react';
+import { GraduationCap, FileText, Target, Users, CheckCircle, Heart, Search } from 'lucide-react';
 
 export default function Home() {
   const features = [
+    {
+      icon: <Search className="h-10 w-10 text-primary" />,
+      title: 'View Scholarship Opportunities',
+      description:
+        'Browse and learn about the available scholarships.',
+    },
     {
       icon: <FileText className="h-10 w-10 text-primary" />,
       title: 'Apply for a Scholarship',
       description:
         'Easily upload your transcripts, resumes, and essays to a single platform.',
-    },
-    {
-      icon: <Target className="h-10 w-10 text-primary" />,
-      title: 'Intelligent Matching',
-      description:
-        'View Scholarship opportunities',
     },
     {
       icon: <CheckCircle className="h-10 w-10 text-primary" />,
