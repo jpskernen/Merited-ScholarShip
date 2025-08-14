@@ -6,10 +6,11 @@ import { Separator } from '@/components/ui/separator';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
-import { Sparkles, FileText, UserCircle } from 'lucide-react';
+import { Sparkles, FileText, UserCircle, Award } from 'lucide-react';
 import { getApplicant } from '@/lib/applicants';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
+import scholarships from '@/data/scholarships.json';
 
 export default async function ApplicationReviewPage({ params }: { params: { id: string } }) {
   const application = await getApplicant(params.id);
@@ -106,21 +107,25 @@ export default async function ApplicationReviewPage({ params }: { params: { id: 
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-4">
-                <Label htmlFor="score-academic">Academic Merit: 85</Label>
-                <Slider id="score-academic" defaultValue={[85]} max={100} step={1} />
+                <Label htmlFor="score-academic">Academic Merit (GPA, Transcript): 4</Label>
+                <Slider id="score-academic" defaultValue={[4]} max={5} step={1} />
               </div>
                <div className="space-y-4">
-                <Label htmlFor="score-leadership">Leadership Potential: 90</Label>
-                <Slider id="score-leadership" defaultValue={[90]} max={100} step={1} />
+                <Label htmlFor="score-leadership">Leadership & Service (Activities, Volunteer): 5</Label>
+                <Slider id="score-leadership" defaultValue={[5]} max={5} step={1} />
               </div>
                <div className="space-y-4">
-                <Label htmlFor="score-essay">Essay Quality: 78</Label>
-                <Slider id="score-essay" defaultValue={[78]} max={100} step={1} />
+                <Label htmlFor="score-essay">Essay & Recommendations: 3</Label>
+                <Slider id="score-essay" defaultValue={[3]} max={5} step={1} />
               </div>
               <Separator />
                <div className="space-y-2">
                 <Label htmlFor="comments">Reviewer Comments</Label>
                 <Textarea id="comments" rows={6} placeholder="Provide your overall assessment..." />
+              </div>
+               <div className="space-y-2">
+                <Label htmlFor="scholarship-recommendations">Scholarship Recommendations</Label>
+                <Textarea id="scholarship-recommendations" rows={4} placeholder="Note which scholarships this applicant is a good fit for and why." />
               </div>
               <Button className="w-full bg-accent hover:bg-accent/90">Submit Review</Button>
             </CardContent>
