@@ -9,40 +9,9 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Lightbulb, ArrowRight, Sparkles } from 'lucide-react';
+import { ArrowRight, Sparkles } from 'lucide-react';
 import Link from 'next/link';
-
-// Mock data, in a real app this would come from an API
-const scholarships = [
-  {
-    id: 1,
-    name: 'Future Leaders Scholarship',
-    provider: 'Tech Corp.',
-    amount: '$10,000',
-    deadline: '2024-12-15',
-    tags: ['STEM', 'Leadership'],
-    description: 'For students pursuing a degree in technology with demonstrated leadership skills.',
-  },
-  {
-    id: 2,
-    name: 'Creative Minds Grant',
-    provider: 'Arts Foundation',
-    amount: '$5,000',
-    deadline: '2024-11-30',
-    tags: ['Arts', 'Creative'],
-    description: 'Awarded to talented students in the visual or performing arts.',
-  },
-  {
-    id: 3,
-    name: 'Community Champion Award',
-    provider: 'Local Charity Org',
-    amount: '$2,500',
-    deadline: '2025-01-31',
-    tags: ['Community Service', 'Volunteering'],
-    description: 'Recognizing outstanding contributions to community service.',
-  },
-];
-
+import scholarships from '@/data/scholarships.json';
 
 export default function ScholarshipsPage() {
   return (
@@ -74,7 +43,6 @@ export default function ScholarshipsPage() {
               <div className="flex justify-between items-start">
                   <div>
                     <CardTitle>{scholarship.name}</CardTitle>
-                    <CardDescription>{scholarship.provider}</CardDescription>
                   </div>
                   <Badge variant="secondary" className="whitespace-nowrap">{scholarship.amount}</Badge>
               </div>
