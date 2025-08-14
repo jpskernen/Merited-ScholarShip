@@ -125,6 +125,9 @@ export default function Home() {
             <Link href="#" className="text-sm text-muted-foreground hover:text-primary">
               Privacy Policy
             </Link>
+            <Link href="/review/login" className="text-sm text-muted-foreground hover:text-primary">
+              Review Committee Login
+            </Link>
           </div>
         </div>
       </footer>
