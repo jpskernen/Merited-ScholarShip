@@ -6,28 +6,22 @@ import { Applicant, ApplicantSchema } from '@/types/applicant';
 import { addDoc, collection } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
+async function uploadFile(file: File | null, path: string): Promise<string> {
+    if (file && file.size > 0) {
+      const fileRef = ref(storage, `${path}/${Date.now()}-${file.name}`);
+      const snapshot = await uploadBytes(fileRef, file);
+      return getDownloadURL(snapshot.ref);
+    }
+    return '';
+}
+
 export async function saveApplicantData(formData: FormData) {
   try {
     const data = Object.fromEntries(formData.entries());
 
-    // Handle file uploads first
-    const transcriptFile = formData.get('transcripts') as File | null;
-    const resumeFile = formData.get('resume') as File | null;
-    
-    let transcriptUrl = '';
-    let resumeUrl = '';
-
-    if (transcriptFile && transcriptFile.size > 0) {
-      const transcriptRef = ref(storage, `transcripts/${Date.now()}-${transcriptFile.name}`);
-      const transcriptSnapshot = await uploadBytes(transcriptRef, transcriptFile);
-      transcriptUrl = await getDownloadURL(transcriptSnapshot.ref);
-    }
-
-    if (resumeFile && resumeFile.size > 0) {
-      const resumeRef = ref(storage, `resumes/${Date.now()}-${resumeFile.name}`);
-      const resumeSnapshot = await uploadBytes(resumeRef, resumeFile);
-      resumeUrl = await getDownloadURL(resumeSnapshot.ref);
-    }
+    const transcriptUrl = await uploadFile(formData.get('transcripts') as File | null, 'transcripts');
+    const resumeUrl = await uploadFile(formData.get('resume') as File | null, 'resumes');
+    const acceptanceLetterUrl = await uploadFile(formData.get('acceptanceLetter') as File | null, 'acceptanceLetters');
     
     // Construct the applicant data object
     const applicantData: Omit<Applicant, 'id'> = {
@@ -39,13 +33,18 @@ export async function saveApplicantData(formData: FormData) {
       interests: data.interests as string,
       activities: data.activities as string,
       essay: data.essay as string,
-      transcripts: transcriptUrl,
-      resume: resumeUrl,
-      isBlind: false, // Default to not blind
+      transcripts: transcriptUrl || data.transcripts as string,
+      resume: resumeUrl || data.resume as string,
+      acceptanceLetter: acceptanceLetterUrl || data.acceptanceLetter as string,
+      isBlind: false,
+      firstChoiceSchool: data.firstChoiceSchool as string,
+      firstChoiceAccepted: data.firstChoiceAccepted === 'true',
+      secondChoiceSchool: data.secondChoiceSchool as string,
+      secondChoiceAccepted: data.secondChoiceAccepted === 'true',
     };
 
-    // Validate with Zod schema (omitting id for creation)
-    const validatedData = ApplicantSchema.omit({id: true}).parse(applicantData);
+    // Use partial schema because not all fields are required on update.
+    const validatedData = ApplicantSchema.partial().parse(applicantData);
     
     // Add to Firestore
     const docRef = await addDoc(collection(db, 'applicants'), validatedData);
@@ -54,7 +53,6 @@ export async function saveApplicantData(formData: FormData) {
 
   } catch (error) {
     console.error('Error saving applicant data:', error);
-    // Zod errors can be caught here and handled
     if (error instanceof Error) {
         return { success: false, error: error.message };
     }

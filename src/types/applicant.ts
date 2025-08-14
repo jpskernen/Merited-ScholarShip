@@ -15,18 +15,28 @@ export const ApplicantSchema = z.object({
   activities: z.string().min(1, 'Please list at least one activity.'),
   essay: z.string().min(50, 'Essay must be at least 50 characters long.'),
   transcripts: z.any()
-    .refine((files) => files?.[0]?.size <= MAX_FILE_SIZE, `Max file size is 5MB.`)
+    .refine((files) => !files || (files?.[0]?.size <= MAX_FILE_SIZE), `Max file size is 5MB.`)
     .refine(
-      (files) => ACCEPTED_FILE_TYPES.includes(files?.[0]?.type),
+      (files) => !files || ACCEPTED_FILE_TYPES.includes(files?.[0]?.type),
       ".pdf, .doc, and .docx files are accepted."
-    ).or(z.string()),
+    ).or(z.string()).optional(),
   resume: z.any()
-    .refine((files) => files?.[0]?.size <= MAX_FILE_SIZE, `Max file size is 5MB.`)
+    .refine((files) => !files || (files?.[0]?.size <= MAX_FILE_SIZE), `Max file size is 5MB.`)
     .refine(
-      (files) => ACCEPTED_FILE_TYPES.includes(files?.[0]?.type),
+      (files) => !files || ACCEPTED_FILE_TYPES.includes(files?.[0]?.type),
       ".pdf, .doc, and .docx files are accepted."
-    ).or(z.string()),
+    ).or(z.string()).optional(),
   isBlind: z.boolean().optional(),
+  firstChoiceSchool: z.string().optional(),
+  firstChoiceAccepted: z.boolean().optional(),
+  secondChoiceSchool: z.string().optional(),
+  secondChoiceAccepted: z.boolean().optional(),
+  acceptanceLetter: z.any()
+    .refine((files) => !files || (files?.[0]?.size <= MAX_FILE_SIZE), `Max file size is 5MB.`)
+    .refine(
+      (files) => !files || ACCEPTED_FILE_TYPES.includes(files?.[0]?.type),
+      ".pdf, .doc, and .docx files are accepted."
+    ).or(z.string()).optional(),
 });
 
 export type Applicant = z.infer<typeof ApplicantSchema>;

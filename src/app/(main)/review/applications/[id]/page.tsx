@@ -6,7 +6,7 @@ import { Separator } from '@/components/ui/separator';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
-import { Sparkles, FileText, UserCircle, Award } from 'lucide-react';
+import { Sparkles, FileText, UserCircle, Award, CheckCircle, XCircle } from 'lucide-react';
 import { getApplicant } from '@/lib/applicants';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
@@ -22,8 +22,8 @@ export default async function ApplicationReviewPage({ params }: { params: { id: 
   // Ensure resume and transcripts are treated as data URIs for the AI model
   // For now, we'll use placeholder strings if they are URLs.
   // In a real app, you might fetch the content and convert it to a data URI.
-  const resumeForAI = application.resume.startsWith('http') ? 'data:text/plain;base64,' : application.resume;
-  const transcriptForAI = application.transcripts.startsWith('http') ? 'data:text/plain;base64,' : application.transcripts;
+  const resumeForAI = (application.resume && application.resume.startsWith('http')) ? 'data:text/plain;base64,' : application.resume || '';
+  const transcriptForAI = (application.transcripts && application.transcripts.startsWith('http')) ? 'data:text/plain;base64,' : application.transcripts || '';
 
   const summaryResult = await summarizeApplication({
     gpa: application.gpa,
@@ -71,7 +71,21 @@ export default async function ApplicationReviewPage({ params }: { params: { id: 
                     <div><span className="font-semibold">Name:</span> {application.isBlind ? 'Hidden' : application.name}</div>
                     <div><span className="font-semibold">GPA:</span> {application.gpa}</div>
                     <div><span className="font-semibold">Major:</span> {application.major}</div>
-                    <div><span className="font-semibold">School:</span> {application.school}</div>
+                    <div><span className="font-semibold">High School:</span> {application.school}</div>
+                </div>
+                <Separator/>
+                 <div>
+                    <h4 className="font-semibold mb-2">College Choices</h4>
+                    <div className="grid grid-cols-1 gap-2 text-sm">
+                        <div className="flex items-center justify-between">
+                            <span>1st Choice: {application.firstChoiceSchool || 'N/A'}</span>
+                            {application.firstChoiceAccepted ? <CheckCircle className="h-5 w-5 text-green-500" /> : <XCircle className="h-5 w-5 text-red-500" />}
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <span>2nd Choice: {application.secondChoiceSchool || 'N/A'}</span>
+                            {application.secondChoiceAccepted ? <CheckCircle className="h-5 w-5 text-green-500" /> : <XCircle className="h-5 w-5 text-red-500" />}
+                        </div>
+                    </div>
                 </div>
                 <Separator/>
                 <h4 className="font-semibold">Personal Essay</h4>
@@ -92,6 +106,11 @@ export default async function ApplicationReviewPage({ params }: { params: { id: 
                 {application.transcripts && (
                   <Button variant="secondary" asChild>
                      <Link href={application.transcripts} target="_blank" rel="noopener noreferrer">View Transcripts</Link>
+                  </Button>
+                )}
+                {application.acceptanceLetter && (
+                  <Button variant="secondary" asChild>
+                     <Link href={application.acceptanceLetter} target="_blank" rel="noopener noreferrer">View Acceptance Letter</Link>
                   </Button>
                 )}
             </CardContent>

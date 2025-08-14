@@ -19,6 +19,7 @@ import { FileUp } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { saveApplicantData } from './actions';
 import { useState } from 'react';
+import { Switch } from '@/components/ui/switch';
 
 export default function ProfilePage() {
   const { toast } = useToast();
@@ -28,9 +29,13 @@ export default function ProfilePage() {
     handleSubmit,
     formState: { errors },
     setValue,
+    watch,
   } = useForm<Applicant>({
-    resolver: zodResolver(ApplicantSchema),
+    resolver: zodResolver(ApplicantSchema.partial()),
   });
+  
+  const firstChoiceAccepted = watch('firstChoiceAccepted');
+  const secondChoiceAccepted = watch('secondChoiceAccepted');
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, files } = e.target;
@@ -46,9 +51,9 @@ export default function ProfilePage() {
     // Convert the data object to FormData
     for (const key in data) {
       const value = data[key as keyof Applicant];
-      if (value instanceof File) {
+       if (value instanceof File) {
         formData.append(key, value);
-      } else if (typeof value === 'string' || typeof value === 'number') {
+      } else if (value !== undefined && value !== null) {
         formData.append(key, String(value));
       }
     }
@@ -59,11 +64,15 @@ export default function ProfilePage() {
     }
 
     try {
-      await saveApplicantData(formData);
-      toast({
-        title: 'Success!',
-        description: 'Your profile has been saved successfully.',
-      });
+      const result = await saveApplicantData(formData);
+      if (result.success) {
+        toast({
+            title: 'Success!',
+            description: 'Your profile has been saved successfully.',
+        });
+      } else {
+        throw new Error(result.error);
+      }
     } catch (error) {
       console.error(error);
       toast({
@@ -86,7 +95,7 @@ export default function ProfilePage() {
       </div>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-2 space-y-8">
           <Card>
             <CardHeader>
               <CardTitle>Personal Information</CardTitle>
@@ -131,7 +140,7 @@ export default function ProfilePage() {
                 </div>
               </div>
                <div className="space-y-2">
-                <Label htmlFor="school">School</Label>
+                <Label htmlFor="school">High School</Label>
                 <Input id="school" {...register('school')} placeholder="e.g., Lake Travis High School" />
                 {errors.school && <p className="text-xs text-destructive">{errors.school.message}</p>}
               </div>
@@ -159,13 +168,48 @@ export default function ProfilePage() {
                 />
                  {errors.essay && <p className="text-xs text-destructive">{errors.essay.message}</p>}
               </div>
-              <div className="flex justify-end">
+              
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+                <CardTitle>College / University Plans</CardTitle>
+                <CardDescription>
+                    Let us know your top school choices.
+                </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+                <div className="space-y-4">
+                    <Label className="text-base">First Choice</Label>
+                    <div className="space-y-2">
+                        <Label htmlFor="firstChoiceSchool">School Name</Label>
+                        <Input id="firstChoiceSchool" {...register('firstChoiceSchool')} placeholder="e.g., University of Texas at Austin"/>
+                         {errors.firstChoiceSchool && <p className="text-xs text-destructive">{errors.firstChoiceSchool.message}</p>}
+                    </div>
+                    <div className="flex items-center space-x-2">
+                        <Switch id="firstChoiceAccepted" {...register('firstChoiceAccepted')} onCheckedChange={(checked) => setValue('firstChoiceAccepted', checked)} />
+                        <Label htmlFor="firstChoiceAccepted">I have been accepted</Label>
+                    </div>
+                </div>
+                 <div className="space-y-4">
+                    <Label className="text-base">Second Choice</Label>
+                    <div className="space-y-2">
+                        <Label htmlFor="secondChoiceSchool">School Name</Label>
+                        <Input id="secondChoiceSchool" {...register('secondChoiceSchool')} placeholder="e.g., Texas A&M University"/>
+                        {errors.secondChoiceSchool && <p className="text-xs text-destructive">{errors.secondChoiceSchool.message}</p>}
+                    </div>
+                    <div className="flex items-center space-x-2">
+                        <Switch id="secondChoiceAccepted" {...register('secondChoiceAccepted')} onCheckedChange={(checked) => setValue('secondChoiceAccepted', checked)} />
+                        <Label htmlFor="secondChoiceAccepted">I have been accepted</Label>
+                    </div>
+                </div>
+            </CardContent>
+          </Card>
+           <div className="flex justify-end">
                 <Button type="submit" disabled={isSaving}>
                   {isSaving ? 'Saving...' : 'Save Changes'}
                   </Button>
               </div>
-            </CardContent>
-          </Card>
         </div>
 
         <div className="space-y-8">
@@ -200,6 +244,19 @@ export default function ProfilePage() {
                   </Button>
                 </div>
                  {errors.resume && <p className="text-xs text-destructive">{typeof errors.resume.message === 'string' ? errors.resume.message : 'Invalid file'}</p>}
+              </div>
+               <div className="space-y-2">
+                <Label htmlFor="acceptanceLetter">Acceptance Letter</Label>
+                <div className="flex items-center gap-2">
+                  <Input id="acceptanceLetter" type="file" name="acceptanceLetter" accept=".pdf,.doc,.docx" onChange={handleFileChange} />
+                  <Button variant="outline" size="icon" type="button">
+                    <FileUp className="h-4 w-4" />
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  If accepted, upload your letter here.
+                </p>
+                 {errors.acceptanceLetter && <p className="text-xs text-destructive">{typeof errors.acceptanceLetter.message === 'string' ? errors.acceptanceLetter.message : 'Invalid file'}</p>}
               </div>
             </CardContent>
           </Card>
