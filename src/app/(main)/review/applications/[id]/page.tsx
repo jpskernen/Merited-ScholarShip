@@ -37,7 +37,7 @@ export default async function ApplicationReviewPage({ params }: { params: { id: 
       <div>
         <h1 className="text-3xl font-bold">Review Application: {application.id}</h1>
         <p className="text-muted-foreground">
-          Applicant: <span className="font-semibold">{application.name}</span>
+          Applicant: <span className="font-semibold">{application.isBlind ? 'Name Hidden for Review' : application.name}</span>
         </p>
       </div>
 
@@ -67,7 +67,7 @@ export default async function ApplicationReviewPage({ params }: { params: { id: 
             </CardHeader>
             <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div><span className="font-semibold">Name:</span> {application.name}</div>
+                    <div><span className="font-semibold">Name:</span> {application.isBlind ? 'Hidden' : application.name}</div>
                     <div><span className="font-semibold">GPA:</span> {application.gpa}</div>
                     <div><span className="font-semibold">Major:</span> {application.major}</div>
                     <div><span className="font-semibold">School:</span> {application.school}</div>

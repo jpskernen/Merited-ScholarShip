@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { getApplicants } from '@/lib/applicants';
 import { Badge } from '@/components/ui/badge';
+import { EyeOff } from 'lucide-react';
 
 export default async function ApplicantsPage() {
   const applicants = await getApplicants();
@@ -38,17 +39,21 @@ export default async function ApplicantsPage() {
           <TableBody>
             {applicants.map((applicant) => (
               <TableRow key={applicant.id}>
-                <TableCell className="font-medium">{applicant.name}</TableCell>
+                <TableCell className="font-medium">{applicant.isBlind ? 'Applicant (Hidden)' : applicant.name}</TableCell>
                 <TableCell>{applicant.school}</TableCell>
                 <TableCell>
                   <Badge variant="secondary">{applicant.gpa.toFixed(2)}</Badge>
                 </TableCell>
                 <TableCell>{applicant.major}</TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-right space-x-2">
                   <Button variant="outline" size="sm" asChild>
                     <Link href={`/review/applications/${applicant.id}`}>
                       Review Application
                     </Link>
+                  </Button>
+                   <Button variant="ghost" size="sm">
+                    <EyeOff className="h-4 w-4 mr-2" />
+                    Make Blind
                   </Button>
                 </TableCell>
               </TableRow>

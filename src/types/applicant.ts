@@ -26,6 +26,7 @@ export const ApplicantSchema = z.object({
       (files) => ACCEPTED_FILE_TYPES.includes(files?.[0]?.type),
       ".pdf, .doc, and .docx files are accepted."
     ).or(z.string()),
+  isBlind: z.boolean().optional(),
 });
 
 export type Applicant = z.infer<typeof ApplicantSchema>;

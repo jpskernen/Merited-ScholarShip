@@ -41,6 +41,7 @@ export async function saveApplicantData(formData: FormData) {
       essay: data.essay as string,
       transcripts: transcriptUrl,
       resume: resumeUrl,
+      isBlind: false, // Default to not blind
     };
 
     // Validate with Zod schema (omitting id for creation)
