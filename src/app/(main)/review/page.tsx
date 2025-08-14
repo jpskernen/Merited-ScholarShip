@@ -1,3 +1,4 @@
+
 import { Button } from '@/components/ui/button';
 import {
   Table,
@@ -43,7 +44,7 @@ export default async function ReviewerDashboardPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Applicant Name</TableHead>
+              <TableHead>Applicant ID</TableHead>
               <TableHead>School</TableHead>
               <TableHead>Assigned Date</TableHead>
               <TableHead>Status</TableHead>
@@ -53,7 +54,7 @@ export default async function ReviewerDashboardPage() {
           <TableBody>
             {applicationsWithStatus.map((app) => (
               <TableRow key={app.id}>
-                <TableCell className="font-medium">{app.name}</TableCell>
+                <TableCell className="font-medium">{app.isBlind ? `Applicant ${app.id}` : app.name}</TableCell>
                 <TableCell>{app.school}</TableCell>
                 <TableCell>{app.assignedDate}</TableCell>
                 <TableCell>
