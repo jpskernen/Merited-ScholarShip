@@ -8,7 +8,7 @@ export default function AdminDashboardPage() {
       title: 'Total Scholarships',
       value: '28',
       icon: <Award className="h-6 w-6 text-primary" />,
-      link: '/admin/scholarships',
+      link: '#',
       linkLabel: 'Manage Scholarships',
     },
     {

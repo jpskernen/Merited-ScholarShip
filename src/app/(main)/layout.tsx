@@ -19,14 +19,11 @@ import {
   User,
   FileText,
   Search,
-  Briefcase,
   Users,
   Award,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
 
 const applicantNav = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -37,7 +34,6 @@ const applicantNav = [
 
 const adminNav = [
   { href: '/admin', label: 'Admin Dashboard', icon: LayoutDashboard },
-  { href: '/admin/scholarships', label: 'Manage Scholarships', icon: Award },
   { href: '/admin/applicants', label: 'All Applicants', icon: Users },
 ];
 
@@ -56,6 +52,12 @@ export default function DashboardLayout({
   const isActive = (href: string) => {
     return pathname === href;
   };
+
+  const isMainRoute = pathname.startsWith('/dashboard');
+
+  if (!isMainRoute) {
+    return <>{children}</>
+  }
 
   return (
     <SidebarProvider>
@@ -80,39 +82,6 @@ export default function DashboardLayout({
                 ))}
               </SidebarMenu>
             </SidebarGroup>
-
-            <SidebarGroup>
-              <SidebarGroupLabel>Admin</SidebarGroupLabel>
-              <SidebarMenu>
-                {adminNav.map((item) => (
-                  <SidebarMenuItem key={item.href}>
-                    <Link href={item.href} className="w-full">
-                       <SidebarMenuButton isActive={isActive(item.href)}>
-                        <item.icon className="h-4 w-4" />
-                        <span>{item.label}</span>
-                      </SidebarMenuButton>
-                    </Link>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroup>
-            
-            <SidebarGroup>
-              <SidebarGroupLabel>Reviewer</SidebarGroupLabel>
-              <SidebarMenu>
-                {reviewerNav.map((item) => (
-                  <SidebarMenuItem key={item.href}>
-                    <Link href={item.href} className="w-full">
-                       <SidebarMenuButton isActive={isActive(item.href)}>
-                        <item.icon className="h-4 w-4" />
-                        <span>{item.label}</span>
-                      </SidebarMenuButton>
-                    </Link>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroup>
-
           </SidebarContent>
         </Sidebar>
 
