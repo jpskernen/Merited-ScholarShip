@@ -68,7 +68,7 @@ export default function Home() {
           <div className="container mx-auto px-4 md:px-6">
             <div className="mb-12 text-center">
               <h2 className="text-3xl font-bold tracking-tight text-white">
-                For Our Applicants
+                Scholarship Application Guide
               </h2>
               <p className="mt-2 text-black">
                 Scholarships open in Spring 2026. You will be alerted if you are selected. Award presentations are in May. Scholarships are sent directly to your school of choice. 
