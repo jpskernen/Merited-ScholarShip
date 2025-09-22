@@ -36,7 +36,7 @@ export const ApplicantSchema = z.object({
   thirdChoiceAccepted: z.boolean().optional(),
   fourthChoiceSchool: z.string().optional(),
   fourthChoiceAccepted: z.boolean().optional(),
-  fifthChoiceSchool: z_string().optional(),
+  fifthChoiceSchool: z.string().optional(),
   fifthChoiceAccepted: z.boolean().optional(),
   acceptanceLetter: z.any()
     .refine((files) => !files || (files?.[0]?.size <= MAX_FILE_SIZE), `Max file size is 5MB.`)

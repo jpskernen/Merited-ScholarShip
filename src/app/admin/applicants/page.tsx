@@ -39,7 +39,7 @@ export default async function ApplicantsPage() {
           <TableBody>
             {applicants.map((applicant) => (
               <TableRow key={applicant.id}>
-                <TableCell className="font-medium">{applicant.isBlind ? 'Applicant (Hidden)' : applicant.name}</TableCell>
+                <TableCell className="font-medium">{applicant.isBlind ? 'Applicant (Hidden)' : applicant.name}</TableCell>                
                 <TableCell>{applicant.school}</TableCell>
                 <TableCell>
                   <Badge variant="secondary">{applicant.gpa.toFixed(2)}</Badge>
