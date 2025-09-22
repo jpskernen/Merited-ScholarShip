@@ -1,3 +1,4 @@
+
 // src/app/(main)/dashboard/profile/actions.ts
 'use server';
 
@@ -47,6 +48,7 @@ export async function saveApplicantData(formData: FormData) {
       fourthChoiceAccepted: data.fourthChoiceAccepted === 'true',
       fifthChoiceSchool: data.fifthChoiceSchool as string,
       fifthChoiceAccepted: data.fifthChoiceAccepted === 'true',
+      satActScore: data.satActScore as string,
     };
 
     // Use partial schema because not all fields are required on update.

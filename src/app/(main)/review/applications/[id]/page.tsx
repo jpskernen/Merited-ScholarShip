@@ -10,7 +10,6 @@ import { Sparkles, FileText, UserCircle, Award, CheckCircle, XCircle } from 'luc
 import { getApplicant } from '@/lib/applicants';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import scholarships from '@/data/scholarships.json';
 
 export default async function ApplicationReviewPage({ params }: { params: { id: string } }) {
   const application = await getApplicant(params.id);
@@ -72,6 +71,7 @@ export default async function ApplicationReviewPage({ params }: { params: { id: 
                     <div><span className="font-semibold">GPA:</span> {application.gpa}</div>
                     <div><span className="font-semibold">Major:</span> {application.major}</div>
                     <div><span className="font-semibold">High School:</span> {application.school}</div>
+                    <div><span className="font-semibold">SAT/ACT Score:</span> {application.satActScore || 'Not Provided'}</div>
                 </div>
                 <Separator/>
                  <div>
@@ -133,30 +133,38 @@ export default async function ApplicationReviewPage({ params }: { params: { id: 
         <div className="space-y-8">
           <Card>
             <CardHeader>
-              <CardTitle>Scoring & Feedback</CardTitle>
-              <CardDescription>Use the form below to submit your review.</CardDescription>
+              <CardTitle>Scoring Matrix</CardTitle>
+              <CardDescription>Use the sliders to score the applicant from 1 (OK) to 5 (Exceptional).</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-4">
-                <Label htmlFor="score-academic">Academic Merit (GPA, Transcript): 4</Label>
-                <Slider id="score-academic" defaultValue={[4]} max={5} step={1} />
+                <Label htmlFor="score-gpa">Weighted GPA: 3</Label>
+                <Slider id="score-gpa" defaultValue={[3]} max={5} min={1} step={1} />
+              </div>
+              <div className="space-y-4">
+                <Label htmlFor="score-extracurriculars">Extra-Curriculars: 4</Label>
+                <Slider id="score-extracurriculars" defaultValue={[4]} max={5} min={1} step={1} />
               </div>
                <div className="space-y-4">
-                <Label htmlFor="score-leadership">Leadership & Service (Activities, Volunteer): 5</Label>
-                <Slider id="score-leadership" defaultValue={[5]} max={5} step={1} />
+                <Label htmlFor="score-volunteerism">Volunteerism: 5</Label>
+                <Slider id="score-volunteerism" defaultValue={[5]} max={5} min={1} step={1} />
               </div>
                <div className="space-y-4">
-                <Label htmlFor="score-essay">Essay & Recommendations: 3</Label>
-                <Slider id="score-essay" defaultValue={[3]} max={5} step={1} />
+                <Label htmlFor="score-leadership">Leadership: 4</Label>
+                <Slider id="score-leadership" defaultValue={[4]} max={5} min={1} step={1} />
+              </div>
+              <div className="space-y-4">
+                <Label htmlFor="score-major">College Major / Area of Study: 3</Label>
+                <Slider id="score-major" defaultValue={[3]} max={5} min={1} step={1} />
+              </div>
+               <div className="space-y-4">
+                <Label htmlFor="score-other">Other: 3</Label>
+                <Slider id="score-other" defaultValue={[3]} max={5} min={1} step={1} />
               </div>
               <Separator />
                <div className="space-y-2">
                 <Label htmlFor="comments">Reviewer Comments</Label>
                 <Textarea id="comments" rows={6} placeholder="Provide your overall assessment..." />
-              </div>
-               <div className="space-y-2">
-                <Label htmlFor="scholarship-recommendations">Scholarship Recommendations</Label>
-                <Textarea id="scholarship-recommendations" rows={4} placeholder="Note which scholarships this applicant is a good fit for and why." />
               </div>
               <Button className="w-full bg-accent hover:bg-accent/90">Submit Review</Button>
             </CardContent>

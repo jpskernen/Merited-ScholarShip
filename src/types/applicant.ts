@@ -1,3 +1,4 @@
+
 // src/types/applicant.ts
 import { z } from 'zod';
 
@@ -35,7 +36,7 @@ export const ApplicantSchema = z.object({
   thirdChoiceAccepted: z.boolean().optional(),
   fourthChoiceSchool: z.string().optional(),
   fourthChoiceAccepted: z.boolean().optional(),
-  fifthChoiceSchool: z.string().optional(),
+  fifthChoiceSchool: z_string().optional(),
   fifthChoiceAccepted: z.boolean().optional(),
   acceptanceLetter: z.any()
     .refine((files) => !files || (files?.[0]?.size <= MAX_FILE_SIZE), `Max file size is 5MB.`)
@@ -43,6 +44,7 @@ export const ApplicantSchema = z.object({
       (files) => !files || ACCEPTED_FILE_TYPES.includes(files?.[0]?.type),
       ".pdf, .doc, and .docx files are accepted."
     ).or(z.string()).optional(),
+  satActScore: z.string().optional(),
 });
 
 export type Applicant = z.infer<typeof ApplicantSchema>;

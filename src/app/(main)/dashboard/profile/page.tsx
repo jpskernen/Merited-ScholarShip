@@ -149,6 +149,11 @@ export default function ProfilePage() {
                 {errors.school && <p className="text-xs text-destructive">{errors.school.message}</p>}
               </div>
               <div className="space-y-2">
+                  <Label htmlFor="satActScore">SAT/ACT Score (Optional)</Label>
+                  <Input id="satActScore" {...register('satActScore')} placeholder="e.g., 1400 or 32" />
+                  {errors.satActScore && <p className="text-xs text-destructive">{errors.satActScore.message}</p>}
+              </div>
+              <div className="space-y-2">
                 <Label htmlFor="activities">Activities</Label>
                 <Textarea id="activities" {...register('activities')} placeholder="e.g., Soccer, Wrestling, NHS" />
                 <p className="text-xs text-muted-foreground">Separate activities with commas.</p>
