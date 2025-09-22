@@ -103,7 +103,7 @@ export default function Home() {
                 </p>
                 <div className="mt-8">
                     <Button size="lg" asChild>
-                        <Link href="https://my.onecause.com/fundraiser/organizations/64463547-7951-412d-9bfa-68afdcf367e3/fundraisers/fundraiser:0141e500-8ace-4ef4-a9ec-790aa670a38d" target="_blank" rel="noopener noreferrer">
+                        <Link href="https://app.betterunite.com/laketraviseducationfoundation-scholarships" target="_blank" rel="noopener noreferrer">
                             Donate Now
                         </Link>
                     </Button>
