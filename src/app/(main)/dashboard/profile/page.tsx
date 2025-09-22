@@ -20,6 +20,7 @@ import { useForm } from 'react-hook-form';
 import { saveApplicantData } from './actions';
 import { useState } from 'react';
 import { Switch } from '@/components/ui/switch';
+import { Separator } from '@/components/ui/separator';
 
 export default function ProfilePage() {
   const { toast } = useToast();
@@ -36,6 +37,9 @@ export default function ProfilePage() {
   
   const firstChoiceAccepted = watch('firstChoiceAccepted');
   const secondChoiceAccepted = watch('secondChoiceAccepted');
+  const thirdChoiceAccepted = watch('thirdChoiceAccepted');
+  const fourthChoiceAccepted = watch('fourthChoiceAccepted');
+  const fifthChoiceAccepted = watch('fifthChoiceAccepted');
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, files } = e.target;
@@ -201,6 +205,44 @@ export default function ProfilePage() {
                     <div className="flex items-center space-x-2">
                         <Switch id="secondChoiceAccepted" {...register('secondChoiceAccepted')} onCheckedChange={(checked) => setValue('secondChoiceAccepted', checked)} />
                         <Label htmlFor="secondChoiceAccepted">I have been accepted</Label>
+                    </div>
+                </div>
+                <Separator />
+                 <div className="space-y-4">
+                    <Label className="text-base">Third Choice</Label>
+                    <div className="space-y-2">
+                        <Label htmlFor="thirdChoiceSchool">School Name</Label>
+                        <Input id="thirdChoiceSchool" {...register('thirdChoiceSchool')} placeholder="e.g., Texas Tech University"/>
+                        {errors.thirdChoiceSchool && <p className="text-xs text-destructive">{errors.thirdChoiceSchool.message}</p>}
+                    </div>
+                    <div className="flex items-center space-x-2">
+                        <Switch id="thirdChoiceAccepted" {...register('thirdChoiceAccepted')} onCheckedChange={(checked) => setValue('thirdChoiceAccepted', checked)} />
+                        <Label htmlFor="thirdChoiceAccepted">I have been accepted</Label>
+                    </div>
+                </div>
+                <Separator />
+                 <div className="space-y-4">
+                    <Label className="text-base">Other Education / School</Label>
+                    <div className="space-y-2">
+                        <Label htmlFor="fourthChoiceSchool">School Name</Label>
+                        <Input id="fourthChoiceSchool" {...register('fourthChoiceSchool')} placeholder="e.g., Community College, Trade School"/>
+                        {errors.fourthChoiceSchool && <p className="text-xs text-destructive">{errors.fourthChoiceSchool.message}</p>}
+                    </div>
+                    <div className="flex items-center space-x-2">
+                        <Switch id="fourthChoiceAccepted" {...register('fourthChoiceAccepted')} onCheckedChange={(checked) => setValue('fourthChoiceAccepted', checked)} />
+                        <Label htmlFor="fourthChoiceAccepted">I have been accepted</Label>
+                    </div>
+                </div>
+                 <div className="space-y-4">
+                    <Label className="text-base">Other Education / School</Label>
+                    <div className="space-y-2">
+                        <Label htmlFor="fifthChoiceSchool">School Name</Label>
+                        <Input id="fifthChoiceSchool" {...register('fifthChoiceSchool')} placeholder="e.g., Online Program, Certification"/>
+                        {errors.fifthChoiceSchool && <p className="text-xs text-destructive">{errors.fifthChoiceSchool.message}</p>}
+                    </div>
+                    <div className="flex items-center space-x-2">
+                        <Switch id="fifthChoiceAccepted" {...register('fifthChoiceAccepted')} onCheckedChange={(checked) => setValue('fifthChoiceAccepted', checked)} />
+                        <Label htmlFor="fifthChoiceAccepted">I have been accepted</Label>
                     </div>
                 </div>
             </CardContent>

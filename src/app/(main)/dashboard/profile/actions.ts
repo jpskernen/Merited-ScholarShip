@@ -41,6 +41,12 @@ export async function saveApplicantData(formData: FormData) {
       firstChoiceAccepted: data.firstChoiceAccepted === 'true',
       secondChoiceSchool: data.secondChoiceSchool as string,
       secondChoiceAccepted: data.secondChoiceAccepted === 'true',
+      thirdChoiceSchool: data.thirdChoiceSchool as string,
+      thirdChoiceAccepted: data.thirdChoiceAccepted === 'true',
+      fourthChoiceSchool: data.fourthChoiceSchool as string,
+      fourthChoiceAccepted: data.fourthChoiceAccepted === 'true',
+      fifthChoiceSchool: data.fifthChoiceSchool as string,
+      fifthChoiceAccepted: data.fifthChoiceAccepted === 'true',
     };
 
     // Use partial schema because not all fields are required on update.

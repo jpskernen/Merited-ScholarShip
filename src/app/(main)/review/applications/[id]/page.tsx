@@ -85,6 +85,18 @@ export default async function ApplicationReviewPage({ params }: { params: { id: 
                             <span>2nd Choice: {application.secondChoiceSchool || 'N/A'}</span>
                             {application.secondChoiceAccepted ? <CheckCircle className="h-5 w-5 text-green-500" /> : <XCircle className="h-5 w-5 text-red-500" />}
                         </div>
+                         <div className="flex items-center justify-between">
+                            <span>3rd Choice: {application.thirdChoiceSchool || 'N/A'}</span>
+                            {application.thirdChoiceAccepted ? <CheckCircle className="h-5 w-5 text-green-500" /> : <XCircle className="h-5 w-5 text-red-500" />}
+                        </div>
+                         <div className="flex items-center justify-between">
+                            <span>4th Choice: {application.fourthChoiceSchool || 'N/A'}</span>
+                            {application.fourthChoiceAccepted ? <CheckCircle className="h-5 w-5 text-green-500" /> : <XCircle className="h-5 w-5 text-red-500" />}
+                        </div>
+                         <div className="flex items-center justify-between">
+                            <span>5th Choice: {application.fifthChoiceSchool || 'N/A'}</span>
+                            {application.fifthChoiceAccepted ? <CheckCircle className="h-5 w-5 text-green-500" /> : <XCircle className="h-5 w-5 text-red-500" />}
+                        </div>
                     </div>
                 </div>
                 <Separator/>
