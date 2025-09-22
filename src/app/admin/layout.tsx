@@ -25,6 +25,7 @@ import { usePathname } from 'next/navigation';
 const adminNav = [
   { href: '/admin', label: 'Admin Dashboard', icon: LayoutDashboard },
   { href: '/admin/applicants', label: 'All Applicants', icon: Users },
+  { href: '/admin/scholarships', label: 'Scholarships', icon: Award },
 ];
 
 
@@ -36,7 +37,8 @@ export default function AdminLayout({
   const pathname = usePathname();
 
   const isActive = (href: string) => {
-    return pathname === href;
+    // Make active if the current path starts with the href
+    return pathname.startsWith(href) && (href !== '/admin' || pathname === '/admin');
   };
 
   return (
