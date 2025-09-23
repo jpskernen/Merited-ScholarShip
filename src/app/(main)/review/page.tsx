@@ -37,7 +37,7 @@ export default async function ReviewerDashboardPage() {
         <h1 className="text-3xl font-bold">Reviewer Dashboard</h1>
         <p className="text-muted-foreground">
           Here are the applications assigned to you for review.
-        p>
+        </p>
       </div>
 
        <div className="overflow-hidden rounded-lg border">
