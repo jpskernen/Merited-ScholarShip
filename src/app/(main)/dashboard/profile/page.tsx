@@ -44,7 +44,7 @@ export default function ProfilePage() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, files } = e.target;
     if (files && files.length > 0) {
-      setValue(name as keyof Applicant, files[0] as unknown as string);
+      setValue(name as keyof Applicant, files[0]);
     }
   };
 
@@ -269,9 +269,9 @@ export default function ProfilePage() {
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-2">
-                <Label htmlFor="transcripts">Transcripts</Label>
+                <Label htmlFor="transcripts-input">Transcripts</Label>
                 <div className="flex items-center gap-2">
-                  <Input id="transcripts" type="file" name="transcripts" accept=".pdf,.doc,.docx" onChange={handleFileChange} />
+                  <Input id="transcripts-input" type="file" name="transcripts" accept=".pdf,.doc,.docx" onChange={handleFileChange} />
                   <Button variant="outline" size="icon" type="button">
                     <FileUp className="h-4 w-4" />
                   </Button>
@@ -283,9 +283,9 @@ export default function ProfilePage() {
 
               </div>
               <div className="space-y-2">
-                <Label htmlFor="resume">Resume/CV</Label>
+                <Label htmlFor="resume-input">Resume/CV</Label>
                 <div className="flex items-center gap-2">
-                  <Input id="resume" type="file" name="resume" accept=".pdf,.doc,.docx" onChange={handleFileChange} />
+                  <Input id="resume-input" type="file" name="resume" accept=".pdf,.doc,.docx" onChange={handleFileChange} />
                   <Button variant="outline" size="icon" type="button">
                     <FileUp className="h-4 w-4" />
                   </Button>
@@ -293,9 +293,9 @@ export default function ProfilePage() {
                  {errors.resume && <p className="text-xs text-destructive">{typeof errors.resume.message === 'string' ? errors.resume.message : 'Invalid file'}</p>}
               </div>
                <div className="space-y-2">
-                <Label htmlFor="acceptanceLetter">Acceptance Letter</Label>
+                <Label htmlFor="acceptanceLetter-input">Acceptance Letter</Label>
                 <div className="flex items-center gap-2">
-                  <Input id="acceptanceLetter" type="file" name="acceptanceLetter" accept=".pdf,.doc,.docx" onChange={handleFileChange} />
+                  <Input id="acceptanceLetter-input" type="file" name="acceptanceLetter" accept=".pdf,.doc,.docx" onChange={handleFileChange} />
                   <Button variant="outline" size="icon" type="button">
                     <FileUp className="h-4 w-4" />
                   </Button>
@@ -312,3 +312,5 @@ export default function ProfilePage() {
     </form>
   );
 }
+
+    

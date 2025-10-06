@@ -5,6 +5,14 @@ import { z } from 'zod';
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const ACCEPTED_FILE_TYPES = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
 
+const fileSchema = z.any()
+  .refine((file) => file instanceof File, "Invalid file.")
+  .refine((file) => !file || (file?.size <= MAX_FILE_SIZE), `Max file size is 5MB.`)
+  .refine(
+    (file) => !file || ACCEPTED_FILE_TYPES.includes(file?.type),
+    ".pdf, .doc, and .docx files are accepted."
+  );
+
 export const ApplicantSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(1, 'Full name is required.'),
@@ -15,18 +23,8 @@ export const ApplicantSchema = z.object({
   interests: z.string().min(1, 'Please list at least one interest.'),
   activities: z.string().min(1, 'Please list at least one activity.'),
   essay: z.string().min(50, 'Essay must be at least 50 characters long.'),
-  transcripts: z.any()
-    .refine((files) => !files || (files?.[0]?.size <= MAX_FILE_SIZE), `Max file size is 5MB.`)
-    .refine(
-      (files) => !files || ACCEPTED_FILE_TYPES.includes(files?.[0]?.type),
-      ".pdf, .doc, and .docx files are accepted."
-    ).or(z.string()).optional(),
-  resume: z.any()
-    .refine((files) => !files || (files?.[0]?.size <= MAX_FILE_SIZE), `Max file size is 5MB.`)
-    .refine(
-      (files) => !files || ACCEPTED_FILE_TYPES.includes(files?.[0]?.type),
-      ".pdf, .doc, and .docx files are accepted."
-    ).or(z.string()).optional(),
+  transcripts: fileSchema.or(z.string()).optional(),
+  resume: fileSchema.or(z.string()).optional(),
   isBlind: z.boolean().optional(),
   firstChoiceSchool: z.string().optional(),
   firstChoiceAccepted: z.boolean().optional(),
@@ -38,13 +36,10 @@ export const ApplicantSchema = z.object({
   fourthChoiceAccepted: z.boolean().optional(),
   fifthChoiceSchool: z.string().optional(),
   fifthChoiceAccepted: z.boolean().optional(),
-  acceptanceLetter: z.any()
-    .refine((files) => !files || (files?.[0]?.size <= MAX_FILE_SIZE), `Max file size is 5MB.`)
-    .refine(
-      (files) => !files || ACCEPTED_FILE_TYPES.includes(files?.[0]?.type),
-      ".pdf, .doc, and .docx files are accepted."
-    ).or(z.string()).optional(),
+  acceptanceLetter: fileSchema.or(z.string()).optional(),
   satActScore: z.string().optional(),
 });
 
 export type Applicant = z.infer<typeof ApplicantSchema>;
+
+    

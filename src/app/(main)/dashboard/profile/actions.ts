@@ -67,3 +67,5 @@ export async function saveApplicantData(formData: FormData) {
     return { success: false, error: 'An unknown error occurred.' };
   }
 }
+
+    
