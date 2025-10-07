@@ -1,4 +1,3 @@
-
 'use client';
 
 import { Button } from '@/components/ui/button';
@@ -30,42 +29,34 @@ export default function ProfilePage() {
     handleSubmit,
     formState: { errors },
     setValue,
-    watch,
   } = useForm<Applicant>({
-    resolver: zodResolver(ApplicantSchema.partial()),
-  });
-  
-  const firstChoiceAccepted = watch('firstChoiceAccepted');
-  const secondChoiceAccepted = watch('secondChoiceAccepted');
-  const thirdChoiceAccepted = watch('thirdChoiceAccepted');
-  const fourthChoiceAccepted = watch('fourthChoiceAccepted');
-  const fifthChoiceAccepted = watch('fifthChoiceAccepted');
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, files } = e.target;
-    if (files && files.length > 0) {
-      setValue(name as keyof Applicant, files[0]);
+    resolver: zodResolver(ApplicantSchema),
+    defaultValues: {
+        name: 'Jane Doe',
+        email: 'jane.doe@example.com',
+        gpa: 3.8,
+        major: 'Computer Science',
+        school: 'Lake Travis High School',
+        interests: 'Coding, volunteering, hiking',
+        activities: 'Soccer, NHS',
+        essay: 'My journey in computer science...',
+        firstChoiceSchool: 'University of Texas at Austin',
+        firstChoiceAccepted: true,
     }
-  };
+  });
 
   const onSubmit = async (data: Applicant) => {
     setIsSaving(true);
     const formData = new FormData();
 
     // Convert the data object to FormData
-    for (const key in data) {
-      const value = data[key as keyof Applicant];
-       if (value instanceof File) {
+    Object.entries(data).forEach(([key, value]) => {
+      if (value instanceof File) {
         formData.append(key, value);
       } else if (value !== undefined && value !== null) {
         formData.append(key, String(value));
       }
-    }
-    
-    // Add a placeholder for id if it's not present, as our action expects it.
-    if (!data.id) {
-      formData.append('id', 'temp-id'); // Firestore will generate the real ID.
-    }
+    });
 
     try {
       const result = await saveApplicantData(formData);
@@ -75,7 +66,8 @@ export default function ProfilePage() {
             description: 'Your profile has been saved successfully.',
         });
       } else {
-        throw new Error(result.error);
+         console.error('Save failed:', result.error, result.issues);
+        throw new Error(result.error || 'Failed to save profile.');
       }
     } catch (error) {
       console.error(error);
@@ -111,7 +103,7 @@ export default function ProfilePage() {
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="name">Full Name</Label>
-                  <Input id="name" {...register('name')} defaultValue="Jane Doe" />
+                  <Input id="name" {...register('name')} />
                   {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
                 </div>
                 <div className="space-y-2">
@@ -120,7 +112,6 @@ export default function ProfilePage() {
                     id="email"
                     type="email"
                     {...register('email')}
-                    defaultValue="jane.doe@example.com"
                   />
                    {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
                 </div>
@@ -131,8 +122,8 @@ export default function ProfilePage() {
                   <Input
                     id="gpa"
                     type="number"
-                    step="0.1"
-                    {...register('gpa', { valueAsNumber: true })}
+                    step="0.01"
+                    {...register('gpa')}
                     placeholder="e.g., 3.8"
                   />
                    {errors.gpa && <p className="text-xs text-destructive">{errors.gpa.message}</p>}
@@ -233,10 +224,6 @@ export default function ProfilePage() {
                         <Input id="fourthChoiceSchool" {...register('fourthChoiceSchool')} placeholder="e.g., Community College, Trade School"/>
                         {errors.fourthChoiceSchool && <p className="text-xs text-destructive">{errors.fourthChoiceSchool.message}</p>}
                     </div>
-                    <div className="flex items-center space-x-2">
-                        <Switch id="fourthChoiceAccepted" {...register('fourthChoiceAccepted')} onCheckedChange={(checked) => setValue('fourthChoiceAccepted', checked)} />
-                        <Label htmlFor="fourthChoiceAccepted">I have been accepted</Label>
-                    </div>
                 </div>
                  <div className="space-y-4">
                     <Label className="text-base">Other Education / School</Label>
@@ -244,10 +231,6 @@ export default function ProfilePage() {
                         <Label htmlFor="fifthChoiceSchool">School Name</Label>
                         <Input id="fifthChoiceSchool" {...register('fifthChoiceSchool')} placeholder="e.g., Online Program, Certification"/>
                         {errors.fifthChoiceSchool && <p className="text-xs text-destructive">{errors.fifthChoiceSchool.message}</p>}
-                    </div>
-                    <div className="flex items-center space-x-2">
-                        <Switch id="fifthChoiceAccepted" {...register('fifthChoiceAccepted')} onCheckedChange={(checked) => setValue('fifthChoiceAccepted', checked)} />
-                        <Label htmlFor="fifthChoiceAccepted">I have been accepted</Label>
                     </div>
                 </div>
             </CardContent>
@@ -271,39 +254,54 @@ export default function ProfilePage() {
               <div className="space-y-2">
                 <Label htmlFor="transcripts-input">Transcripts</Label>
                 <div className="flex items-center gap-2">
-                  <Input id="transcripts-input" type="file" name="transcripts" accept=".pdf,.doc,.docx" onChange={handleFileChange} />
-                  <Button variant="outline" size="icon" type="button">
-                    <FileUp className="h-4 w-4" />
+                  <Input 
+                    id="transcripts-input" 
+                    type="file" 
+                    accept=".pdf,.doc,.docx" 
+                    {...register('transcripts')}
+                  />
+                  <Button variant="outline" size="icon" type="button" asChild>
+                    <Label htmlFor='transcripts-input' className='cursor-pointer'><FileUp className="h-4 w-4" /></Label>
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Upload your academic transcripts (PDF, DOC, DOCX).
                 </p>
-                 {errors.transcripts && <p className="text-xs text-destructive">{typeof errors.transcripts.message === 'string' ? errors.transcripts.message : 'Invalid file'}</p>}
+                 {errors.transcripts && <p className="text-xs text-destructive">{errors.transcripts.message}</p>}
 
               </div>
               <div className="space-y-2">
                 <Label htmlFor="resume-input">Resume/CV</Label>
-                <div className="flex items-center gap-2">
-                  <Input id="resume-input" type="file" name="resume" accept=".pdf,.doc,.docx" onChange={handleFileChange} />
-                  <Button variant="outline" size="icon" type="button">
-                    <FileUp className="h-4 w-4" />
+                 <div className="flex items-center gap-2">
+                  <Input 
+                    id="resume-input" 
+                    type="file" 
+                    accept=".pdf,.doc,.docx" 
+                    {...register('resume')}
+                  />
+                  <Button variant="outline" size="icon" type="button" asChild>
+                    <Label htmlFor='resume-input' className='cursor-pointer'><FileUp className="h-4 w-4" /></Label>
                   </Button>
                 </div>
-                 {errors.resume && <p className="text-xs text-destructive">{typeof errors.resume.message === 'string' ? errors.resume.message : 'Invalid file'}</p>}
+                 {errors.resume && <p className="text-xs text-destructive">{errors.resume.message}</p>}
               </div>
                <div className="space-y-2">
                 <Label htmlFor="acceptanceLetter-input">Acceptance Letter</Label>
-                <div className="flex items-center gap-2">
-                  <Input id="acceptanceLetter-input" type="file" name="acceptanceLetter" accept=".pdf,.doc,.docx" onChange={handleFileChange} />
-                  <Button variant="outline" size="icon" type="button">
-                    <FileUp className="h-4 w-4" />
+                 <div className="flex items-center gap-2">
+                  <Input 
+                    id="acceptanceLetter-input" 
+                    type="file" 
+                    accept=".pdf,.doc,.docx" 
+                    {...register('acceptanceLetter')}
+                  />
+                  <Button variant="outline" size="icon" type="button" asChild>
+                    <Label htmlFor='acceptanceLetter-input' className='cursor-pointer'><FileUp className="h-4 w-4" /></Label>
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
                   If accepted, upload your letter here.
                 </p>
-                 {errors.acceptanceLetter && <p className="text-xs text-destructive">{typeof errors.acceptanceLetter.message === 'string' ? errors.acceptanceLetter.message : 'Invalid file'}</p>}
+                 {errors.acceptanceLetter && <p className="text-xs text-destructive">{errors.acceptanceLetter.message}</p>}
               </div>
             </CardContent>
           </Card>
@@ -312,5 +310,3 @@ export default function ProfilePage() {
     </form>
   );
 }
-
-    

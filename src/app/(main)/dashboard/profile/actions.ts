@@ -3,66 +3,74 @@
 
 import { db, storage } from '@/lib/firebase';
 import { Applicant, ApplicantSchema } from '@/types/applicant';
-import { addDoc, collection } from 'firebase/firestore';
+import { addDoc, collection, doc, setDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
-async function uploadFile(file: File | null, path: string): Promise<string | null> {
-    if (file && file.size > 0) {
-      const fileRef = ref(storage, `${path}/${Date.now()}-${file.name}`);
-      const snapshot = await uploadBytes(fileRef, file);
-      return getDownloadURL(snapshot.ref);
-    }
-    return null;
+async function uploadFile(file: File, path: string): Promise<string> {
+    const fileRef = ref(storage, `${path}/${Date.now()}-${file.name}`);
+    const snapshot = await uploadBytes(fileRef, file);
+    return getDownloadURL(snapshot.ref);
 }
 
 export async function saveApplicantData(formData: FormData) {
   try {
-    const data = Object.fromEntries(formData.entries());
-
-    const transcriptFile = formData.get('transcripts') as File | null;
-    const resumeFile = formData.get('resume') as File | null;
-    const acceptanceLetterFile = formData.get('acceptanceLetter') as File | null;
-
-    const transcriptUrl = await uploadFile(transcriptFile, 'transcripts');
-    const resumeUrl = await uploadFile(resumeFile, 'resumes');
-    const acceptanceLetterUrl = await uploadFile(acceptanceLetterFile, 'acceptanceLetters');
+    const rawData = Object.fromEntries(formData.entries());
     
-    // Construct the applicant data object
-    const applicantData: Omit<Applicant, 'id'> = {
-      name: data.name as string,
-      email: data.email as string,
-      gpa: parseFloat(data.gpa as string),
-      major: data.major as string,
-      school: data.school as string,
-      interests: data.interests as string,
-      activities: data.activities as string,
-      essay: data.essay as string,
-      transcripts: transcriptUrl || (data.transcripts instanceof File ? '' : data.transcripts as string),
-      resume: resumeUrl || (data.resume instanceof File ? '' : data.resume as string),
-      acceptanceLetter: acceptanceLetterUrl || (data.acceptanceLetter instanceof File ? '' : data.acceptanceLetter as string),
-      isBlind: data.isBlind === 'true',
-      firstChoiceSchool: data.firstChoiceSchool as string,
-      firstChoiceAccepted: data.firstChoiceAccepted === 'true',
-      secondChoiceSchool: data.secondChoiceSchool as string,
-      secondChoiceAccepted: data.secondChoiceAccepted === 'true',
-      thirdChoiceSchool: data.thirdChoiceSchool as string,
-      thirdChoiceAccepted: data.thirdChoiceAccepted === 'true',
-      fourthChoiceSchool: data.fourthChoiceSchool as string,
-      fourthChoiceAccepted: data.fourthChoiceAccepted === 'true',
-      fifthChoiceSchool: data.fifthChoiceSchool as string,
-      fifthChoiceAccepted: data.fifthChoiceAccepted === 'true',
-      satActScore: data.satActScore as string,
+    // Convert checkbox/switch values to boolean
+    const data = {
+        ...rawData,
+        gpa: rawData.gpa,
+        firstChoiceAccepted: rawData.firstChoiceAccepted === 'true',
+        secondChoiceAccepted: rawData.secondChoiceAccepted === 'true',
+        thirdChoiceAccepted: rawData.thirdChoiceAccepted === 'true',
+    };
+    
+    const validatedFields = ApplicantSchema.safeParse(data);
+
+    if (!validatedFields.success) {
+      return { 
+        success: false, 
+        error: 'Invalid data provided.',
+        issues: validatedFields.error.flatten().fieldErrors,
+      };
+    }
+    
+    const { 
+        id, 
+        transcripts, 
+        resume, 
+        acceptanceLetter, 
+        ...applicantData 
+    } = validatedFields.data;
+
+    const fileUploads: Promise<[string, string|null]>[] = [];
+
+    const uploadAndTrack = (file: File | string | undefined, path: string, fieldName: string) => {
+        if (file instanceof File) {
+            fileUploads.push(uploadFile(file, path).then(url => [fieldName, url]));
+        }
+    };
+    
+    uploadAndTrack(transcripts, 'transcripts', 'transcripts');
+    uploadAndTrack(resume, 'resumes', 'resume');
+    uploadAndTrack(acceptanceLetter, 'acceptanceLetters', 'acceptanceLetter');
+    
+    const uploadedFileUrls = await Promise.all(fileUploads);
+    const fileUrls = Object.fromEntries(uploadedFileUrls);
+
+    const finalData = {
+        ...applicantData,
+        ...fileUrls
     };
 
-    // Use partial schema because not all fields are required on update.
-    const validatedData = ApplicantSchema.partial().parse(applicantData);
+    // In a real app, you'd get the applicant's ID from their session or a hidden form field.
+    // For now, we'll create a new one if no ID exists.
+    const applicantId = id || 'mock-applicant-id'; // This should be the real user's applicant ID
+    const docRef = doc(db, 'applicants', applicantId);
     
-    // Add to Firestore
-    // For simplicity in this mock environment, we'll log it.
-    // In a real app, you would use setDoc with merge:true to update an existing document.
-    const docRef = await addDoc(collection(db, 'applicants'), validatedData);
+    await setDoc(docRef, finalData, { merge: true });
     
-    return { success: true, id: docRef.id };
+    return { success: true, id: applicantId };
 
   } catch (error) {
     console.error('Error saving applicant data:', error);
