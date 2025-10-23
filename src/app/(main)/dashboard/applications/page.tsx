@@ -1,3 +1,4 @@
+
 import {
   Table,
   TableBody,
@@ -37,10 +38,10 @@ const applications = [
   },
 ];
 
-const getStatusVariant = (status: string) => {
+const getStatusVariant = (status: string): 'default' | 'secondary' | 'destructive' | 'outline' => {
   switch (status) {
     case 'Awarded':
-      return 'default'; // Using accent color for success
+      return 'default'; // This will use the primary theme color for emphasis.
     case 'In Review':
       return 'secondary';
     case 'Submitted':
@@ -78,7 +79,10 @@ export default function ApplicationsPage() {
                 <TableCell className="font-medium">{app.scholarship}</TableCell>
                 <TableCell>{app.date}</TableCell>
                 <TableCell className="text-center">
-                  <Badge variant={getStatusVariant(app.status)} className={app.status === 'Awarded' ? 'bg-accent text-accent-foreground' : ''}>
+                  <Badge 
+                    variant={getStatusVariant(app.status)} 
+                    className={app.status === 'Awarded' ? 'bg-green-500/20 text-green-400 border-green-500/30' : ''}
+                  >
                     {app.status}
                   </Badge>
                 </TableCell>
