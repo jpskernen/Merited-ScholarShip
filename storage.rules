@@ -1,0 +1,13 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Match any file in a user's directory.
+    // The {document=**} wildcard matches any path segment under the user's folder.
+    match /{userId}/{document=**} {
+      // Allow read and write access only if the user is authenticated
+      // and their UID matches the {userId} in the path.
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
