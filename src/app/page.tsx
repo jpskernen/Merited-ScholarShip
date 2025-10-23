@@ -32,8 +32,8 @@ export default function Home() {
   ];
 
   return (
-    <div className="flex min-h-screen flex-col bg-gray-50">
-      <header className="sticky top-0 z-50 w-full border-b bg-white/80 backdrop-blur-md">
+    <div className="flex min-h-screen flex-col bg-background text-foreground">
+      <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur-md">
         <div className="container mx-auto flex h-16 items-center justify-between px-4 md:px-6">
           <AppLogo />
           <nav className="flex items-center space-x-4">
@@ -50,10 +50,10 @@ export default function Home() {
       <main className="flex-1">
         <section className="bg-secondary/50 py-20 md:py-32">
           <div className="container mx-auto px-4 text-center md:px-6">
-            <h1 className="text-4xl font-extrabold tracking-tight md:text-6xl text-white">
+            <h1 className="text-4xl font-extrabold tracking-tight md:text-6xl text-foreground">
               Scholarship Applications Open in February 2026.
             </h1>
-            <p className="mx-auto mt-4 max-w-2xl text-lg text-black md:text-xl">
+            <p className="mx-auto mt-4 max-w-2xl text-lg text-muted-foreground md:text-xl">
               Scholarships open in Spring 2026. You can prepare by asking for two letters of recommendation, setting up reminders to obtain your transcripts from your counselor and review potential scholarship now.
             </p>
             <div className="mt-8">
@@ -67,7 +67,7 @@ export default function Home() {
         <section id="features" className="py-20 md:py-24">
           <div className="container mx-auto px-4 md:px-6">
             <div className="mb-12 text-center">
-              <h2 className="text-3xl font-bold tracking-tight text-black">
+              <h2 className="text-3xl font-bold tracking-tight text-foreground">
                 Scholarship Application Guide
               </h2>
               <p className="mt-2 text-muted-foreground">
@@ -95,10 +95,10 @@ export default function Home() {
         <section id="donate" className="bg-secondary/50 py-20 md:py-24">
             <div className="container mx-auto px-4 text-center md:px-6">
                  <Heart className="h-12 w-12 text-primary mx-auto mb-4" />
-                <h2 className="text-3xl font-bold tracking-tight text-white">
+                <h2 className="text-3xl font-bold tracking-tight text-foreground">
                     Fund a Scholarship
                 </h2>
-                <p className="mx-auto mt-4 max-w-3xl text-lg text-black md:text-xl">
+                <p className="mx-auto mt-4 max-w-3xl text-lg text-muted-foreground md:text-xl">
                     The Lake Travis Education Foundation is committed to the students of the Lake Travis Independent School District. One of the ways that we support our students is by providing named scholarships that allow us to help them in their post-secondary journeys.
                 </p>
                 <div className="mt-8">
@@ -112,7 +112,7 @@ export default function Home() {
         </section>
       </main>
 
-      <footer className="border-t bg-gray-100">
+      <footer className="border-t bg-card">
         <div className="container mx-auto flex flex-col items-center justify-between gap-4 px-4 py-8 sm:flex-row md:px-6">
           <AppLogo />
           <p className="text-sm text-muted-foreground">

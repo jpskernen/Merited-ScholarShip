@@ -4,13 +4,16 @@ import { z } from 'zod';
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const ACCEPTED_FILE_TYPES = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
 
-const fileSchema = z.instanceof(File)
-  .optional()
-  .refine((file) => !file || file.size <= MAX_FILE_SIZE, `Max file size is 5MB.`)
-  .refine(
-    (file) => !file || ACCEPTED_FILE_TYPES.includes(file.type),
-    ".pdf, .doc, and .docx files are accepted."
-  );
+const fileSchema = z.union([
+    z.string().url().optional(), // for existing files
+    z.instanceof(File).optional()
+      .refine((file) => !file || file.size <= MAX_FILE_SIZE, `Max file size is 5MB.`)
+      .refine(
+        (file) => !file || file.type === '' || ACCEPTED_FILE_TYPES.includes(file.type),
+        ".pdf, .doc, and .docx files are accepted."
+      ),
+    z.any().refine(val => val === null || val === undefined || (val.length === 0), "File is required").optional(),
+]);
 
 export const ApplicantSchema = z.object({
   id: z.string().optional(),
@@ -25,8 +28,8 @@ export const ApplicantSchema = z.object({
   interests: z.string().min(1, 'Please list at least one interest.'),
   activities: z.string().min(1, 'Please list at least one activity.'),
   essay: z.string().min(50, 'Essay must be at least 50 characters long.'),
-  transcripts: fileSchema.or(z.string()).optional(),
-  resume: fileSchema.or(z.string()).optional(),
+  transcripts: fileSchema,
+  resume: fileSchema,
   isBlind: z.boolean().optional(),
   firstChoiceSchool: z.string().optional(),
   firstChoiceAccepted: z.boolean().optional(),
@@ -36,7 +39,7 @@ export const ApplicantSchema = z.object({
   thirdChoiceAccepted: z.boolean().optional(),
   fourthChoiceSchool: z.string().optional(),
   fifthChoiceSchool: z.string().optional(),
-  acceptanceLetter: fileSchema.or(z.string()).optional(),
+  acceptanceLetter: fileSchema,
   satActScore: z.string().optional(),
 });
 

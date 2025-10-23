@@ -17,49 +17,77 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { FileUp } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { saveApplicantData } from './actions';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
+import { useDoc, useFirebase } from '@/firebase';
+import { doc, getFirestore } from 'firebase/firestore';
 
 export default function ProfilePage() {
   const { toast } = useToast();
+  const { user, isUserLoading, firestore } = useFirebase();
   const [isSaving, setIsSaving] = useState(false);
+
+  // Fetch existing applicant data
+  const userDocRef = user && firestore ? doc(firestore, 'users', user.uid) : null;
+  const { data: applicantData, isLoading: isApplicantDataLoading } = useDoc<Applicant>(userDocRef);
+
   const {
     register,
     handleSubmit,
     formState: { errors },
     setValue,
+    reset,
+    watch,
   } = useForm<Applicant>({
     resolver: zodResolver(ApplicantSchema),
     defaultValues: {
-        name: 'Jane Doe',
-        email: 'jane.doe@example.com',
-        gpa: 3.8,
-        major: 'Computer Science',
-        school: 'Lake Travis High School',
-        interests: 'Coding, volunteering, hiking',
-        activities: 'Soccer, NHS',
-        essay: 'My journey in computer science...',
-        firstChoiceSchool: 'University of Texas at Austin',
-        firstChoiceAccepted: true,
+      name: '',
+      email: '',
+      gpa: 0,
+      major: '',
+      school: '',
+      interests: '',
+      activities: '',
+      essay: '',
+      firstChoiceSchool: '',
+      firstChoiceAccepted: false,
     }
   });
+  
+  // Pre-fill form with user and applicant data
+  useEffect(() => {
+    if (user && !isUserLoading) {
+      setValue('email', user.email || '');
+      if (applicantData) {
+        reset(applicantData);
+      } else {
+        setValue('name', user.displayName || '');
+      }
+    }
+  }, [user, applicantData, isUserLoading, setValue, reset]);
+
 
   const onSubmit = async (data: Applicant) => {
+    if (!user) {
+        toast({ title: 'Error', description: 'You must be logged in to save your profile.', variant: 'destructive' });
+        return;
+    }
+
     setIsSaving(true);
     const formData = new FormData();
 
-    // Convert the data object to FormData
+    // Loop through data and append to formData
     Object.entries(data).forEach(([key, value]) => {
-      if (value instanceof File) {
-        formData.append(key, value);
-      } else if (value !== undefined && value !== null) {
+      if (value instanceof FileList && value.length > 0) {
+        formData.append(key, value[0]);
+      } else if (value !== undefined && value !== null && typeof value !== 'object') {
         formData.append(key, String(value));
       }
     });
 
     try {
-      const result = await saveApplicantData(formData);
+      const result = await saveApplicantData(user.uid, formData);
       if (result.success) {
         toast({
             title: 'Success!',
@@ -81,6 +109,10 @@ export default function ProfilePage() {
     }
   };
   
+  if (isUserLoading || isApplicantDataLoading) {
+    return <div>Loading profile...</div>;
+  }
+
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
       <div>
@@ -112,6 +144,7 @@ export default function ProfilePage() {
                     id="email"
                     type="email"
                     {...register('email')}
+                    readOnly // Email should not be editable
                   />
                    {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
                 </div>
@@ -236,7 +269,7 @@ export default function ProfilePage() {
             </CardContent>
           </Card>
            <div className="flex justify-end">
-                <Button type="submit" disabled={isSaving}>
+                <Button type="submit" disabled={isSaving || isUserLoading}>
                   {isSaving ? 'Saving...' : 'Save Changes'}
                   </Button>
               </div>
@@ -260,15 +293,8 @@ export default function ProfilePage() {
                     accept=".pdf,.doc,.docx" 
                     {...register('transcripts')}
                   />
-                  <Button variant="outline" size="icon" type="button" asChild>
-                    <Label htmlFor='transcripts-input' className='cursor-pointer'><FileUp className="h-4 w-4" /></Label>
-                  </Button>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Upload your academic transcripts (PDF, DOC, DOCX).
-                </p>
                  {errors.transcripts && <p className="text-xs text-destructive">{errors.transcripts.message}</p>}
-
               </div>
               <div className="space-y-2">
                 <Label htmlFor="resume-input">Resume/CV</Label>
@@ -279,9 +305,6 @@ export default function ProfilePage() {
                     accept=".pdf,.doc,.docx" 
                     {...register('resume')}
                   />
-                  <Button variant="outline" size="icon" type="button" asChild>
-                    <Label htmlFor='resume-input' className='cursor-pointer'><FileUp className="h-4 w-4" /></Label>
-                  </Button>
                 </div>
                  {errors.resume && <p className="text-xs text-destructive">{errors.resume.message}</p>}
               </div>
@@ -294,9 +317,6 @@ export default function ProfilePage() {
                     accept=".pdf,.doc,.docx" 
                     {...register('acceptanceLetter')}
                   />
-                  <Button variant="outline" size="icon" type="button" asChild>
-                    <Label htmlFor='acceptanceLetter-input' className='cursor-pointer'><FileUp className="h-4 w-4" /></Label>
-                  </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
                   If accepted, upload your letter here.

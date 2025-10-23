@@ -1,10 +1,15 @@
-// src/app/(main)/dashboard/profile/actions.ts
 'use server';
 
-import { db, storage } from '@/lib/firebase';
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { getFirestore, doc, setDoc } from 'firebase/firestore';
+import { initializeApp, getApps, getApp } from 'firebase/app';
 import { Applicant, ApplicantSchema } from '@/types/applicant';
-import { addDoc, collection, doc, setDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { firebaseConfig } from '@/firebase/config';
+
+// Initialize Firebase Admin for server-side operations
+const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const storage = getStorage(app);
 
 async function uploadFile(file: File, path: string): Promise<string> {
     const fileRef = ref(storage, `${path}/${Date.now()}-${file.name}`);
@@ -12,19 +17,21 @@ async function uploadFile(file: File, path: string): Promise<string> {
     return getDownloadURL(snapshot.ref);
 }
 
-export async function saveApplicantData(formData: FormData) {
+export async function saveApplicantData(userId: string, formData: FormData) {
   try {
     const rawData = Object.fromEntries(formData.entries());
-    
-    // Convert checkbox/switch values to boolean
+
+    // Convert checkbox/switch values to boolean and GPA to number
     const data = {
         ...rawData,
-        gpa: rawData.gpa,
+        gpa: parseFloat(rawData.gpa as string),
         firstChoiceAccepted: rawData.firstChoiceAccepted === 'true',
         secondChoiceAccepted: rawData.secondChoiceAccepted === 'true',
         thirdChoiceAccepted: rawData.thirdChoiceAccepted === 'true',
+        // 'isBlind' is controlled by admin, should not be in applicant form
     };
     
+    // Validate all data except files first
     const validatedFields = ApplicantSchema.safeParse(data);
 
     if (!validatedFields.success) {
@@ -35,42 +42,39 @@ export async function saveApplicantData(formData: FormData) {
       };
     }
     
-    const { 
-        id, 
-        transcripts, 
-        resume, 
-        acceptanceLetter, 
-        ...applicantData 
-    } = validatedFields.data;
+    const { ...applicantData } = validatedFields.data;
 
-    const fileUploads: Promise<[string, string|null]>[] = [];
-
-    const uploadAndTrack = (file: File | string | undefined, path: string, fieldName: string) => {
-        if (file instanceof File) {
-            fileUploads.push(uploadFile(file, path).then(url => [fieldName, url]));
+    // Handle file uploads separately
+    const fileUploadPromises: Promise<[string, string]>[] = [];
+    
+    const uploadAndTrack = (fieldName: string) => {
+        const file = formData.get(fieldName);
+        if (file instanceof File && file.size > 0) {
+            const path = `${userId}/${fieldName}`;
+            fileUploadPromises.push(uploadFile(file, path).then(url => [fieldName, url]));
         }
     };
     
-    uploadAndTrack(transcripts, 'transcripts', 'transcripts');
-    uploadAndTrack(resume, 'resumes', 'resume');
-    uploadAndTrack(acceptanceLetter, 'acceptanceLetters', 'acceptanceLetter');
+    uploadAndTrack('transcripts');
+    uploadAndTrack('resume');
+    uploadAndTrack('acceptanceLetter');
     
-    const uploadedFileUrls = await Promise.all(fileUploads);
+    const uploadedFileUrls = await Promise.all(fileUploadPromises);
     const fileUrls = Object.fromEntries(uploadedFileUrls);
 
+    // Merge uploaded file URLs with existing data
+    // If a file URL exists from a previous save, it will be in applicantData
     const finalData = {
         ...applicantData,
         ...fileUrls
     };
 
-    // In a real app, you'd get the applicant's ID from their session or a hidden form field.
-    // For now, we'll create a new one if no ID exists.
-    const applicantId = id || 'mock-applicant-id'; // This should be the real user's applicant ID
-    const docRef = doc(db, 'applicants', applicantId);
+    const docRef = doc(db, 'users', userId);
     
+    // Use setDoc with merge to create or update the document
     await setDoc(docRef, finalData, { merge: true });
     
-    return { success: true, id: applicantId };
+    return { success: true, id: userId };
 
   } catch (error) {
     console.error('Error saving applicant data:', error);
