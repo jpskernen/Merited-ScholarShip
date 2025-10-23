@@ -1,3 +1,4 @@
+
 'use client';
 
 import { Button } from '@/components/ui/button';
@@ -14,19 +15,19 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { Applicant, ApplicantSchema } from '@/types/applicant';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { FileUp } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { saveApplicantData } from './actions';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { useDoc, useFirebase } from '@/firebase';
-import { doc, getFirestore } from 'firebase/firestore';
+import { doc } from 'firebase/firestore';
 
 export default function ProfilePage() {
   const { toast } = useToast();
   const { user, isUserLoading, firestore } = useFirebase();
   const [isSaving, setIsSaving] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
 
   // Fetch existing applicant data
   const userDocRef = user && firestore ? doc(firestore, 'users', user.uid) : null;
@@ -58,33 +59,26 @@ export default function ProfilePage() {
   // Pre-fill form with user and applicant data
   useEffect(() => {
     if (user && !isUserLoading) {
-      setValue('email', user.email || '');
-      if (applicantData) {
+      // Basic user info from auth
+      if (!applicantData?.email) setValue('email', user.email || '');
+      if (!applicantData?.name) setValue('name', user.displayName || '');
+    }
+    if (applicantData) {
+        // Pre-fill the form with data from Firestore
         reset(applicantData);
-      } else {
-        setValue('name', user.displayName || '');
-      }
     }
   }, [user, applicantData, isUserLoading, setValue, reset]);
 
 
-  const onSubmit = async (data: Applicant) => {
+  const onSubmit = async () => {
     if (!user) {
         toast({ title: 'Error', description: 'You must be logged in to save your profile.', variant: 'destructive' });
         return;
     }
+    if (!formRef.current) return;
 
     setIsSaving(true);
-    const formData = new FormData();
-
-    // Loop through data and append to formData
-    Object.entries(data).forEach(([key, value]) => {
-      if (value instanceof FileList && value.length > 0) {
-        formData.append(key, value[0]);
-      } else if (value !== undefined && value !== null && typeof value !== 'object') {
-        formData.append(key, String(value));
-      }
-    });
+    const formData = new FormData(formRef.current);
 
     try {
       const result = await saveApplicantData(user.uid, formData);
@@ -99,9 +93,10 @@ export default function ProfilePage() {
       }
     } catch (error) {
       console.error(error);
+      const message = error instanceof Error ? error.message : 'There was an error saving your profile.';
       toast({
         title: 'Error',
-        description: 'There was an error saving your profile.',
+        description: message,
         variant: 'destructive',
       });
     } finally {
@@ -113,8 +108,20 @@ export default function ProfilePage() {
     return <div>Loading profile...</div>;
   }
 
+  // Watch for file changes to provide feedback (optional)
+  const resumeFile = watch('resume');
+  const transcriptFile = watch('transcripts');
+  const acceptanceLetterFile = watch('acceptanceLetter');
+
+  const getFileLabel = (file: any, existingUrl?: string | File) => {
+    if (file instanceof FileList && file.length > 0) return file[0].name;
+    if (typeof existingUrl === 'string' && existingUrl) return "File already uploaded";
+    return "";
+  };
+
+
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
+    <form ref={formRef} onSubmit={handleSubmit(onSubmit)} className="space-y-8" noValidate>
       <div>
         <h1 className="text-3xl font-bold">My Profile</h1>
         <p className="text-muted-foreground">
@@ -271,7 +278,7 @@ export default function ProfilePage() {
            <div className="flex justify-end">
                 <Button type="submit" disabled={isSaving || isUserLoading}>
                   {isSaving ? 'Saving...' : 'Save Changes'}
-                  </Button>
+                </Button>
               </div>
         </div>
 
@@ -285,42 +292,41 @@ export default function ProfilePage() {
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-2">
-                <Label htmlFor="transcripts-input">Transcripts</Label>
-                <div className="flex items-center gap-2">
-                  <Input 
-                    id="transcripts-input" 
-                    type="file" 
-                    accept=".pdf,.doc,.docx" 
-                    {...register('transcripts')}
-                  />
-                </div>
-                 {errors.transcripts && <p className="text-xs text-destructive">{errors.transcripts.message}</p>}
+                <Label htmlFor="transcripts">Transcripts</Label>
+                <Input 
+                  id="transcripts"
+                  type="file" 
+                  accept=".pdf,.doc,.docx"
+                  {...register('transcripts')}
+                />
+                {applicantData?.transcripts && !errors.transcripts && <p className="text-xs text-muted-foreground">Current file: <a href={applicantData.transcripts as string} target="_blank" rel="noopener noreferrer" className="underline">View Transcript</a></p>}
+                {errors.transcripts && <p className="text-xs text-destructive">{errors.transcripts.message}</p>}
               </div>
+
               <div className="space-y-2">
-                <Label htmlFor="resume-input">Resume/CV</Label>
-                 <div className="flex items-center gap-2">
-                  <Input 
-                    id="resume-input" 
-                    type="file" 
-                    accept=".pdf,.doc,.docx" 
-                    {...register('resume')}
-                  />
-                </div>
+                <Label htmlFor="resume">Resume/CV</Label>
+                <Input 
+                  id="resume"
+                  type="file" 
+                  accept=".pdf,.doc,.docx" 
+                  {...register('resume')}
+                />
+                 {applicantData?.resume && !errors.resume && <p className="text-xs text-muted-foreground">Current file: <a href={applicantData.resume as string} target="_blank" rel="noopener noreferrer" className="underline">View Resume</a></p>}
                  {errors.resume && <p className="text-xs text-destructive">{errors.resume.message}</p>}
               </div>
+
                <div className="space-y-2">
-                <Label htmlFor="acceptanceLetter-input">Acceptance Letter</Label>
-                 <div className="flex items-center gap-2">
-                  <Input 
-                    id="acceptanceLetter-input" 
-                    type="file" 
-                    accept=".pdf,.doc,.docx" 
-                    {...register('acceptanceLetter')}
-                  />
-                </div>
+                <Label htmlFor="acceptanceLetter">Acceptance Letter</Label>
+                 <Input 
+                  id="acceptanceLetter"
+                  type="file" 
+                  accept=".pdf,.doc,.docx" 
+                  {...register('acceptanceLetter')}
+                />
                 <p className="text-xs text-muted-foreground">
                   If accepted, upload your letter here.
                 </p>
+                 {applicantData?.acceptanceLetter && !errors.acceptanceLetter && <p className="text-xs text-muted-foreground">Current file: <a href={applicantData.acceptanceLetter as string} target="_blank" rel="noopener noreferrer" className="underline">View Letter</a></p>}
                  {errors.acceptanceLetter && <p className="text-xs text-destructive">{errors.acceptanceLetter.message}</p>}
               </div>
             </CardContent>
