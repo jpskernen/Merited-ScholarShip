@@ -24,8 +24,8 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useUser, useDoc, useMemoFirebase } from '@/firebase';
-import { doc, getFirestore } from 'firebase/firestore';
+import { useUser, useDoc, useMemoFirebase, useFirestore } from '@/firebase';
+import { doc } from 'firebase/firestore';
 import { useEffect } from 'react';
 
 const applicantNav = [
@@ -52,7 +52,8 @@ export default function DashboardLayout({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, isUserLoading, firestore } = useUser();
+  const { user, isUserLoading } = useUser();
+  const firestore = useFirestore();
   
   const isAdminPath = pathname.startsWith('/admin');
   const isReviewerPath = pathname.startsWith('/review');
