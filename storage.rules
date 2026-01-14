@@ -2,12 +2,31 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
+
+    /**
+     * @description Checks if the user has admin privileges by checking for their UID in the /roles_admin collection.
+     * @return {boolean} True if the user is an admin, false otherwise.
+     */
+    function isAdmin() {
+      return exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
+    }
+
+    /**
+     * @description Checks if the user is a reviewer by checking for their UID in the /reviewers collection.
+     * @return {boolean} True if the user is a reviewer, false otherwise.
+     */
+    function isReviewer() {
+      return exists(/databases/$(database)/documents/reviewers/$(request.auth.uid));
+    }
+
     // Match any file in a user's directory.
     // The {document=**} wildcard matches any path segment under the user's folder.
     match /{userId}/{document=**} {
-      // Allow read and write access only if the user is authenticated
-      // and their UID matches the {userId} in the path.
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      // Grant read access to the file owner, admins, or reviewers.
+      allow read: if request.auth != null && (request.auth.uid == userId || isAdmin() || isReviewer());
+      
+      // Grant write access (create, update, delete) only to the file owner.
+      allow write: if request.auth != null && request.auth.uid == userId;
     }
   }
 }
