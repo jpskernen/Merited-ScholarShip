@@ -1,4 +1,6 @@
 
+'use client';
+
 import {
   Table,
   TableBody,
@@ -9,43 +11,17 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-
-// Mock data
-const applications = [
-  {
-    id: 'APP001',
-    scholarship: 'Future Leaders Scholarship',
-    date: '2024-08-15',
-    status: 'In Review',
-  },
-  {
-    id: 'APP002',
-    scholarship: 'Creative Minds Grant',
-    date: '2024-08-01',
-    status: 'Submitted',
-  },
-  {
-    id: 'APP003',
-    scholarship: 'Innovators of Tomorrow',
-    date: '2024-07-20',
-    status: 'Awarded',
-  },
-  {
-    id: 'APP004',
-    scholarship: 'Academic Excellence Award',
-    date: '2024-06-10',
-    status: 'Not Awarded',
-  },
-];
+import { useCollection, useFirebase } from '@/firebase';
+import { collection, query, where } from 'firebase/firestore';
+import { useMemo } from 'react';
 
 const getStatusVariant = (status: string): 'default' | 'secondary' | 'destructive' | 'outline' => {
   switch (status) {
     case 'Awarded':
-      return 'default'; // This will use the primary theme color for emphasis.
+      return 'default';
     case 'In Review':
-      return 'secondary';
     case 'Submitted':
-      return 'outline';
+      return 'secondary';
     case 'Not Awarded':
       return 'destructive';
     default:
@@ -54,6 +30,19 @@ const getStatusVariant = (status: string): 'default' | 'secondary' | 'destructiv
 };
 
 export default function ApplicationsPage() {
+  const { firestore, user } = useFirebase();
+
+  const applicationsQuery = useMemo(() => {
+    if (!user || !firestore) return null;
+    return query(collection(firestore, `users/${user.uid}/applications`));
+  }, [user, firestore]);
+
+  const { data: applications, isLoading } = useCollection(applicationsQuery);
+
+  if (isLoading) {
+    return <div>Loading applications...</div>
+  }
+
   return (
     <div className="space-y-8">
       <div>
@@ -74,10 +63,10 @@ export default function ApplicationsPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {applications.map((app) => (
+            {applications && applications.map((app: any) => (
               <TableRow key={app.id}>
-                <TableCell className="font-medium">{app.scholarship}</TableCell>
-                <TableCell>{app.date}</TableCell>
+                <TableCell className="font-medium">{app.scholarshipName || 'N/A'}</TableCell>
+                <TableCell>{app.submissionDate ? new Date(app.submissionDate).toLocaleDateString() : 'N/A'}</TableCell>
                 <TableCell className="text-center">
                   <Badge 
                     variant={getStatusVariant(app.status)} 
@@ -96,7 +85,7 @@ export default function ApplicationsPage() {
           </TableBody>
         </Table>
       </div>
-       {applications.length === 0 && (
+       {(!applications || applications.length === 0) && (
           <div className="text-center py-12 text-muted-foreground">
             You haven&apos;t submitted any applications yet.
           </div>

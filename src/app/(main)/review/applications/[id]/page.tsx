@@ -1,4 +1,6 @@
 
+'use client';
+
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
@@ -6,12 +8,20 @@ import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
 import { FileText, UserCircle, CheckCircle, XCircle } from 'lucide-react';
-import { getApplicant } from '@/lib/applicants';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
+import { useDoc, useFirebase } from '@/firebase';
+import { doc } from 'firebase/firestore';
+import type { Applicant } from '@/types/applicant';
 
-export default async function ApplicationReviewPage({ params }: { params: { id: string } }) {
-  const application = await getApplicant(params.id);
+export default function ApplicationReviewPage({ params }: { params: { id: string } }) {
+  const { firestore } = useFirebase();
+  const applicationRef = firestore ? doc(firestore, 'users', params.id) : null;
+  const { data: application, isLoading } = useDoc<Applicant>(applicationRef);
+
+  if (isLoading) {
+    return <div>Loading application...</div>;
+  }
 
   if (!application) {
     notFound();
@@ -56,14 +66,6 @@ export default async function ApplicationReviewPage({ params }: { params: { id: 
                             <span>3rd Choice: {application.thirdChoiceSchool || 'N/A'}</span>
                             {application.thirdChoiceAccepted ? <CheckCircle className="h-5 w-5 text-green-500" /> : <XCircle className="h-5 w-5 text-red-500" />}
                         </div>
-                         <div className="flex items-center justify-between">
-                            <span>4th Choice: {application.fourthChoiceSchool || 'N/A'}</span>
-                            {application.fourthChoiceAccepted ? <CheckCircle className="h-5 w-5 text-green-500" /> : <XCircle className="h-5 w-5 text-red-500" />}
-                        </div>
-                         <div className="flex items-center justify-between">
-                            <span>5th Choice: {application.fifthChoiceSchool || 'N/A'}</span>
-                            {application.fifthChoiceAccepted ? <CheckCircle className="h-5 w-5 text-green-500" /> : <XCircle className="h-5 w-5 text-red-500" />}
-                        </div>
                     </div>
                 </div>
                 <Separator/>
@@ -79,17 +81,17 @@ export default async function ApplicationReviewPage({ params }: { params: { id: 
             <CardContent className="flex gap-4">
                 {application.resume && (
                   <Button variant="secondary" asChild>
-                    <Link href={application.resume} target="_blank" rel="noopener noreferrer">View Resume</Link>
+                    <Link href={application.resume as string} target="_blank" rel="noopener noreferrer">View Resume</Link>
                   </Button>
                 )}
                 {application.transcripts && (
                   <Button variant="secondary" asChild>
-                     <Link href={application.transcripts} target="_blank" rel="noopener noreferrer">View Transcripts</Link>
+                     <Link href={application.transcripts as string} target="_blank" rel="noopener noreferrer">View Transcripts</Link>
                   </Button>
                 )}
                 {application.acceptanceLetter && (
                   <Button variant="secondary" asChild>
-                     <Link href={application.acceptanceLetter} target="_blank" rel="noopener noreferrer">View Acceptance Letter</Link>
+                     <Link href={application.acceptanceLetter as string} target="_blank" rel="noopener noreferrer">View Acceptance Letter</Link>
                   </Button>
                 )}
             </CardContent>

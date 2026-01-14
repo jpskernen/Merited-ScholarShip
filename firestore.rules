@@ -1,3 +1,4 @@
+
 /**
  * @fileoverview Firestore Security Rules for the scholarship application system.
  *
@@ -46,15 +47,6 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-        /**
-     * @description Checks if the authenticated user ID matches the provided user ID, and the resource exists.
-     * @param {string} userId The user ID to compare against the authenticated user ID.
-     * @return {boolean} True if the user IDs match, false otherwise.
-     */
-    function isExistingOwner(userId) {
-      return isOwner(userId) && resource != null;
-    }
-
     /**
      * @description Checks if the user has admin privileges.
      * @return {boolean} True if the user is an admin, false otherwise.
@@ -64,113 +56,71 @@ service cloud.firestore {
     }
 
     /**
+     * @description Checks if the user is a reviewer.
+     * @return {boolean} True if the user is a reviewer, false otherwise.
+     */
+    function isReviewer() {
+        return exists(/databases/$(database)/documents/reviewers/$(request.auth.uid));
+    }
+
+    /**
      * @description Defines rules for user profiles.
      * @path /users/{userId}
-     * @allow (create) Signed-in user can create their own profile.
-     * @allow (get) Signed-in user can get their own profile.
-     * @allow (update) Signed-in user can update their own profile.
-     * @allow (delete) Signed-in user can delete their own profile.
-     * @deny (create) User cannot create a profile with a different user ID.
-     * @deny (get) User cannot get another user's profile.
-     * @deny (update) User cannot update another user's profile.
-     * @deny (delete) User cannot delete another user's profile.
-     * @principle Enforces document ownership for user profiles.
      */
     match /users/{userId} {
-      allow get: if isOwner(userId);
-      allow list: if false;
-      allow create: if isOwner(userId) && request.resource.data.id == request.auth.uid;
-      allow update: if isExistingOwner(userId) && request.resource.data.id == resource.data.id;
-      allow delete: if isExistingOwner(userId);
+      allow get: if isOwner(userId) || isAdmin() || isReviewer();
+      allow list: if isAdmin() || isReviewer();
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId);
+      allow delete: if isOwner(userId);
     }
 
     /**
      * @description Defines rules for applications submitted by a user.
      * @path /users/{userId}/applications/{applicationId}
-     * @allow (create) Signed-in user can create an application under their profile.
-     * @allow (get) Signed-in user can get their own application.
-     * @allow (update) Signed-in user can update their own application.
-     * @allow (delete) Signed-in user can delete their own application.
-     * @deny (create) User cannot create an application under another user's profile.
-     * @deny (get) User cannot get another user's application.
-     * @deny (update) User cannot update another user's application.
-     * @deny (delete) User cannot delete another user's application.
-     * @principle Enforces document ownership for user applications.
      */
     match /users/{userId}/applications/{applicationId} {
-      allow get: if isOwner(userId);
-      allow list: if isOwner(userId);
-      allow create: if isOwner(userId) && request.resource.data.applicantId == userId;
-      allow update: if isExistingOwner(userId) && request.resource.data.applicantId == resource.data.applicantId;
-      allow delete: if isExistingOwner(userId);
+      allow get, list: if isOwner(userId) || isAdmin() || isReviewer();
+      allow create, update, delete: if isOwner(userId);
     }
 
     /**
      * @description Defines rules for scholarship information.
      * @path /scholarships/{scholarshipId}
-     * @allow (get) Anyone can read scholarship information.
-     * @allow (create) Only admins can create scholarships.
-     * @allow (update) Only admins can update scholarships.
-     * @allow (delete) Only admins can delete scholarships.
-     * @deny (create) Non-admins cannot create scholarships.
-     * @deny (update) Non-admins cannot update scholarships.
-     * @deny (delete) Non-admins cannot delete scholarships.
-     * @principle Admins can manage scholarship information, read access public.
      */
     match /scholarships/{scholarshipId} {
       allow get, list: if true;
-      allow create: if isAdmin();
-      allow update: if isAdmin() && resource != null;
-      allow delete: if isAdmin() && resource != null;
+      allow create, update, delete: if isAdmin();
     }
 
     /**
      * @description Defines rules for reviews of applications.
      * @path /applications/{applicationId}/reviews/{reviewId}
-     *  // CRITICAL: Cannot implement owner-only writes. No clear owner.
-     * @allow (get) Anyone can read review information.
-     * @allow (create) Anyone can create reviews.
-     * @allow (update) Anyone can update reviews.
-     * @allow (delete) Anyone can delete reviews.
-     * @principle Admins can manage reviews, read access public.
      */
     match /applications/{applicationId}/reviews/{reviewId} {
-          allow get, list: if true;
-          allow create, update, delete: if false; // TODO: Add owner validation once the schema is updated with an ownership field.
+      allow get, list: if isAdmin() || isReviewer();
+      // Allow reviewers to create/update their own review.
+      allow create, update: if isReviewer() && request.resource.data.reviewerId == request.auth.uid;
+      allow delete: if false; // Reviews should generally not be deleted.
     }
 
     /**
      * @description Defines rules for reviewer profiles.
      * @path /reviewers/{reviewerId}
-     * @allow (create) Anyone can read reviewer information.
-     * @allow (create) Only the reviewer can create the profile.
-     * @allow (update) Only the reviewer can update the profile.
-     * @allow (delete) Only the reviewer can delete the profile.
-     * @principle Reviewers can manage their profiles.
      */
     match /reviewers/{reviewerId} {
         allow get: if true;
-        allow list: if false;
-        allow create: if isSignedIn() && request.auth.uid == reviewerId && request.resource.data.id == request.auth.uid;
-        allow update: if isExistingOwner(reviewerId) && request.resource.data.id == resource.data.id;
-        allow delete: if isExistingOwner(reviewerId);
+        allow list: if isAdmin(); // Only admins can see all reviewers.
+        allow create, update, delete: if isAdmin(); // Admins manage reviewers.
     }
 
-       /**
-         * @description Admin role assignment. Only assignable by backend functions.
-         * @path /roles_admin/{uid}
-         * @allow (create) Only assignable by backend functions.
-         * @allow (get) Only assignable by backend functions.
-         * @allow (update) Only assignable by backend functions.
-         * @allow (delete) Only assignable by backend functions.
-         * @principle  Admin role assignment..
-         */
+    /**
+     * @description Admin role assignment. Only assignable by backend functions or manually in console.
+     * @path /roles_admin/{uid}
+     */
     match /roles_admin/{uid} {
         allow get: if isAdmin();
-        allow list: if false;
-        allow create: if false;
-        allow update: if false;
-        allow delete: if false;
+        allow list, create, update, delete: if false;
     }
   }
 }
