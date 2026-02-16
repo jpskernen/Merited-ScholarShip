@@ -1,3 +1,5 @@
+'use client';
+
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -44,7 +46,7 @@ export default function ScholarshipsPage() {
                 <p>Deadline: {scholarship.deadline}</p>
               </div>
               <Button asChild size="sm">
-                <Link href="#">
+                <Link href="/dashboard/profile">
                   Apply <ArrowRight className="ml-2 h-4 w-4" />
                 </Link>
               </Button>
