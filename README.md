@@ -17,7 +17,7 @@ To deploy your app to Firebase App Hosting for the first time:
 - Run `firebase deploy --only apphosting`
 
 ### 2. Connecting a Custom Domain
-To use your own domain (e.g., `www.scholarships.org`):
+To use your own domain (e.g., `www.meritedapp.com` or a subdomain):
 1. Go to the [Firebase Console](https://console.firebase.google.com/).
 2. Select your project: **scholarship-hib4j**.
 3. In the left sidebar, navigate to **App Hosting**.
@@ -25,13 +25,13 @@ To use your own domain (e.g., `www.scholarships.org`):
 5. Click on the **Settings** tab.
 6. Scroll down to the **Custom domains** section.
 7. Click **Add custom domain** and enter your domain name.
-8. Follow the instructions provided to verify ownership and update your DNS records (A and AAAA records) with your domain provider (e.g., GoDaddy, Namecheap, Google Domains).
+8. Follow the instructions provided to verify ownership and update your DNS records (A and AAAA records) with your domain provider.
 
 ## 🔗 Linking to your Main Website
 
 To link your main website to this portal, you can:
 1. **Simple Link:** Add a button on your main site like `<a href="https://your-app-url.web.app">Apply for Scholarships</a>`.
-2. **Subdomain (Recommended):** Set up a subdomain like `scholarships.yourwebsite.com` using the "Custom Domain" steps above. This makes the transition seamless for users.
+2. **Subdomain (Recommended):** Set up a subdomain like `scholarships.meritedapp.com` using the "Custom Domain" steps above. This makes the transition seamless for users.
 
 ## 🛠 Debugging Tools
 

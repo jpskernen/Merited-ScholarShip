@@ -174,8 +174,8 @@ export default function Home() {
             &copy; {new Date().getFullYear()} ScholarShip. All rights reserved.
           </p>
           <div className="flex flex-wrap justify-center gap-4 sm:justify-end">
-            <Link href="#" className="flex items-center text-sm text-primary hover:underline">
-              Visit our Main Website <ExternalLink className="ml-1 h-3 w-3" />
+            <Link href="https://www.meritedapp.com/" target="_blank" rel="noopener noreferrer" className="flex items-center text-sm text-primary hover:underline">
+              Visit Merited App <ExternalLink className="ml-1 h-3 w-3" />
             </Link>
             <Link href="#" className="text-sm text-muted-foreground hover:text-primary">
               Terms
