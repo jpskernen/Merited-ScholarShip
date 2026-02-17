@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/card';
 import { AppLogo } from '@/components/shared/AppLogo';
 import { Badge } from '@/components/ui/badge';
-import { GraduationCap, FileText, Target, Users, CheckCircle, Heart, Search, ArrowRight } from 'lucide-react';
+import { GraduationCap, FileText, Target, Users, CheckCircle, Heart, Search, ArrowRight, ExternalLink } from 'lucide-react';
 import scholarships from '@/data/scholarships.json';
 
 export default function Home() {
@@ -173,15 +173,18 @@ export default function Home() {
           <p className="text-sm text-muted-foreground">
             &copy; {new Date().getFullYear()} ScholarShip. All rights reserved.
           </p>
-          <div className="flex space-x-4">
-            <Link href="#" className="text-sm text-muted-foreground hover:text-primary">
-              Terms of Service
+          <div className="flex flex-wrap justify-center gap-4 sm:justify-end">
+            <Link href="#" className="flex items-center text-sm text-primary hover:underline">
+              Visit our Main Website <ExternalLink className="ml-1 h-3 w-3" />
             </Link>
             <Link href="#" className="text-sm text-muted-foreground hover:text-primary">
-              Privacy Policy
+              Terms
+            </Link>
+            <Link href="#" className="text-sm text-muted-foreground hover:text-primary">
+              Privacy
             </Link>
             <Link href="/review/login" className="text-sm text-red-600 hover:underline">
-              Review Committee Login
+              Reviewers
             </Link>
           </div>
         </div>

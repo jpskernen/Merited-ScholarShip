@@ -27,6 +27,12 @@ To use your own domain (e.g., `www.scholarships.org`):
 7. Click **Add custom domain** and enter your domain name.
 8. Follow the instructions provided to verify ownership and update your DNS records (A and AAAA records) with your domain provider (e.g., GoDaddy, Namecheap, Google Domains).
 
+## 🔗 Linking to your Main Website
+
+To link your main website to this portal, you can:
+1. **Simple Link:** Add a button on your main site like `<a href="https://your-app-url.web.app">Apply for Scholarships</a>`.
+2. **Subdomain (Recommended):** Set up a subdomain like `scholarships.yourwebsite.com` using the "Custom Domain" steps above. This makes the transition seamless for users.
+
 ## 🛠 Debugging Tools
 
 ### 1. AI Flows (Genkit)
