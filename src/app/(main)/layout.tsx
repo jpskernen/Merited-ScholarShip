@@ -20,7 +20,6 @@ import {
   FileText,
   Search,
   Users,
-  Award,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -38,12 +37,12 @@ const applicantNav = [
 const adminNav = [
   { href: '/admin', label: 'Admin Dashboard', icon: LayoutDashboard },
   { href: '/admin/applicants', label: 'All Applicants', icon: Users },
+  { href: '/admin/scholarships', label: 'Scholarships', icon: Search },
 ];
 
 const reviewerNav = [
   { href: '/review', label: 'Review Dashboard', icon: LayoutDashboard },
 ];
-
 
 export default function DashboardLayout({
   children,
@@ -59,18 +58,24 @@ export default function DashboardLayout({
   const isReviewerPath = pathname.startsWith('/review');
   const isDashboardPath = pathname.startsWith('/dashboard');
 
-  const userRoleRef = useMemoFirebase(() => {
+  const adminRoleRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return doc(firestore, 'roles_admin', user.uid);
   }, [firestore, user]);
-  const { data: adminRole, isLoading: isRoleLoading } = useDoc(userRoleRef);
   
-  const isReviewer = false; // Add logic for reviewer role if needed
+  const reviewerProfileRef = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return doc(firestore, 'reviewers', user.uid);
+  }, [firestore, user]);
+
+  const { data: adminRole, isLoading: isAdminRoleLoading } = useDoc(adminRoleRef);
+  const { data: reviewerProfile, isLoading: isReviewerRoleLoading } = useDoc(reviewerProfileRef);
+  
   const isAdmin = !!adminRole;
+  const isReviewer = !!reviewerProfile;
 
   useEffect(() => {
     if (!isUserLoading && !user) {
-      // If not loading and no user, redirect to login
       if (isDashboardPath || isAdminPath || isReviewerPath) {
         router.push('/login');
       }
@@ -84,19 +89,22 @@ export default function DashboardLayout({
   const getNavItems = () => {
     if (isAdmin) return adminNav;
     if (isReviewer) return reviewerNav;
-    return applicantNav; // Default to applicant
+    return applicantNav;
   };
 
   const currentNav = getNavItems();
-  
   const shouldShowLayout = isDashboardPath || isAdminPath || isReviewerPath;
 
-  if (isUserLoading || isRoleLoading) {
-    return <div>Loading...</div>; // Or a proper loading skeleton
+  if (isUserLoading || isAdminRoleLoading || isReviewerRoleLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="animate-pulse text-muted-foreground">Loading application...</div>
+      </div>
+    );
   }
   
   if (!user && shouldShowLayout) {
-     return null; // Don't render anything while redirecting
+     return null;
   }
 
   if (!shouldShowLayout) {
@@ -105,7 +113,7 @@ export default function DashboardLayout({
 
   let navGroupLabel = 'Applicant';
   if (isAdmin) navGroupLabel = 'Admin';
-  if (isReviewer) navGroupLabel = 'Reviewer';
+  else if (isReviewer) navGroupLabel = 'Reviewer';
 
   return (
     <SidebarProvider>
