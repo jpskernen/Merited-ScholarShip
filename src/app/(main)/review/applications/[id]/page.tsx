@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
@@ -39,7 +38,7 @@ import { useToast } from '@/hooks/use-toast';
 import { analyzeScholarshipFit, type AnalyzeFitOutput } from '@/ai/flows/analyze-scholarship-fit';
 import scholarshipsData from '@/data/scholarships.json';
 
-// Rubric Weights
+// Rubric Weights (Total = 1.0)
 const RUBRIC_WEIGHTS = {
   gpa: 0.25,
   extracurriculars: 0.15,
@@ -79,12 +78,11 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
   
   const [comment, setComment] = useState('');
   const [markForDiscussion, setMarkForDiscussion] = useState(false);
-  const [hasConflict, setHasConflict] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState<AnalyzeFitOutput | null>(null);
 
-  const isReadOnly = !!existingReview;
+  const isReadOnly = existingReview?.status === 'Submitted';
 
   useEffect(() => {
     if (existingReview) {
@@ -108,16 +106,34 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
 
   const scorePercentage = (totalWeightedScore / 5) * 100;
 
-  const handleFlagConflict = async () => {
-    if (!firestore || !reviewer) return;
-    setHasConflict(true);
-    // In a real app, this would trigger a re-assignment logic
-    toast({
-      title: "Conflict Flagged",
-      description: "Admin has been notified. This application will be removed from your dashboard.",
-      variant: "destructive"
-    });
-    router.push('/review');
+  const handleSubmitReview = async (isDraft: boolean = false) => {
+    if (!firestore || !reviewer || !params.id || (isReadOnly && !isDraft)) return;
+    setIsSubmitting(true);
+
+    try {
+      const reviewDocRef = doc(firestore, 'applications', params.id, 'reviews', reviewer.uid);
+      await setDoc(reviewDocRef, {
+        applicationId: params.id,
+        reviewerId: reviewer.uid,
+        reviewerName: reviewer.displayName || 'Reviewer',
+        scores,
+        totalWeightedScore,
+        comment,
+        markForDiscussion,
+        aiAnalysis,
+        status: isDraft ? 'In Progress' : 'Submitted',
+        date: new Date().toISOString(),
+      }, { merge: true });
+
+      toast({
+        title: isDraft ? "Draft Saved" : "Review Submitted",
+        description: isDraft ? "You can continue this later." : "Evaluation finalized.",
+      });
+      
+      if (!isDraft) router.push('/review');
+    } catch (error) {
+      toast({ title: "Error", variant: "destructive", description: "Could not save review." });
+    } finally { setIsSubmitting(false); }
   };
 
   const runAiAnalysis = async () => {
@@ -147,36 +163,6 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
 
   if (!application) notFound();
 
-  const handleSubmitReview = async (isDraft: boolean = false) => {
-    if (!firestore || !reviewer || !params.id || (isReadOnly && !isDraft)) return;
-    setIsSubmitting(true);
-
-    try {
-      const reviewDocRef = doc(firestore, 'applications', params.id, 'reviews', reviewer.uid);
-      await setDoc(reviewDocRef, {
-        applicationId: params.id,
-        reviewerId: reviewer.uid,
-        reviewerName: reviewer.displayName || 'Reviewer',
-        scores,
-        totalWeightedScore,
-        comment,
-        markForDiscussion,
-        aiAnalysis,
-        status: isDraft ? 'In Progress' : 'Submitted',
-        date: new Date().toISOString(),
-      }, { merge: true });
-
-      toast({
-        title: isDraft ? "Draft Saved" : "Review Submitted",
-        description: isDraft ? "You can continue this later." : "Evaluation finalized.",
-      });
-      
-      if (!isDraft) router.push('/review');
-    } catch (error) {
-      toast({ title: "Error", variant: "destructive" });
-    } finally { setIsSubmitting(false); }
-  };
-
   const criteria = [
     { key: 'gpa', label: 'Academic Excellence', weight: '25%', desc: 'Transcripts & GPA quality.' },
     { key: 'extracurriculars', label: 'Involvement', weight: '15%', desc: 'Participation depth.' },
@@ -203,9 +189,10 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
             </h1>
           </div>
         </div>
-        <div className="flex items-center gap-4">
-          <Button variant="outline" size="sm" onClick={handleFlagConflict} disabled={isReadOnly}>
-            <AlertCircle className="h-4 w-4 mr-2" /> Flag Conflict
+        <div className="flex items-center gap-6">
+          <Button variant="outline" size="sm" onClick={runAiAnalysis} disabled={isAnalyzing || isReadOnly}>
+            {isAnalyzing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2 text-primary" />}
+            Run AI Fit Check
           </Button>
           <div className="text-right">
             <p className="text-[10px] font-bold text-muted-foreground uppercase">Weighted Total</p>
@@ -226,6 +213,7 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div><Label className="text-muted-foreground">GPA</Label><p className="font-bold">{application.gpa.toFixed(2)}</p></div>
                   <div><Label className="text-muted-foreground">Major</Label><p className="font-bold">{application.major}</p></div>
+                  <div><Label className="text-muted-foreground">School</Label><p className="font-bold">{application.school}</p></div>
                 </div>
               </section>
               <Separator />
@@ -258,7 +246,7 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
                 <CardTitle className="text-lg flex items-center gap-2"><Calculator className="h-5 w-5" /> Weighted Rubric</CardTitle>
                 <div className="flex items-center gap-2">
                   <History className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Draft Auto-Saved</span>
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Auto-Saving Drafts</span>
                 </div>
               </div>
               <Progress value={scorePercentage} className="h-1.5 mt-2" />
@@ -267,8 +255,12 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
             <CardContent className="flex-1 overflow-y-auto space-y-6 p-6">
               {aiAnalysis && (
                 <div className="p-4 rounded-xl bg-primary/5 border border-primary/20">
-                  <h4 className="text-[10px] font-bold uppercase text-primary mb-2 flex items-center gap-1.5"><Sparkles className="h-3 w-3" /> AI Fit Score: {aiAnalysis.fitScore}%</h4>
-                  <p className="text-xs text-muted-foreground italic leading-relaxed">"{aiAnalysis.justification}"</p>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-[10px] font-bold uppercase text-primary flex items-center gap-1.5"><Sparkles className="h-3 w-3" /> AI Fit Confidence</h4>
+                    <Badge variant="secondary" className="font-mono">{aiAnalysis.fitScore}%</Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground italic leading-relaxed mb-2">"{aiAnalysis.justification}"</p>
+                  <p className="text-[10px] font-bold uppercase text-primary">Recommendation: {aiAnalysis.recommendation}</p>
                 </div>
               )}
 
@@ -294,11 +286,11 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
 
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <Label className="flex items-center gap-2"><MessageSquare className="h-4 w-4" /> Discussion Required?</Label>
+                  <Label className="flex items-center gap-2"><MessageSquare className="h-4 w-4" /> Mark for Committee Discussion</Label>
                   <Switch checked={markForDiscussion} onCheckedChange={setMarkForDiscussion} disabled={isReadOnly} />
                 </div>
                 <Textarea 
-                  placeholder="Final committee notes..." 
+                  placeholder="Reviewer comments and rationale..." 
                   className="min-h-[100px] text-sm" 
                   value={comment} 
                   onChange={(e) => setComment(e.target.value)} 
@@ -315,7 +307,7 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
                 </>
               ) : (
                 <div className="w-full flex items-center justify-center py-2 text-xs text-muted-foreground italic gap-2 bg-muted/50 rounded-md">
-                   <Lock className="h-3 w-3" /> Submission Finalized
+                   <Lock className="h-3 w-3" /> Review Locked
                 </div>
               )}
             </CardFooter>

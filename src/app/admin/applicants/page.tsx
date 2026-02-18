@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useMemo } from 'react';
@@ -53,13 +52,14 @@ export default function AdminApplicantsPage() {
     if (!firestore) return null;
     return collectionGroup(firestore, 'reviews');
   }, [firestore]);
-  const { data: allReviews, isLoading: isReviewsLoading } = useCollection(allReviewsQuery);
+  const { data: allReviews, isLoading: isReviewsLoading } = useCollection(reviewsQuery);
 
   // Process data for the table
   const tableData = useMemo(() => {
     if (!applicants) return [];
 
     return applicants.map(applicant => {
+      // Find all reviews associated with this applicant's ID
       const applicantReviews = allReviews?.filter(r => r.applicationId === applicant.id) || [];
       
       const reviewCount = applicantReviews.length;
@@ -83,7 +83,7 @@ export default function AdminApplicantsPage() {
 
       const averageScore = reviewCount > 0 ? totalWeightedScore / reviewCount : 0;
       
-      // Outlier Detection (Standard Deviation / Range check)
+      // Outlier Detection (Flag if any reviewer's score is > 0.8 points away from average)
       const hasOutlier = scores.length >= 2 && scores.some(s => Math.abs(s - averageScore) > 0.8);
 
       return {

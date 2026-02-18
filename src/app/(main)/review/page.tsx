@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useMemo, useState } from 'react';
@@ -34,7 +33,7 @@ export default function ReviewerDashboardPage() {
   const [filter, setFilter] = useState<'all' | 'pending' | 'completed' | 'discussion'>('all');
   const [sortByRandom, setSortByRandom] = useState(false);
 
-  // 1. Fetch all applicants
+  // 1. Fetch all applicants (assigned to committee)
   const applicantsQuery = useMemoFirebase(() => {
     if (!firestore) return null;
     return collection(firestore, 'users');
@@ -103,10 +102,41 @@ export default function ReviewerDashboardPage() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
-        <Card className="bg-primary/5 border-primary/20"><CardContent className="pt-4"><div className="flex flex-col"><span className="text-xs font-bold text-primary uppercase">Assigned</span><span className="text-2xl font-black">{stats.total}</span></div></CardContent></Card>
-        <Card className="bg-green-500/5 border-green-500/20"><CardContent className="pt-4"><div className="flex flex-col"><span className="text-xs font-bold text-green-600 uppercase">Submitted</span><span className="text-2xl font-black">{stats.completed}</span></div></CardContent></Card>
-        <Card className="bg-amber-500/5 border-amber-500/20"><CardContent className="pt-4"><div className="flex flex-col"><span className="text-xs font-bold text-amber-600 uppercase">Pending</span><span className="text-2xl font-black">{stats.pending}</span></div></CardContent></Card>
-        <Card className="border-primary/20"><CardContent className="pt-4"><div className="flex flex-col"><span className="text-xs font-bold text-muted-foreground uppercase">Completion</span><div className="flex items-center gap-3 mt-1"><Progress value={stats.progress} className="h-2" /><span className="text-xs font-black">{Math.round(stats.progress)}%</span></div></div></CardContent></Card>
+        <Card className="bg-primary/5 border-primary/20">
+          <CardContent className="pt-4">
+            <div className="flex flex-col">
+              <span className="text-xs font-bold text-primary uppercase">Assigned</span>
+              <span className="text-2xl font-black">{stats.total}</span>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-green-500/5 border-green-500/20">
+          <CardContent className="pt-4">
+            <div className="flex flex-col">
+              <span className="text-xs font-bold text-green-600 uppercase">Submitted</span>
+              <span className="text-2xl font-black">{stats.completed}</span>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-amber-500/5 border-amber-500/20">
+          <CardContent className="pt-4">
+            <div className="flex flex-col">
+              <span className="text-xs font-bold text-amber-600 uppercase">Pending</span>
+              <span className="text-2xl font-black">{stats.pending}</span>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-primary/20">
+          <CardContent className="pt-4">
+            <div className="flex flex-col">
+              <span className="text-xs font-bold text-muted-foreground uppercase">Completion</span>
+              <div className="flex items-center gap-3 mt-1">
+                <Progress value={stats.progress} className="h-2" />
+                <span className="text-xs font-black">{Math.round(stats.progress)}%</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       <div className="flex gap-2 border-b pb-4">
