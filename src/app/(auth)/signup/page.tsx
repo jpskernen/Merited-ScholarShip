@@ -16,6 +16,7 @@ import { useAuth, initiateEmailSignUp } from '@/firebase';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
+import { Eye, EyeOff } from 'lucide-react';
 
 export default function SignupPage() {
   const auth = useAuth();
@@ -23,6 +24,7 @@ export default function SignupPage() {
   const { toast } = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [name, setName] = useState('');
   const [isSigningUp, setIsSigningUp] = useState(false);
 
@@ -32,19 +34,13 @@ export default function SignupPage() {
     setIsSigningUp(true);
 
     try {
-      // Non-blocking call
       initiateEmailSignUp(auth, email, password);
-      
-      // The onAuthStateChanged listener will handle the user object creation.
-      // We can also optimistically update the profile here, but it's better
-      // to do it in a useEffect that watches for the user object.
       
       toast({
         title: 'Account created!',
         description: 'You will be redirected to the dashboard.',
       });
       
-      // Optimistically navigate
       router.push('/dashboard/profile');
 
     } catch (error: any) {
@@ -93,14 +89,27 @@ export default function SignupPage() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="password">Password</Label>
-            <Input 
-              id="password" 
-              type="password" 
-              required 
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={isSigningUp}
-            />
+            <div className="relative">
+              <Input 
+                id="password" 
+                type={showPassword ? "text" : "password"} 
+                required 
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={isSigningUp}
+                className="pr-10"
+              />
+              <button
+                type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                onClick={() => setShowPassword(!showPassword)}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                <span className="sr-only">
+                  {showPassword ? "Hide password" : "Show password"}
+                </span>
+              </button>
+            </div>
           </div>
         </CardContent>
         <CardFooter className="flex flex-col gap-4">

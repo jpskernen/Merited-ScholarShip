@@ -16,6 +16,7 @@ import { useAuth, initiateEmailSignIn } from '@/firebase';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
+import { Eye, EyeOff } from 'lucide-react';
 
 export default function LoginPage() {
   const auth = useAuth();
@@ -23,6 +24,7 @@ export default function LoginPage() {
   const { toast } = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [isSigningIn, setIsSigningIn] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -30,10 +32,7 @@ export default function LoginPage() {
     if (!auth) return;
     setIsSigningIn(true);
     try {
-      // We are not awaiting this to avoid blocking UI
       initiateEmailSignIn(auth, email, password);
-      // We can optimistically navigate, or wait for onAuthStateChanged in a layout
-      // For now, let's show a toast and let the listener handle redirection.
       toast({
         title: 'Logging in...',
         description: 'You will be redirected shortly.',
@@ -79,14 +78,27 @@ export default function LoginPage() {
                 Forgot password?
               </Link>
             </div>
-            <Input
-              id="password"
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={isSigningIn}
-            />
+            <div className="relative">
+              <Input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={isSigningIn}
+                className="pr-10"
+              />
+              <button
+                type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                onClick={() => setShowPassword(!showPassword)}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                <span className="sr-only">
+                  {showPassword ? "Hide password" : "Show password"}
+                </span>
+              </button>
+            </div>
           </div>
         </CardContent>
         <CardFooter className="flex flex-col gap-4">
