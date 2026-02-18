@@ -1,4 +1,3 @@
-
 'use client';
 
 import {
@@ -21,6 +20,9 @@ import {
   FileText,
   Search,
   Users,
+  ClipboardCheck,
+  FileSearch,
+  Award,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -43,6 +45,8 @@ const adminNav = [
 
 const reviewerNav = [
   { href: '/review', label: 'Review Dashboard', icon: LayoutDashboard },
+  { href: '/review?status=pending', label: 'Review New Applications', icon: FileSearch },
+  { href: '/review?status=completed', label: 'Completed Scoring', icon: Award },
 ];
 
 export default function DashboardLayout({
@@ -52,7 +56,7 @@ export default function DashboardLayout({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, isUserLoading } = useUser();
+  const { user, role, isUserLoading } = useUser();
   const firestore = useFirestore();
   
   const isAdminPath = pathname.startsWith('/admin');
@@ -72,11 +76,11 @@ export default function DashboardLayout({
   const { data: adminRole, isLoading: isAdminRoleLoading } = useDoc(adminRoleRef);
   const { data: reviewerProfile, isLoading: isReviewerRoleLoading } = useDoc(reviewerProfileRef);
   
-  // Check both Firestore documents and Custom Claims for roles
-  const isAdmin = !!adminRole || user?.getIdTokenResult().then(res => res.claims.role === 'admin');
-  const isReviewer = !!reviewerProfile || user?.getIdTokenResult().then(res => res.claims.role === 'reviewer');
+  // Use the role from the auth token as the primary source of truth
+  const isAdmin = role === 'admin' || !!adminRole;
+  const isReviewer = role === 'reviewer' || !!reviewerProfile;
 
-  // Unified redirection logic to prevent students from accessing admin/reviewer areas
+  // Unified redirection logic
   useEffect(() => {
     if (!isUserLoading && !isAdminRoleLoading && !isReviewerRoleLoading) {
       if (!user) {
@@ -84,24 +88,24 @@ export default function DashboardLayout({
           router.push('/login');
         }
       } else {
-        // Logged in, but check permissions
-        if (isAdminPath && !adminRole) {
+        // Redirection based on role
+        if (isAdminPath && !isAdmin) {
            router.push('/dashboard');
         }
-        if (isReviewerPath && !reviewerProfile && !adminRole) {
+        if (isReviewerPath && !isReviewer && !isAdmin) {
            router.push('/dashboard');
         }
       }
     }
-  }, [user, isUserLoading, isAdminRoleLoading, isReviewerRoleLoading, adminRole, reviewerProfile, isAdminPath, isReviewerPath, isDashboardPath, router]);
+  }, [user, isUserLoading, isAdminRoleLoading, isReviewerRoleLoading, isAdmin, isReviewer, isAdminPath, isReviewerPath, isDashboardPath, router]);
 
   const isActive = (href: string) => {
     return pathname === href;
   };
   
   const getNavItems = () => {
-    if (adminRole) return adminNav;
-    if (reviewerProfile) return reviewerNav;
+    if (isAdmin) return adminNav;
+    if (isReviewer) return reviewerNav;
     return applicantNav;
   };
 
@@ -121,16 +125,16 @@ export default function DashboardLayout({
   }
 
   // Prevent rendering children if unauthorized
-  if (isAdminPath && !adminRole) return null;
-  if (isReviewerPath && !reviewerProfile && !adminRole) return null;
+  if (isAdminPath && !isAdmin) return null;
+  if (isReviewerPath && !isReviewer && !isAdmin) return null;
 
   if (!shouldShowLayout) {
     return <>{children}</>;
   }
 
   let navGroupLabel = 'Applicant';
-  if (adminRole) navGroupLabel = 'Admin';
-  else if (reviewerProfile) navGroupLabel = 'Reviewer';
+  if (isAdmin) navGroupLabel = 'Admin';
+  else if (isReviewer) navGroupLabel = 'Reviewer';
 
   return (
     <SidebarProvider>
@@ -144,7 +148,7 @@ export default function DashboardLayout({
               <SidebarGroupLabel>{navGroupLabel}</SidebarGroupLabel>
               <SidebarMenu>
                 {currentNav.map((item) => (
-                  <SidebarMenuItem key={item.href}>
+                  <SidebarMenuItem key={item.href + item.label}>
                     <Link href={item.href} className="w-full">
                        <SidebarMenuButton isActive={isActive(item.href)}>
                         <item.icon className="h-4 w-4" />

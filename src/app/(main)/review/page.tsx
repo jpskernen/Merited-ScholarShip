@@ -9,18 +9,32 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
-import { ArrowRight, EyeOff } from 'lucide-react';
+import { ArrowRight, EyeOff, Search } from 'lucide-react';
 import { getApplicants } from '@/lib/applicants';
 
-export default async function ReviewerDashboardPage() {
+export default async function ReviewerDashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string }>;
+}) {
+    const { status: statusFilter } = await searchParams;
     const assignedApplications = await getApplicants();
 
-    // Mock status for demonstration purposes
+    // Mock status logic for demonstration
+    // In a real app, this would be based on the existence of a review doc for this application/reviewer
     const applicationsWithStatus = assignedApplications.map((app, index) => ({
       ...app,
       status: index % 2 === 0 ? 'Pending Review' : 'Completed',
       assignedDate: `2024-09-0${index + 1}`
     }));
+
+    // Filter based on navigation selection
+    const filteredApplications = applicationsWithStatus.filter(app => {
+      if (!statusFilter) return true;
+      if (statusFilter === 'pending') return app.status === 'Pending Review';
+      if (statusFilter === 'completed') return app.status === 'Completed';
+      return true;
+    });
 
     const getStatusVariant = (status: string) => {
         switch (status) {
@@ -29,13 +43,23 @@ export default async function ReviewerDashboardPage() {
             default: return 'outline';
         }
     }
+
+    const title = statusFilter === 'pending' 
+      ? 'Review New Applications' 
+      : statusFilter === 'completed' 
+      ? 'Completed Scoring' 
+      : 'Review Dashboard';
     
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-bold">Reviewer Dashboard</h1>
+        <h1 className="text-3xl font-bold">{title}</h1>
         <p className="text-muted-foreground">
-          Here are the applications assigned to you for review.
+          {statusFilter === 'pending' 
+            ? 'Evaluation required for these candidates.' 
+            : statusFilter === 'completed' 
+            ? 'View your final scores and comments here.' 
+            : 'Overview of all applications assigned to you.'}
         </p>
       </div>
 
@@ -51,7 +75,7 @@ export default async function ReviewerDashboardPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {applicationsWithStatus.map((app) => {
+            {filteredApplications.map((app) => {
               const displayName = app.isBlind 
                 ? `Applicant ${app.id.substring(0, 6)}` 
                 : app.name;
@@ -76,7 +100,7 @@ export default async function ReviewerDashboardPage() {
                   <TableCell className="text-right">
                     <Button variant="outline" size="sm" asChild>
                       <Link href={`/review/applications/${app.id}`}>
-                        {app.status === 'Completed' ? 'View Review' : 'Start Review'}
+                        {app.status === 'Completed' ? 'View Score' : 'Score Application'}
                         <ArrowRight className="ml-2 h-4 w-4" />
                       </Link>
                     </Button>
@@ -87,9 +111,10 @@ export default async function ReviewerDashboardPage() {
           </TableBody>
         </Table>
       </div>
-      {assignedApplications.length === 0 && (
+      {filteredApplications.length === 0 && (
           <div className="text-center py-12 text-muted-foreground">
-            You have no applications to review.
+            <Search className="h-8 w-8 mx-auto mb-4 opacity-20" />
+            <p>No applications found matching this category.</p>
           </div>
       )}
     </div>
