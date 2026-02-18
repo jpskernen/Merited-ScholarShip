@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/card';
 import { Separator } from '@/components/ui/separator';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
@@ -21,7 +21,10 @@ import {
   ChevronLeft,
   Calculator,
   Lock,
-  EyeOff
+  EyeOff,
+  Sparkles,
+  Loader2,
+  TrendingUp
 } from 'lucide-react';
 import { notFound, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -29,6 +32,8 @@ import { useDoc, useFirebase, useMemoFirebase } from '@/firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import type { Applicant } from '@/types/applicant';
 import { useToast } from '@/hooks/use-toast';
+import { analyzeScholarshipFit, type AnalyzeFitOutput } from '@/ai/flows/analyze-scholarship-fit';
+import scholarshipsData from '@/data/scholarships.json';
 
 export default function ApplicationReviewPage({ params }: { params: { id: string } }) {
   const router = useRouter();
@@ -60,6 +65,8 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
   
   const [comment, setComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [aiAnalysis, setAiAnalysis] = useState<AnalyzeFitOutput | null>(null);
 
   // Determine if the review should be read-only
   const isReadOnly = !!existingReview;
@@ -69,6 +76,7 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
     if (existingReview) {
       if (existingReview.scores) setScores(existingReview.scores);
       if (existingReview.comment) setComment(existingReview.comment);
+      if (existingReview.aiAnalysis) setAiAnalysis(existingReview.aiAnalysis);
     }
   }, [existingReview]);
 
@@ -79,6 +87,35 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
 
   const maxPossibleScore = Object.keys(scores).length * 5;
   const scorePercentage = (totalScore / maxPossibleScore) * 100;
+
+  const runAiAnalysis = async () => {
+    if (!application) return;
+    setIsAnalyzing(true);
+    try {
+      // Mock criteria selection or use a default one from data
+      const defaultCriteria = scholarshipsData[0]?.description || "General academic excellence and community service.";
+      
+      const result = await analyzeScholarshipFit({
+        applicantData: {
+          gpa: application.gpa,
+          major: application.major,
+          essay: application.essay,
+          activities: application.activities,
+          interests: application.interests,
+        },
+        scholarshipCriteria: defaultCriteria,
+      });
+      setAiAnalysis(result);
+    } catch (error) {
+      toast({
+        title: "AI Analysis Failed",
+        description: "Could not generate fit analysis at this time.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   if (isLoading || isReviewLoading) {
     return (
@@ -105,6 +142,7 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
         scores,
         totalScore,
         comment,
+        aiAnalysis,
         date: new Date().toISOString(),
       }, { merge: true });
 
@@ -164,7 +202,7 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
         </div>
         <div className="flex items-center gap-4">
             <div className="text-right hidden sm:block">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Candidate GPA</p>
+              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Candidate GPA</p>
               <p className="text-xl font-bold text-primary">{application.gpa.toFixed(2)}</p>
             </div>
             <Separator orientation="vertical" className="h-10 mx-2" />
@@ -287,6 +325,45 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
             </CardHeader>
             
             <CardContent className="flex-1 overflow-y-auto space-y-7 p-6">
+              {/* AI Insight Section */}
+              <div className="p-4 rounded-xl bg-primary/5 border border-primary/10 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 text-primary">
+                    <Sparkles className="h-3.5 w-3.5" /> AI Evaluation Insight
+                  </h4>
+                  {!aiAnalysis && !isReadOnly && (
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="h-7 text-[10px] font-bold" 
+                      onClick={runAiAnalysis}
+                      disabled={isAnalyzing}
+                    >
+                      {isAnalyzing ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <TrendingUp className="h-3 w-3 mr-1" />}
+                      Generate Fit Score
+                    </Button>
+                  )}
+                </div>
+
+                {aiAnalysis ? (
+                  <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-500">
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-[10px] font-medium text-muted-foreground">Scholarship Fit Analysis</span>
+                      <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20">
+                        {aiAnalysis.fitScore}% Match
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground leading-relaxed italic">
+                      "{aiAnalysis.justification}"
+                    </p>
+                  </div>
+                ) : !isReadOnly && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Compare this candidate against scholarship criteria using AI insights.
+                  </p>
+                )}
+              </div>
+
               {criteria.map((item) => (
                 <div key={item.key} className="space-y-3">
                   <div className="flex justify-between items-baseline">
@@ -343,22 +420,6 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
                 </Button>
               )}
             </CardFooter>
-          </Card>
-
-          <Card className="bg-accent/5 border-dashed">
-            <CardContent className="pt-6">
-               <div className="flex gap-4 items-start text-sm">
-                  <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
-                    <Calculator className="h-4 w-4 text-primary" />
-                  </div>
-                  <div className="space-y-1">
-                    <p className="font-semibold">Reviewer Tip</p>
-                    <p className="text-muted-foreground text-xs italic">
-                      "Totals are auto-calculated. Aim for consistency across all assigned candidates to ensure a fair selection process."
-                    </p>
-                  </div>
-               </div>
-            </CardContent>
           </Card>
         </div>
       </div>
