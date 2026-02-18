@@ -26,18 +26,21 @@ export default function Home() {
       title: 'View Scholarship Opportunities',
       description:
         'Browse and learn about the available scholarships.',
+      href: '#scholarships'
     },
     {
       icon: <FileText className="h-10 w-10 text-primary" />,
       title: 'Apply for a Scholarship',
       description:
         'Easily upload your transcripts, resumes, and essays to a single platform.',
+      href: '/signup'
     },
     {
       icon: <CheckCircle className="h-10 w-10 text-primary" />,
       title: 'Track Your Progress',
       description:
         'Stay updated with notifications and track your application status in real-time.',
+      href: '/login'
     },
   ];
 
@@ -137,17 +140,19 @@ export default function Home() {
             </div>
             <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
               {features.map((feature, index) => (
-                <Card key={index} className="transform transition-transform hover:scale-105 hover:shadow-lg">
-                  <CardHeader className="items-center">
-                    {feature.icon}
-                  </CardHeader>
-                  <CardContent className="text-center">
-                    <h3 className="text-lg font-semibold">{feature.title}</h3>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      {feature.description}
-                    </p>
-                  </CardContent>
-                </Card>
+                <Link key={index} href={feature.href} className="block">
+                  <Card className="transform transition-transform hover:scale-105 hover:shadow-lg h-full cursor-pointer">
+                    <CardHeader className="items-center">
+                      {feature.icon}
+                    </CardHeader>
+                    <CardContent className="text-center">
+                      <h3 className="text-lg font-semibold">{feature.title}</h3>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        {feature.description}
+                      </p>
+                    </CardContent>
+                  </Card>
+                </Link>
               ))}
             </div>
           </div>
