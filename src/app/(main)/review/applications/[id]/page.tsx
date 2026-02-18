@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
@@ -14,17 +14,17 @@ import {
   FileText, 
   UserCircle, 
   CheckCircle, 
-  XCircle, 
   ExternalLink, 
   GraduationCap, 
   Trophy, 
   MessageSquare,
   ChevronLeft,
-  Calculator
+  Calculator,
+  Lock
 } from 'lucide-react';
 import { notFound, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useDoc, useFirebase } from '@/firebase';
+import { useDoc, useFirebase, useMemoFirebase } from '@/firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import type { Applicant } from '@/types/applicant';
 import { useToast } from '@/hooks/use-toast';
@@ -34,12 +34,19 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
   const { toast } = useToast();
   const { firestore, user: reviewer } = useFirebase();
   
-  const applicantRef = useMemo(() => {
+  const applicantRef = useMemoFirebase(() => {
     if (!firestore || !params.id) return null;
     return doc(firestore, 'users', params.id);
   }, [firestore, params.id]);
 
   const { data: application, isLoading } = useDoc<Applicant>(applicantRef);
+
+  const reviewRef = useMemoFirebase(() => {
+    if (!firestore || !reviewer || !params.id) return null;
+    return doc(firestore, 'applications', params.id, 'reviews', reviewer.uid);
+  }, [firestore, reviewer, params.id]);
+
+  const { data: existingReview, isLoading: isReviewLoading } = useDoc(reviewRef);
 
   const [scores, setScores] = useState({
     gpa: 3,
@@ -53,6 +60,17 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
   const [comment, setComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Determine if the review should be read-only
+  const isReadOnly = !!existingReview;
+
+  // Sync state with existing review if it exists
+  useEffect(() => {
+    if (existingReview) {
+      if (existingReview.scores) setScores(existingReview.scores);
+      if (existingReview.comment) setComment(existingReview.comment);
+    }
+  }, [existingReview]);
+
   // Auto-calculate totals
   const totalScore = useMemo(() => {
     return Object.values(scores).reduce((acc, curr) => acc + curr, 0);
@@ -61,7 +79,7 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
   const maxPossibleScore = Object.keys(scores).length * 5;
   const scorePercentage = (totalScore / maxPossibleScore) * 100;
 
-  if (isLoading) {
+  if (isLoading || isReviewLoading) {
     return (
       <div className="flex h-[80vh] items-center justify-center">
         <div className="animate-pulse text-muted-foreground text-lg">Loading application data...</div>
@@ -74,14 +92,13 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
   }
 
   const handleSubmitReview = async () => {
-    if (!firestore || !reviewer || !params.id) return;
+    if (!firestore || !reviewer || !params.id || isReadOnly) return;
     setIsSubmitting(true);
 
     try {
-      // Save review to the applications sub-collection as per backend.json
-      const reviewRef = doc(firestore, 'applications', params.id, 'reviews', reviewer.uid);
+      const reviewDocRef = doc(firestore, 'applications', params.id, 'reviews', reviewer.uid);
       
-      await setDoc(reviewRef, {
+      await setDoc(reviewDocRef, {
         reviewerId: reviewer.uid,
         reviewerName: reviewer.displayName || 'Anonymous Reviewer',
         scores,
@@ -127,6 +144,11 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
             <h1 className="text-2xl font-bold flex items-center gap-2">
               Reviewing: {application.isBlind ? `Applicant ${params.id.substring(0, 6)}` : application.name}
               {application.isBlind && <Badge variant="outline" className="ml-2">Blind Review</Badge>}
+              {isReadOnly && (
+                <Badge variant="secondary" className="ml-2 bg-green-500/10 text-green-600 border-green-200">
+                  <Lock className="h-3 w-3 mr-1" /> Submitted
+                </Badge>
+              )}
             </h1>
             <p className="text-sm text-muted-foreground">Application Reference: {params.id}</p>
           </div>
@@ -239,8 +261,8 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
 
         {/* Right Column: Scoring Workspace */}
         <div className="lg:col-span-5 flex flex-col gap-6 min-h-0">
-          <Card className="flex flex-col min-h-0 shadow-lg border-primary/20">
-            <CardHeader className="bg-primary/5 border-b py-4">
+          <Card className={`flex flex-col min-h-0 shadow-lg ${isReadOnly ? 'border-green-200 opacity-95' : 'border-primary/20'}`}>
+            <CardHeader className={`${isReadOnly ? 'bg-green-500/5' : 'bg-primary/5'} border-b py-4`}>
               <div className="flex justify-between items-center">
                 <div>
                   <CardTitle className="text-lg flex items-center gap-2">
@@ -272,8 +294,9 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
                     max={5} 
                     min={1} 
                     step={1} 
-                    onValueChange={(val) => setScores({ ...scores, [item.key]: val[0] })}
-                    className="cursor-pointer"
+                    onValueChange={(val) => !isReadOnly && setScores({ ...scores, [item.key]: val[0] })}
+                    className={isReadOnly ? "cursor-not-allowed opacity-50" : "cursor-pointer"}
+                    disabled={isReadOnly}
                   />
                 </div>
               ))}
@@ -286,22 +309,30 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
                 </Label>
                 <Textarea 
                   id="comments" 
-                  placeholder="Provide context for your scoring..." 
+                  placeholder={isReadOnly ? "" : "Provide context for your scoring..."}
                   className="min-h-[100px] bg-muted/5 resize-none text-sm"
                   value={comment}
-                  onChange={(e) => setComment(e.target.value)}
+                  onChange={(e) => !isReadOnly && setComment(e.target.value)}
+                  disabled={isReadOnly}
+                  readOnly={isReadOnly}
                 />
               </div>
             </CardContent>
             
             <CardFooter className="bg-muted/10 border-t p-6">
-              <Button 
-                className="w-full h-12 text-lg font-bold transition-all hover:scale-[1.02]" 
-                onClick={handleSubmitReview}
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? 'Recording Evaluation...' : 'Submit Final Score'}
-              </Button>
+              {isReadOnly ? (
+                <div className="w-full flex items-center justify-center py-2 text-sm text-muted-foreground italic gap-2 bg-muted/50 rounded-md">
+                   <Lock className="h-4 w-4" /> This review is final and cannot be edited.
+                </div>
+              ) : (
+                <Button 
+                  className="w-full h-12 text-lg font-bold transition-all hover:scale-[1.02]" 
+                  onClick={handleSubmitReview}
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? 'Recording Evaluation...' : 'Submit Final Score'}
+                </Button>
+              )}
             </CardFooter>
           </Card>
 
