@@ -1,3 +1,5 @@
+'use client';
+
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import {
@@ -12,8 +14,12 @@ import { AppLogo } from '@/components/shared/AppLogo';
 import { Badge } from '@/components/ui/badge';
 import { GraduationCap, FileText, Target, Users, CheckCircle, Heart, Search, ArrowRight, ExternalLink } from 'lucide-react';
 import scholarships from '@/data/scholarships.json';
+import { useState, useEffect } from 'react';
 
 export default function Home() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   const features = [
     {
       icon: <Search className="h-10 w-10 text-primary" />,
@@ -171,7 +177,7 @@ export default function Home() {
         <div className="container mx-auto flex flex-col items-center justify-between gap-4 px-4 py-8 sm:flex-row md:px-6">
           <AppLogo />
           <p className="text-sm text-muted-foreground">
-            &copy; {new Date().getFullYear()} ScholarShip. All rights reserved.
+            &copy; {mounted ? new Date().getFullYear() : '2026'} ScholarShip. All rights reserved.
           </p>
           <div className="flex flex-wrap justify-center gap-4 sm:justify-end">
             <Link href="https://www.meritedapp.com/" target="_blank" rel="noopener noreferrer" className="flex items-center text-sm text-primary hover:underline">

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Table,
@@ -32,6 +32,11 @@ export default function ReviewerDashboardPage() {
   const { firestore, user } = useFirebase();
   const [filter, setFilter] = useState<'all' | 'pending' | 'completed' | 'discussion'>('all');
   const [sortByRandom, setSortByRandom] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // 1. Fetch all applicants (assigned to committee)
   const applicantsQuery = useMemoFirebase(() => {
@@ -47,8 +52,18 @@ export default function ReviewerDashboardPage() {
   }, [firestore, user]);
   const { data: allReviews, isLoading: isReviewsLoading } = useCollection(myReviewsQuery);
 
+  // We generate random sort keys only on the client to avoid hydration mismatch
+  const randomSortKeys = useMemo(() => {
+    if (!applicants || !mounted) return {};
+    const keys: Record<string, number> = {};
+    applicants.forEach(app => {
+      keys[app.id] = Math.random();
+    });
+    return keys;
+  }, [applicants, mounted]);
+
   const processedData = useMemo(() => {
-    if (!applicants || !allReviews || !user) return [];
+    if (!applicants || !allReviews || !user || !mounted) return [];
 
     const myReviews = allReviews.filter(r => r.reviewerId === user.uid);
 
@@ -59,7 +74,7 @@ export default function ReviewerDashboardPage() {
         reviewStatus: review ? review.status : 'Not Started',
         score: review ? review.totalWeightedScore : null,
         needsDiscussion: review ? review.markForDiscussion : false,
-        randomSortKey: Math.random(),
+        randomSortKey: randomSortKeys[app.id] || 0,
       };
     });
 
@@ -72,7 +87,7 @@ export default function ReviewerDashboardPage() {
     if (filter === 'discussion') data = data.filter(d => d.needsDiscussion);
 
     return data;
-  }, [applicants, allReviews, user, filter, sortByRandom]);
+  }, [applicants, allReviews, user, filter, sortByRandom, mounted, randomSortKeys]);
 
   const stats = useMemo(() => {
     const total = processedData.length;
@@ -82,7 +97,7 @@ export default function ReviewerDashboardPage() {
     return { total, completed, pending, progress };
   }, [processedData]);
 
-  if (isAppsLoading || isReviewsLoading) return <div className="animate-pulse p-8">Loading Review Assignments...</div>;
+  if (isAppsLoading || isReviewsLoading || !mounted) return <div className="animate-pulse p-8">Loading Review Assignments...</div>;
 
   return (
     <div className="space-y-8">
