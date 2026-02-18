@@ -2,50 +2,37 @@
 
 This is a Next.js application built with Firebase and Genkit.
 
+## 🌐 Multi-Site Hosting
+
+The project is configured for multiple Firebase Hosting sites:
+- **Marketing Site:** Located in `/marketing`. Deployment target: `marketing`.
+- **Full Web App:** The Next.js application in `/src`. Deployment target: `app`.
+
+### Deployment
+Before deploying for the first time, you must link your targets to your Firebase site IDs:
+1. `firebase target:apply hosting marketing <your-marketing-site-id>`
+2. `firebase target:apply hosting app <your-app-site-id>`
+
+To deploy specific sites:
+- `firebase deploy --only hosting:marketing`
+- `firebase deploy --only hosting:app`
+
 ## 🚀 Getting Started
 
 1. **Install dependencies:** `npm install`
 2. **Run the development server:** `npm run dev`
 3. **Open the app:** [http://localhost:9002](http://localhost:9002)
 
-## 🌐 Deployment & Domains
+## 🌐 Deployment & Domains (App Hosting)
 
-### 1. Initial Deployment
-To deploy your app to Firebase App Hosting for the first time:
-- Run `firebase login`
-- Run `firebase use scholarship-hib4j`
+This project uses **Firebase App Hosting** for the Next.js application.
 - Run `firebase deploy --only apphosting`
-
-### 2. Connecting a Custom Domain
-To use your own domain (e.g., `www.meritedapp.com` or a subdomain):
-1. Go to the [Firebase Console](https://console.firebase.google.com/).
-2. Select your project: **scholarship-hib4j**.
-3. In the left sidebar, navigate to **App Hosting**.
-4. Select your app's backend from the list.
-5. Click on the **Settings** tab.
-6. Scroll down to the **Custom domains** section.
-7. Click **Add custom domain** and enter your domain name.
-8. Follow the instructions provided to verify ownership and update your DNS records (A and AAAA records) with your domain provider.
-
-## 🔗 Linking to your Main Website
-
-To link your main website to this portal, you can:
-1. **Simple Link:** Add a button on your main site like `<a href="https://your-app-url.web.app">Apply for Scholarships</a>`.
-2. **Subdomain (Recommended):** Set up a subdomain like `scholarships.meritedapp.com` using the "Custom Domain" steps above. This makes the transition seamless for users.
 
 ## 🛠 Debugging Tools
 
 ### 1. AI Flows (Genkit)
-To debug and test your AI prompts and flows:
 - Run `npm run genkit:dev` in your terminal.
-- Open the Genkit Developer UI (usually at [http://localhost:4000](http://localhost:4000)).
+- Open the Genkit Developer UI at [http://localhost:4000](http://localhost:4000).
 
-### 2. Frontend (React)
-- Install the **React Developer Tools** extension in Chrome/Firefox.
-- This allows you to inspect component state and props.
-
-### 3. Database & Auth (Firebase)
-- Use the [Firebase Console](https://console.firebase.google.com/) to:
-    - View/Edit Firestore documents.
-    - Check Storage security rules.
-    - Monitor Authentication users.
+### 2. Database & Auth (Firebase)
+- Use the [Firebase Console](https://console.firebase.google.com/) to monitor users and data.
