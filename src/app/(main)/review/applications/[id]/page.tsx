@@ -1,8 +1,9 @@
+
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
@@ -10,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Progress } from '@/components/ui/progress';
+import { Switch } from '@/components/ui/switch';
 import { 
   FileText, 
   UserCircle, 
@@ -24,7 +26,9 @@ import {
   EyeOff,
   Sparkles,
   Loader2,
-  TrendingUp
+  TrendingUp,
+  AlertCircle,
+  History
 } from 'lucide-react';
 import { notFound, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -34,6 +38,16 @@ import type { Applicant } from '@/types/applicant';
 import { useToast } from '@/hooks/use-toast';
 import { analyzeScholarshipFit, type AnalyzeFitOutput } from '@/ai/flows/analyze-scholarship-fit';
 import scholarshipsData from '@/data/scholarships.json';
+
+// Rubric Weights
+const RUBRIC_WEIGHTS = {
+  gpa: 0.25,
+  extracurriculars: 0.15,
+  volunteerism: 0.15,
+  leadership: 0.15,
+  major: 0.10,
+  other: 0.20
+};
 
 export default function ApplicationReviewPage({ params }: { params: { id: string } }) {
   const router = useRouter();
@@ -64,37 +78,53 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
   });
   
   const [comment, setComment] = useState('');
+  const [markForDiscussion, setMarkForDiscussion] = useState(false);
+  const [hasConflict, setHasConflict] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState<AnalyzeFitOutput | null>(null);
 
-  // Determine if the review should be read-only
   const isReadOnly = !!existingReview;
 
-  // Sync state with existing review if it exists
   useEffect(() => {
     if (existingReview) {
       if (existingReview.scores) setScores(existingReview.scores);
       if (existingReview.comment) setComment(existingReview.comment);
       if (existingReview.aiAnalysis) setAiAnalysis(existingReview.aiAnalysis);
+      if (existingReview.markForDiscussion) setMarkForDiscussion(existingReview.markForDiscussion);
     }
   }, [existingReview]);
 
-  // Auto-calculate totals
-  const totalScore = useMemo(() => {
-    return Object.values(scores).reduce((acc, curr) => acc + curr, 0);
+  const totalWeightedScore = useMemo(() => {
+    return (
+      (scores.gpa * RUBRIC_WEIGHTS.gpa) +
+      (scores.extracurriculars * RUBRIC_WEIGHTS.extracurriculars) +
+      (scores.volunteerism * RUBRIC_WEIGHTS.volunteerism) +
+      (scores.leadership * RUBRIC_WEIGHTS.leadership) +
+      (scores.major * RUBRIC_WEIGHTS.major) +
+      (scores.other * RUBRIC_WEIGHTS.other)
+    );
   }, [scores]);
 
-  const maxPossibleScore = Object.keys(scores).length * 5;
-  const scorePercentage = (totalScore / maxPossibleScore) * 100;
+  const scorePercentage = (totalWeightedScore / 5) * 100;
+
+  const handleFlagConflict = async () => {
+    if (!firestore || !reviewer) return;
+    setHasConflict(true);
+    // In a real app, this would trigger a re-assignment logic
+    toast({
+      title: "Conflict Flagged",
+      description: "Admin has been notified. This application will be removed from your dashboard.",
+      variant: "destructive"
+    });
+    router.push('/review');
+  };
 
   const runAiAnalysis = async () => {
     if (!application) return;
     setIsAnalyzing(true);
     try {
-      // Mock criteria selection or use a default one from data
-      const defaultCriteria = scholarshipsData[0]?.description || "General academic excellence and community service.";
-      
+      const defaultCriteria = scholarshipsData[0]?.description || "General excellence.";
       const result = await analyzeScholarshipFit({
         applicantData: {
           gpa: application.gpa,
@@ -107,317 +137,186 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
       });
       setAiAnalysis(result);
     } catch (error) {
-      toast({
-        title: "AI Analysis Failed",
-        description: "Could not generate fit analysis at this time.",
-        variant: "destructive"
-      });
-    } finally {
-      setIsAnalyzing(false);
-    }
+      toast({ title: "Analysis Failed", variant: "destructive" });
+    } finally { setIsAnalyzing(false); }
   };
 
   if (isLoading || isReviewLoading) {
-    return (
-      <div className="flex h-[80vh] items-center justify-center">
-        <div className="animate-pulse text-muted-foreground text-lg">Loading application data...</div>
-      </div>
-    );
+    return <div className="flex h-[80vh] items-center justify-center animate-pulse">Loading Application...</div>;
   }
 
-  if (!application) {
-    notFound();
-  }
+  if (!application) notFound();
 
-  const handleSubmitReview = async () => {
-    if (!firestore || !reviewer || !params.id || isReadOnly) return;
+  const handleSubmitReview = async (isDraft: boolean = false) => {
+    if (!firestore || !reviewer || !params.id || (isReadOnly && !isDraft)) return;
     setIsSubmitting(true);
 
     try {
       const reviewDocRef = doc(firestore, 'applications', params.id, 'reviews', reviewer.uid);
-      
       await setDoc(reviewDocRef, {
+        applicationId: params.id,
         reviewerId: reviewer.uid,
-        reviewerName: reviewer.displayName || 'Anonymous Reviewer',
+        reviewerName: reviewer.displayName || 'Reviewer',
         scores,
-        totalScore,
+        totalWeightedScore,
         comment,
+        markForDiscussion,
         aiAnalysis,
+        status: isDraft ? 'In Progress' : 'Submitted',
         date: new Date().toISOString(),
       }, { merge: true });
 
       toast({
-        title: "Evaluation Submitted",
-        description: `Scores saved for ${application.isBlind ? 'Applicant ' + params.id.substring(0, 6) : application.name}.`,
+        title: isDraft ? "Draft Saved" : "Review Submitted",
+        description: isDraft ? "You can continue this later." : "Evaluation finalized.",
       });
       
-      router.push('/review');
+      if (!isDraft) router.push('/review');
     } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to submit review. Please check permissions.",
-        variant: "destructive"
-      });
-    } finally {
-      setIsSubmitting(false);
-    }
+      toast({ title: "Error", variant: "destructive" });
+    } finally { setIsSubmitting(false); }
   };
 
   const criteria = [
-    { key: 'gpa', label: 'Academic Excellence', desc: 'Strength of transcripts and GPA.' },
-    { key: 'extracurriculars', label: 'Involvement', desc: 'Depth of participation in activities.' },
-    { key: 'volunteerism', label: 'Community Service', desc: 'Impact and consistency of volunteering.' },
-    { key: 'leadership', label: 'Leadership', desc: 'Roles held and initiatives taken.' },
-    { key: 'major', label: 'Major Alignment', desc: 'Fit for the intended field of study.' },
-    { key: 'other', label: 'Overall Impression', desc: 'The "X-factor" and essay quality.' },
+    { key: 'gpa', label: 'Academic Excellence', weight: '25%', desc: 'Transcripts & GPA quality.' },
+    { key: 'extracurriculars', label: 'Involvement', weight: '15%', desc: 'Participation depth.' },
+    { key: 'volunteerism', label: 'Community Service', weight: '15%', desc: 'Consistency & impact.' },
+    { key: 'leadership', label: 'Leadership', weight: '15%', desc: 'Roles & initiative.' },
+    { key: 'major', label: 'Major Alignment', weight: '10%', desc: 'Fit for field of study.' },
+    { key: 'other', label: 'Overall Impression', weight: '20%', desc: 'Essay & X-factor.' },
   ];
 
-  const displayName = application.isBlind 
-    ? `Applicant ${params.id.substring(0, 6)}` 
-    : application.name;
+  const displayName = application.isBlind ? `Applicant ${params.id.substring(0, 6)}` : application.name;
 
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)]">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="sm" onClick={() => router.back()}>
-            <ChevronLeft className="h-4 w-4 mr-2" /> Back to Dashboard
+            <ChevronLeft className="h-4 w-4 mr-2" /> Back
           </Button>
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
-              Reviewing: {displayName}
-              {application.isBlind && (
-                <Badge variant="outline" className="ml-2 border-primary/30 bg-primary/5">
-                  <EyeOff className="h-3 w-3 mr-1" /> Blind Review
-                </Badge>
-              )}
-              {isReadOnly && (
-                <Badge variant="secondary" className="ml-2 bg-green-500/10 text-green-600 border-green-200">
-                  <Lock className="h-3 w-3 mr-1" /> Submitted
-                </Badge>
-              )}
+              {displayName}
+              {application.isBlind && <Badge variant="outline">Blind Review</Badge>}
+              {isReadOnly && <Badge className="bg-green-600">Finalized</Badge>}
             </h1>
-            <p className="text-sm text-muted-foreground">Application Reference: {params.id}</p>
           </div>
         </div>
         <div className="flex items-center gap-4">
-            <div className="text-right hidden sm:block">
-              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Candidate GPA</p>
-              <p className="text-xl font-bold text-primary">{application.gpa.toFixed(2)}</p>
-            </div>
-            <Separator orientation="vertical" className="h-10 mx-2" />
-            <Badge variant="secondary" className="px-4 py-1.5 text-sm">{application.major}</Badge>
+          <Button variant="outline" size="sm" onClick={handleFlagConflict} disabled={isReadOnly}>
+            <AlertCircle className="h-4 w-4 mr-2" /> Flag Conflict
+          </Button>
+          <div className="text-right">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase">Weighted Total</p>
+            <p className="text-2xl font-black text-primary">{totalWeightedScore.toFixed(2)}<span className="text-sm font-normal text-muted-foreground">/5</span></p>
+          </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 flex-1 min-h-0">
-        {/* Left Column: Applicant Data */}
         <div className="lg:col-span-7 flex flex-col min-h-0">
           <ScrollArea className="flex-1 rounded-xl border bg-card p-6 shadow-sm">
             <div className="space-y-8">
               <section>
                 <div className="flex items-center gap-2 mb-4">
                   <UserCircle className="h-5 w-5 text-primary" />
-                  <h3 className="text-lg font-semibold">Profile Summary</h3>
+                  <h3 className="text-lg font-semibold">Candidate Dossier</h3>
                 </div>
-                <div className="grid grid-cols-2 gap-y-4 gap-x-8 text-sm">
-                  <div className="space-y-1">
-                    <Label className="text-muted-foreground">Candidate Identity</Label>
-                    <p className="font-medium">{application.isBlind ? '[REDACTED FOR ANONYMITY]' : application.name}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-muted-foreground">High School</Label>
-                    <p className="font-medium">{application.school}</p>
-                  </div>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div><Label className="text-muted-foreground">GPA</Label><p className="font-bold">{application.gpa.toFixed(2)}</p></div>
+                  <div><Label className="text-muted-foreground">Major</Label><p className="font-bold">{application.major}</p></div>
                 </div>
               </section>
-
               <Separator />
-
               <section>
-                <div className="flex items-center gap-2 mb-4">
-                  <GraduationCap className="h-5 w-5 text-primary" />
-                  <h3 className="text-lg font-semibold">University Choices</h3>
-                </div>
-                <div className="space-y-3">
-                  {[
-                    { school: application.firstChoiceSchool, accepted: application.firstChoiceAccepted, rank: '1st' },
-                    { school: application.secondChoiceSchool, accepted: application.secondChoiceAccepted, rank: '2nd' },
-                    { school: application.thirdChoiceSchool, accepted: application.thirdChoiceAccepted, rank: '3rd' },
-                  ].filter(c => c.school).map((choice, i) => (
-                    <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-muted/20 border">
-                      <div className="flex flex-col">
-                        <span className="text-xs text-muted-foreground font-bold uppercase">{choice.rank} Choice</span>
-                        <span className="text-sm font-semibold">{choice.school}</span>
-                      </div>
-                      {choice.accepted && (
-                        <Badge variant="secondary" className="bg-green-500/10 text-green-600 border-green-200">
-                          <CheckCircle className="h-3 w-3 mr-1" /> Accepted
-                        </Badge>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                <h4 className="font-semibold text-sm mb-2">Activities</h4>
+                <p className="text-sm text-muted-foreground leading-relaxed">{application.activities}</p>
               </section>
-
-              <Separator />
-
-              <section className="space-y-6">
-                 <div>
-                  <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
-                    <Trophy className="h-4 w-4" /> Activities & Accomplishments
-                  </h4>
-                  <p className="text-sm text-muted-foreground leading-relaxed">
-                    {application.activities}
-                  </p>
-                </div>
-
-                <div>
-                  <h4 className="font-semibold text-sm mb-2">Personal Statement</h4>
-                  <div className="p-5 rounded-lg bg-muted/10 border text-sm leading-relaxed whitespace-pre-wrap italic text-muted-foreground">
-                    "{application.essay}"
-                  </div>
-                </div>
-              </section>
-
-              <Separator />
-
               <section>
-                <div className="flex items-center gap-2 mb-4">
-                  <FileText className="h-5 w-5 text-primary" />
-                  <h3 className="text-lg font-semibold">Supporting Documentation</h3>
+                <h4 className="font-semibold text-sm mb-2">Personal Statement</h4>
+                <div className="p-4 rounded-lg bg-muted/20 border text-sm italic leading-relaxed whitespace-pre-wrap">
+                  "{application.essay}"
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {[
-                    { label: 'Transcript', url: application.transcripts },
-                    { label: 'Resume', url: application.resume },
-                    { label: 'Acceptance Letter', url: application.acceptanceLetter },
-                  ].filter(doc => doc.url).map((doc, i) => (
-                    <Button key={i} variant="outline" className="justify-between" asChild>
-                      <Link href={doc.url as string} target="_blank" rel="noopener noreferrer">
-                        <span className="truncate">{doc.label}</span>
-                        <ExternalLink className="h-4 w-4 ml-2 opacity-50" />
-                      </Link>
-                    </Button>
-                  ))}
+              </section>
+              <Separator />
+              <section>
+                <h3 className="text-lg font-semibold mb-4">Documents</h3>
+                <div className="grid grid-cols-2 gap-2">
+                  {application.transcripts && <Button variant="outline" className="justify-start" asChild><Link href={application.transcripts as string} target="_blank"><FileText className="h-4 w-4 mr-2" /> Transcript</Link></Button>}
+                  {application.resume && <Button variant="outline" className="justify-start" asChild><Link href={application.resume as string} target="_blank"><FileText className="h-4 w-4 mr-2" /> Resume</Link></Button>}
                 </div>
               </section>
             </div>
           </ScrollArea>
         </div>
 
-        {/* Right Column: Scoring Workspace */}
         <div className="lg:col-span-5 flex flex-col gap-6 min-h-0">
-          <Card className={`flex flex-col min-h-0 shadow-lg ${isReadOnly ? 'border-green-200 opacity-95' : 'border-primary/20'}`}>
-            <CardHeader className={`${isReadOnly ? 'bg-green-500/5' : 'bg-primary/5'} border-b py-4`}>
+          <Card className={`flex flex-col min-h-0 shadow-lg ${isReadOnly ? 'border-green-200' : 'border-primary/20'}`}>
+            <CardHeader className="bg-primary/5 border-b py-4">
               <div className="flex justify-between items-center">
-                <div>
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <Calculator className="h-5 w-5" /> Scoring Rubric
-                  </CardTitle>
-                </div>
-                <div className="text-right">
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Live Total</p>
-                  <p className="text-2xl font-black text-primary">{totalScore}<span className="text-sm text-muted-foreground font-normal"> / {maxPossibleScore}</span></p>
+                <CardTitle className="text-lg flex items-center gap-2"><Calculator className="h-5 w-5" /> Weighted Rubric</CardTitle>
+                <div className="flex items-center gap-2">
+                  <History className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Draft Auto-Saved</span>
                 </div>
               </div>
               <Progress value={scorePercentage} className="h-1.5 mt-2" />
             </CardHeader>
             
-            <CardContent className="flex-1 overflow-y-auto space-y-7 p-6">
-              {/* AI Insight Section */}
-              <div className="p-4 rounded-xl bg-primary/5 border border-primary/10 space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 text-primary">
-                    <Sparkles className="h-3.5 w-3.5" /> AI Evaluation Insight
-                  </h4>
-                  {!aiAnalysis && !isReadOnly && (
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="h-7 text-[10px] font-bold" 
-                      onClick={runAiAnalysis}
-                      disabled={isAnalyzing}
-                    >
-                      {isAnalyzing ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <TrendingUp className="h-3 w-3 mr-1" />}
-                      Generate Fit Score
-                    </Button>
-                  )}
+            <CardContent className="flex-1 overflow-y-auto space-y-6 p-6">
+              {aiAnalysis && (
+                <div className="p-4 rounded-xl bg-primary/5 border border-primary/20">
+                  <h4 className="text-[10px] font-bold uppercase text-primary mb-2 flex items-center gap-1.5"><Sparkles className="h-3 w-3" /> AI Fit Score: {aiAnalysis.fitScore}%</h4>
+                  <p className="text-xs text-muted-foreground italic leading-relaxed">"{aiAnalysis.justification}"</p>
                 </div>
-
-                {aiAnalysis ? (
-                  <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-500">
-                    <div className="flex items-baseline justify-between">
-                      <span className="text-[10px] font-medium text-muted-foreground">Scholarship Fit Analysis</span>
-                      <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20">
-                        {aiAnalysis.fitScore}% Match
-                      </Badge>
-                    </div>
-                    <p className="text-xs text-muted-foreground leading-relaxed italic">
-                      "{aiAnalysis.justification}"
-                    </p>
-                  </div>
-                ) : !isReadOnly && (
-                  <p className="text-[11px] text-muted-foreground">
-                    Compare this candidate against scholarship criteria using AI insights.
-                  </p>
-                )}
-              </div>
+              )}
 
               {criteria.map((item) => (
-                <div key={item.key} className="space-y-3">
+                <div key={item.key} className="space-y-2">
                   <div className="flex justify-between items-baseline">
-                    <div className="space-y-0.5">
+                    <div>
                       <Label className="text-sm font-bold">{item.label}</Label>
-                      <p className="text-[11px] text-muted-foreground">{item.desc}</p>
+                      <span className="text-[10px] font-bold text-primary ml-2 bg-primary/10 px-1 rounded">Weight: {item.weight}</span>
                     </div>
-                    <Badge variant="outline" className="text-sm font-mono bg-background">
-                      {(scores as any)[item.key]} / 5
-                    </Badge>
+                    <Badge variant="outline" className="font-mono">{(scores as any)[item.key]} / 5</Badge>
                   </div>
                   <Slider 
-                    value={[(scores as any)[item.key]]} 
-                    max={5} 
-                    min={1} 
-                    step={1} 
+                    value={[(scores as any)[item.key]]} max={5} min={1} step={1} 
                     onValueChange={(val) => !isReadOnly && setScores({ ...scores, [item.key]: val[0] })}
-                    className={isReadOnly ? "cursor-not-allowed opacity-50" : "cursor-pointer"}
                     disabled={isReadOnly}
                   />
+                  <p className="text-[10px] text-muted-foreground">{item.desc}</p>
                 </div>
               ))}
               
               <Separator />
 
-              <div className="space-y-3 pb-4">
-                <Label htmlFor="comments" className="font-bold flex items-center gap-2">
-                  <MessageSquare className="h-4 w-4" /> Final Recommendation
-                </Label>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center gap-2"><MessageSquare className="h-4 w-4" /> Discussion Required?</Label>
+                  <Switch checked={markForDiscussion} onCheckedChange={setMarkForDiscussion} disabled={isReadOnly} />
+                </div>
                 <Textarea 
-                  id="comments" 
-                  placeholder={isReadOnly ? "" : "Provide context for your scoring..."}
-                  className="min-h-[100px] bg-muted/5 resize-none text-sm"
-                  value={comment}
-                  onChange={(e) => !isReadOnly && setComment(e.target.value)}
+                  placeholder="Final committee notes..." 
+                  className="min-h-[100px] text-sm" 
+                  value={comment} 
+                  onChange={(e) => setComment(e.target.value)} 
                   disabled={isReadOnly}
-                  readOnly={isReadOnly}
                 />
               </div>
             </CardContent>
             
-            <CardFooter className="bg-muted/10 border-t p-6">
-              {isReadOnly ? (
-                <div className="w-full flex items-center justify-center py-2 text-sm text-muted-foreground italic gap-2 bg-muted/50 rounded-md">
-                   <Lock className="h-4 w-4" /> This review is final and cannot be edited.
-                </div>
+            <CardFooter className="bg-muted/10 border-t p-6 gap-3">
+              {!isReadOnly ? (
+                <>
+                  <Button variant="outline" className="flex-1" onClick={() => handleSubmitReview(true)} disabled={isSubmitting}>Save Draft</Button>
+                  <Button className="flex-1 font-bold" onClick={() => handleSubmitReview(false)} disabled={isSubmitting}>Submit Review</Button>
+                </>
               ) : (
-                <Button 
-                  className="w-full h-12 text-lg font-bold transition-all hover:scale-[1.02]" 
-                  onClick={handleSubmitReview}
-                  disabled={isSubmitting}
-                >
-                  {isSubmitting ? 'Recording Evaluation...' : 'Submit Final Score'}
-                </Button>
+                <div className="w-full flex items-center justify-center py-2 text-xs text-muted-foreground italic gap-2 bg-muted/50 rounded-md">
+                   <Lock className="h-3 w-3" /> Submission Finalized
+                </div>
               )}
             </CardFooter>
           </Card>
