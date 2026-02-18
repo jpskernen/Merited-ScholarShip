@@ -1,4 +1,3 @@
-
 import { Button } from '@/components/ui/button';
 import {
   Table,
@@ -10,7 +9,7 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, EyeOff } from 'lucide-react';
 import { getApplicants } from '@/lib/applicants';
 
 export default async function ReviewerDashboardPage() {
@@ -44,7 +43,7 @@ export default async function ReviewerDashboardPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Applicant ID</TableHead>
+              <TableHead>Applicant Name/ID</TableHead>
               <TableHead>School</TableHead>
               <TableHead>Assigned Date</TableHead>
               <TableHead>Status</TableHead>
@@ -52,24 +51,39 @@ export default async function ReviewerDashboardPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {applicationsWithStatus.map((app) => (
-              <TableRow key={app.id}>
-                <TableCell className="font-medium">{app.isBlind ? `Applicant ${app.id}` : app.name}</TableCell>
-                <TableCell>{app.school}</TableCell>
-                <TableCell>{app.assignedDate}</TableCell>
-                <TableCell>
-                  <Badge variant={getStatusVariant(app.status)} className={app.status === 'Completed' ? 'bg-accent text-accent-foreground' : ''}>{app.status}</Badge>
-                </TableCell>
-                <TableCell className="text-right">
-                  <Button variant="outline" size="sm" asChild>
-                    <Link href={`/review/applications/${app.id}`}>
-                      {app.status === 'Completed' ? 'View Review' : 'Start Review'}
-                      <ArrowRight className="ml-2 h-4 w-4" />
-                    </Link>
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
+            {applicationsWithStatus.map((app) => {
+              const displayName = app.isBlind 
+                ? `Applicant ${app.id.substring(0, 6)}` 
+                : app.name;
+
+              return (
+                <TableRow key={app.id}>
+                  <TableCell className="font-medium">
+                    <div className="flex items-center gap-2">
+                      {displayName}
+                      {app.isBlind && (
+                        <Badge variant="outline" className="text-[10px] h-4 border-primary/20 text-primary/70">
+                          <EyeOff className="h-2 w-2 mr-1" /> Blind
+                        </Badge>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>{app.school}</TableCell>
+                  <TableCell>{app.assignedDate}</TableCell>
+                  <TableCell>
+                    <Badge variant={getStatusVariant(app.status)} className={app.status === 'Completed' ? 'bg-accent text-accent-foreground' : ''}>{app.status}</Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button variant="outline" size="sm" asChild>
+                      <Link href={`/review/applications/${app.id}`}>
+                        {app.status === 'Completed' ? 'View Review' : 'Start Review'}
+                        <ArrowRight className="ml-2 h-4 w-4" />
+                      </Link>
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </div>

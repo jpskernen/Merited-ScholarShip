@@ -1,4 +1,3 @@
-// src/app/(main)/admin/applicants/page.tsx
 import {
   Table,
   TableBody,
@@ -11,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { getApplicants } from '@/lib/applicants';
 import { Badge } from '@/components/ui/badge';
-import { EyeOff } from 'lucide-react';
+import { EyeOff, User } from 'lucide-react';
 
 export default async function ApplicantsPage() {
   const applicants = await getApplicants();
@@ -21,7 +20,7 @@ export default async function ApplicantsPage() {
       <div>
         <h1 className="text-3xl font-bold">All Applicants</h1>
         <p className="text-muted-foreground">
-          Browse and review all submitted applications.
+          Browse and review all submitted applications. Admins can see full identities regardless of blind settings.
         </p>
       </div>
 
@@ -29,32 +28,45 @@ export default async function ApplicantsPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
+              <TableHead>Full Name</TableHead>
               <TableHead>School</TableHead>
               <TableHead>GPA</TableHead>
-              <TableHead>Major</TableHead>
+              <TableHead>Review Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {applicants.map((applicant) => (
               <TableRow key={applicant.id}>
-                <TableCell className="font-medium">{applicant.isBlind ? 'Applicant (Hidden)' : applicant.name}</TableCell>                
+                <TableCell className="font-medium">
+                  <div className="flex flex-col">
+                    <span className="flex items-center gap-2">
+                      {applicant.name}
+                      {applicant.isBlind && (
+                        <Badge variant="outline" className="border-amber-500/30 text-amber-600 bg-amber-50">
+                          <EyeOff className="h-3 w-3 mr-1" /> Blind Mode
+                        </Badge>
+                      )}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground font-mono">{applicant.id}</span>
+                  </div>
+                </TableCell>                
                 <TableCell>{applicant.school}</TableCell>
                 <TableCell>
                   <Badge variant="secondary">{applicant.gpa.toFixed(2)}</Badge>
                 </TableCell>
-                <TableCell>{applicant.major}</TableCell>
+                <TableCell>
+                   <Badge variant="outline" className="text-xs">
+                     {applicant.isBlind ? 'Anonymized for Reviewers' : 'Identity Public to Reviewers'}
+                   </Badge>
+                </TableCell>
                 <TableCell className="text-right space-x-2">
                   <Button variant="outline" size="sm" asChild>
                     <Link href={`/review/applications/${applicant.id}`}>
-                      Review Application
+                      View Application
                     </Link>
                   </Button>
-                   <Button variant="ghost" size="sm">
-                    <EyeOff className="h-4 w-4 mr-2" />
-                    Make Blind
-                  </Button>
+                  {/* Future: Add Toggle Blind Mode client action here */}
                 </TableCell>
               </TableRow>
             ))}

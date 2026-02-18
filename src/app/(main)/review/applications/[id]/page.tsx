@@ -20,7 +20,8 @@ import {
   MessageSquare,
   ChevronLeft,
   Calculator,
-  Lock
+  Lock,
+  EyeOff
 } from 'lucide-react';
 import { notFound, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -133,6 +134,10 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
     { key: 'other', label: 'Overall Impression', desc: 'The "X-factor" and essay quality.' },
   ];
 
+  const displayName = application.isBlind 
+    ? `Applicant ${params.id.substring(0, 6)}` 
+    : application.name;
+
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)]">
       <div className="flex items-center justify-between mb-6">
@@ -142,8 +147,12 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
           </Button>
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
-              Reviewing: {application.isBlind ? `Applicant ${params.id.substring(0, 6)}` : application.name}
-              {application.isBlind && <Badge variant="outline" className="ml-2">Blind Review</Badge>}
+              Reviewing: {displayName}
+              {application.isBlind && (
+                <Badge variant="outline" className="ml-2 border-primary/30 bg-primary/5">
+                  <EyeOff className="h-3 w-3 mr-1" /> Blind Review
+                </Badge>
+              )}
               {isReadOnly && (
                 <Badge variant="secondary" className="ml-2 bg-green-500/10 text-green-600 border-green-200">
                   <Lock className="h-3 w-3 mr-1" /> Submitted
@@ -175,8 +184,8 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
                 </div>
                 <div className="grid grid-cols-2 gap-y-4 gap-x-8 text-sm">
                   <div className="space-y-1">
-                    <Label className="text-muted-foreground">Full Name</Label>
-                    <p className="font-medium">{application.isBlind ? '[REDACTED]' : application.name}</p>
+                    <Label className="text-muted-foreground">Candidate Identity</Label>
+                    <p className="font-medium">{application.isBlind ? '[REDACTED FOR ANONYMITY]' : application.name}</p>
                   </div>
                   <div className="space-y-1">
                     <Label className="text-muted-foreground">High School</Label>
