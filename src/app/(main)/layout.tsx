@@ -1,3 +1,4 @@
+
 'use client';
 
 import {
@@ -71,24 +72,36 @@ export default function DashboardLayout({
   const { data: adminRole, isLoading: isAdminRoleLoading } = useDoc(adminRoleRef);
   const { data: reviewerProfile, isLoading: isReviewerRoleLoading } = useDoc(reviewerProfileRef);
   
-  const isAdmin = !!adminRole;
-  const isReviewer = !!reviewerProfile;
+  // Check both Firestore documents and Custom Claims for roles
+  const isAdmin = !!adminRole || user?.getIdTokenResult().then(res => res.claims.role === 'admin');
+  const isReviewer = !!reviewerProfile || user?.getIdTokenResult().then(res => res.claims.role === 'reviewer');
 
+  // Unified redirection logic to prevent students from accessing admin/reviewer areas
   useEffect(() => {
-    if (!isUserLoading && !user) {
-      if (isDashboardPath || isAdminPath || isReviewerPath) {
-        router.push('/login');
+    if (!isUserLoading && !isAdminRoleLoading && !isReviewerRoleLoading) {
+      if (!user) {
+        if (isDashboardPath || isAdminPath || isReviewerPath) {
+          router.push('/login');
+        }
+      } else {
+        // Logged in, but check permissions
+        if (isAdminPath && !adminRole) {
+           router.push('/dashboard');
+        }
+        if (isReviewerPath && !reviewerProfile && !adminRole) {
+           router.push('/dashboard');
+        }
       }
     }
-  }, [user, isUserLoading, isDashboardPath, isAdminPath, isReviewerPath, router]);
+  }, [user, isUserLoading, isAdminRoleLoading, isReviewerRoleLoading, adminRole, reviewerProfile, isAdminPath, isReviewerPath, isDashboardPath, router]);
 
   const isActive = (href: string) => {
     return pathname === href;
   };
   
   const getNavItems = () => {
-    if (isAdmin) return adminNav;
-    if (isReviewer) return reviewerNav;
+    if (adminRole) return adminNav;
+    if (reviewerProfile) return reviewerNav;
     return applicantNav;
   };
 
@@ -107,13 +120,17 @@ export default function DashboardLayout({
      return null;
   }
 
+  // Prevent rendering children if unauthorized
+  if (isAdminPath && !adminRole) return null;
+  if (isReviewerPath && !reviewerProfile && !adminRole) return null;
+
   if (!shouldShowLayout) {
     return <>{children}</>;
   }
 
   let navGroupLabel = 'Applicant';
-  if (isAdmin) navGroupLabel = 'Admin';
-  else if (isReviewer) navGroupLabel = 'Reviewer';
+  if (adminRole) navGroupLabel = 'Admin';
+  else if (reviewerProfile) navGroupLabel = 'Reviewer';
 
   return (
     <SidebarProvider>

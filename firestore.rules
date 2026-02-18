@@ -4,27 +4,14 @@
  *
  * Core Philosophy:
  * This ruleset enforces a strict user-ownership model for applicant data and
- * an admin-access model for scholarship management. It uses path-based
- * authorization to control access to user-specific data (applications).
- *
- * Data Structure:
- * - /users/{userId}: Applicant profiles, owned by the user with matching UID.
- * - /users/{userId}/applications/{applicationId}: Applications submitted by an applicant.
- * - /scholarships/{scholarshipId}: Scholarship information, managed by admins.
- * - /applications/{applicationId}/reviews/{reviewId}: Reviews for each application.
- * - /reviewers/{reviewerId}: Reviewer profiles.
- * - /roles_admin/{uid}: Admin role mapping.
+ * an admin/reviewer-access model for evaluations. It uses both path-based
+ * authorization and role-based checks (via documents and custom claims).
  *
  * Key Security Decisions:
  * - Applicants can only access their own profile and applications.
- * - Scholarship data is publicly readable but only writable by admins.
- * - Listing all users is disallowed; access to applicant profiles is restricted to the owner.
- * - The existence of a document in /roles_admin/{uid} grants admin privileges.
- *
- * Denormalization for Authorization:
- * - The system avoids `get()` calls by using path-based ownership for applicant data.
- * - Admin status is determined by the existence of a document in `/roles_admin/{uid}`,
- *   avoiding the need to read user roles from user documents.
+ * - Reviewers can only see assigned applications and manage their own reviews.
+ * - Admins have full oversight.
+ * - Access to reviewer/admin metadata is strictly restricted to authorized roles.
  */
 rules_version = '2';
 service cloud.firestore {
@@ -32,7 +19,6 @@ service cloud.firestore {
 
     /**
      * @description Checks if the request is made by an authenticated user.
-     * @return {boolean} True if the user is signed in, false otherwise.
      */
     function isSignedIn() {
       return request.auth != null;
@@ -40,53 +26,53 @@ service cloud.firestore {
 
     /**
      * @description Checks if the authenticated user ID matches the provided user ID.
-     * @param {string} userId The user ID to compare against the authenticated user ID.
-     * @return {boolean} True if the user IDs match, false otherwise.
      */
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
 
     /**
-     * @description Checks if the user has admin privileges.
-     * @return {boolean} True if the user is an admin, false otherwise.
+     * @description Checks if the user has admin privileges (via token claim or document).
      */
     function isAdmin() {
-      return exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
+      return isSignedIn() && (
+        request.auth.token.role == "admin" ||
+        exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid))
+      );
     }
 
     /**
-     * @description Checks if the user is a reviewer.
-     * @return {boolean} True if the user is a reviewer, false otherwise.
+     * @description Checks if the user is a reviewer (via token claim or document).
      */
     function isReviewer() {
-        return exists(/databases/$(database)/documents/reviewers/$(request.auth.uid));
+        return isSignedIn() && (
+          request.auth.token.role == "reviewer" ||
+          exists(/databases/$(database)/documents/reviewers/$(request.auth.uid))
+        );
     }
 
     /**
      * @description Defines rules for user profiles.
-     * @path /users/{userId}
      */
     match /users/{userId} {
       allow get: if isOwner(userId) || isAdmin() || isReviewer();
       allow list: if isAdmin() || isReviewer();
       allow create: if isOwner(userId);
       allow update: if isOwner(userId);
-      allow delete: if isOwner(userId);
+      allow delete: if isAdmin(); // Students cannot delete their own profiles once created.
     }
 
     /**
      * @description Defines rules for applications submitted by a user.
-     * @path /users/{userId}/applications/{applicationId}
      */
     match /users/{userId}/applications/{applicationId} {
       allow get, list: if isOwner(userId) || isAdmin() || isReviewer();
-      allow create, update, delete: if isOwner(userId);
+      allow create, update: if isOwner(userId);
+      allow delete: if isAdmin();
     }
 
     /**
      * @description Defines rules for scholarship information.
-     * @path /scholarships/{scholarshipId}
      */
     match /scholarships/{scholarshipId} {
       allow get, list: if true;
@@ -95,31 +81,29 @@ service cloud.firestore {
 
     /**
      * @description Defines rules for reviews of applications.
-     * @path /applications/{applicationId}/reviews/{reviewId}
+     * Prevents students (applicants) from ever seeing evaluations.
      */
     match /applications/{applicationId}/reviews/{reviewId} {
       allow get, list: if isAdmin() || isReviewer();
-      // Allow reviewers to create/update their own review.
       allow create, update: if isReviewer() && request.resource.data.reviewerId == request.auth.uid;
-      allow delete: if false; // Reviews should generally not be deleted.
+      allow delete: if false; 
     }
 
     /**
      * @description Defines rules for reviewer profiles.
-     * @path /reviewers/{reviewerId}
+     * Restricts viewing reviewer data to admins and the reviewer themselves.
      */
     match /reviewers/{reviewerId} {
-        allow get: if true;
-        allow list: if isAdmin(); // Only admins can see all reviewers.
-        allow create, update, delete: if isAdmin(); // Admins manage reviewers.
+        allow get: if isAdmin() || isOwner(reviewerId);
+        allow list: if isAdmin();
+        allow create, update, delete: if isAdmin();
     }
 
     /**
      * @description Admin role assignment. Only assignable by backend functions or manually in console.
-     * @path /roles_admin/{uid}
      */
     match /roles_admin/{uid} {
-        allow get: if isAdmin();
+        allow get: if isAdmin() || isOwner(uid);
         allow list, create, update, delete: if false;
     }
   }
