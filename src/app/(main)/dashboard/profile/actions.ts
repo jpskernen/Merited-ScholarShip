@@ -23,25 +23,18 @@ export async function saveApplicantData(userId: string, formData: FormData) {
     const rawData = Object.fromEntries(formData.entries());
     const docRef = doc(db, 'users', userId);
 
-    // 1. Get existing data to preserve old file URLs if no new file is uploaded
     const existingDoc = await getDoc(docRef);
     const existingData = existingDoc.exists() ? existingDoc.data() : {};
 
-    // 2. Prepare data object for validation and saving
     const dataToSave: { [key: string]: any } = {
-        ...existingData, // Start with existing data
+        ...existingData,
     };
 
-    // 3. Process and merge form data
     for (const [key, value] of Object.entries(rawData)) {
         if (value instanceof File) {
-            // Skip empty file inputs
-            if (value.size === 0) {
-                continue;
-            }
+            if (value.size === 0) continue;
         }
         
-        // Convert checkbox values from 'on' to boolean
         if (key.endsWith('Accepted') && typeof value === 'string') {
             dataToSave[key] = value === 'on';
         } else if (key === 'gpa') {
@@ -51,8 +44,14 @@ export async function saveApplicantData(userId: string, formData: FormData) {
         }
     }
     
-    // 4. Handle file uploads and update URLs
-    const fileFields: (keyof Applicant)[] = ['transcripts', 'resume', 'acceptanceLetter'];
+    const fileFields: (keyof Applicant)[] = [
+      'transcripts', 
+      'resume', 
+      'acceptanceLetter', 
+      'recommendationLetter1', 
+      'recommendationLetter2'
+    ];
+
     for (const fieldName of fileFields) {
         const file = formData.get(fieldName) as File | null;
         if (file && file.size > 0) {
@@ -60,17 +59,12 @@ export async function saveApplicantData(userId: string, formData: FormData) {
             const downloadURL = await uploadFile(file, path);
             dataToSave[fieldName] = downloadURL;
         } else if (existingData && existingData[fieldName]) {
-            // If no new file, keep the old one
             dataToSave[fieldName] = existingData[fieldName];
         } else {
-            // If no new file and no old file, ensure it's undefined
             delete dataToSave[fieldName];
         }
     }
 
-    // 5. Validate the final merged data
-    // We remove file fields before validation if they are just empty strings
-    // Zod will handle the actual validation logic based on the schema
     const finalDataForValidation = { ...dataToSave };
     for (const field of fileFields) {
         if (finalDataForValidation[field] === '') {
@@ -89,7 +83,6 @@ export async function saveApplicantData(userId: string, formData: FormData) {
       };
     }
 
-    // 6. Save the final, validated data to Firestore
     await setDoc(docRef, validatedFields.data, { merge: true });
     
     return { success: true, id: userId };

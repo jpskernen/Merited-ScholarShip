@@ -20,7 +20,7 @@ import { saveApplicantData } from './actions';
 import { useEffect, useState, useRef } from 'react';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
-import { useDoc, useFirebase } from '@/firebase';
+import { useDoc, useFirebase, useMemoFirebase } from '@/firebase';
 import { doc } from 'firebase/firestore';
 
 export default function ProfilePage() {
@@ -29,8 +29,12 @@ export default function ProfilePage() {
   const [isSaving, setIsSaving] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
-  // Fetch existing applicant data
-  const userDocRef = user && firestore ? doc(firestore, 'users', user.uid) : null;
+  // Properly memoize the Firestore document reference to prevent infinite loading loops
+  const userDocRef = useMemoFirebase(() => {
+    if (!user || !firestore) return null;
+    return doc(firestore, 'users', user.uid);
+  }, [user, firestore]);
+
   const { data: applicantData, isLoading: isApplicantDataLoading } = useDoc<Applicant>(userDocRef);
 
   const {
@@ -39,32 +43,31 @@ export default function ProfilePage() {
     formState: { errors },
     setValue,
     reset,
-    watch,
   } = useForm<Applicant>({
     resolver: zodResolver(ApplicantSchema),
     defaultValues: {
       name: '',
       email: '',
+      secondaryEmail: '',
+      address: '',
       gpa: 0,
       major: '',
       school: '',
       interests: '',
       activities: '',
       essay: '',
+      qualificationStatement: '',
       firstChoiceSchool: '',
       firstChoiceAccepted: false,
     }
   });
   
-  // Pre-fill form with user and applicant data
   useEffect(() => {
     if (user && !isUserLoading) {
-      // Basic user info from auth
       if (!applicantData?.email) setValue('email', user.email || '');
       if (!applicantData?.name) setValue('name', user.displayName || '');
     }
     if (applicantData) {
-        // Pre-fill the form with data from Firestore
         reset(applicantData);
     }
   }, [user, applicantData, isUserLoading, setValue, reset]);
@@ -85,15 +88,14 @@ export default function ProfilePage() {
       if (result.success) {
         toast({
             title: 'Success!',
-            description: 'Your profile has been saved successfully.',
+            description: 'Your scholarship application has been saved.',
         });
       } else {
-         console.error('Save failed:', result.error, result.issues);
-        throw new Error(result.error || 'Failed to save profile.');
+        throw new Error(result.error || 'Failed to save application.');
       }
     } catch (error) {
       console.error(error);
-      const message = error instanceof Error ? error.message : 'There was an error saving your profile.';
+      const message = error instanceof Error ? error.message : 'There was an error saving your application.';
       toast({
         title: 'Error',
         description: message,
@@ -105,27 +107,19 @@ export default function ProfilePage() {
   };
   
   if (isUserLoading || isApplicantDataLoading) {
-    return <div>Loading profile...</div>;
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <div className="animate-pulse text-muted-foreground font-medium">Loading Application Profile...</div>
+      </div>
+    );
   }
-
-  // Watch for file changes to provide feedback (optional)
-  const resumeFile = watch('resume');
-  const transcriptFile = watch('transcripts');
-  const acceptanceLetterFile = watch('acceptanceLetter');
-
-  const getFileLabel = (file: any, existingUrl?: string | File) => {
-    if (file instanceof FileList && file.length > 0) return file[0].name;
-    if (typeof existingUrl === 'string' && existingUrl) return "File already uploaded";
-    return "";
-  };
-
 
   return (
     <form ref={formRef} onSubmit={handleSubmit(onSubmit)} className="space-y-8" noValidate>
-      <div>
-        <h1 className="text-3xl font-bold">My Profile</h1>
+      <div className="flex flex-col gap-2">
+        <h1 className="text-3xl font-bold">Scholarship Application</h1>
         <p className="text-muted-foreground">
-          Keep your information up to date for the best scholarship matches.
+          Complete your profile to apply for the Lake Travis Education Foundation Scholarships.
         </p>
       </div>
 
@@ -133,29 +127,62 @@ export default function ProfilePage() {
         <div className="lg:col-span-2 space-y-8">
           <Card>
             <CardHeader>
-              <CardTitle>Personal Information</CardTitle>
+              <CardTitle>Contact & Personal Details</CardTitle>
               <CardDescription>
-                This information will be used to match you with scholarships.
+                Basic information required for all scholarship programs.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+              <div className="space-y-2">
+                <Label htmlFor="name">Full Name</Label>
+                <Input id="name" {...register('name')} />
+                {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
+              </div>
+
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="name">Full Name</Label>
-                  <Input id="name" {...register('name')} />
-                  {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
+                  <Label htmlFor="email">Primary Email</Label>
                   <Input
                     id="email"
                     type="email"
                     {...register('email')}
-                    readOnly // Email should not be editable
+                    readOnly
                   />
                    {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="secondaryEmail">Secondary Email (Optional)</Label>
+                  <Input
+                    id="secondaryEmail"
+                    type="email"
+                    {...register('secondaryEmail')}
+                    placeholder="Personal or parent email"
+                  />
+                   {errors.secondaryEmail && <p className="text-xs text-destructive">{errors.secondaryEmail.message}</p>}
+                </div>
               </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="address">Physical Address</Label>
+                <Textarea 
+                  id="address" 
+                  {...register('address')} 
+                  placeholder="Street Address, City, State, ZIP"
+                  className="min-h-[80px]"
+                />
+                {errors.address && <p className="text-xs text-destructive">{errors.address.message}</p>}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Academic Profile</CardTitle>
+              <CardDescription>
+                Your school record and extracurricular achievements.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="gpa">GPA</Label>
@@ -164,170 +191,126 @@ export default function ProfilePage() {
                     type="number"
                     step="0.01"
                     {...register('gpa')}
-                    placeholder="e.g., 3.8"
                   />
                    {errors.gpa && <p className="text-xs text-destructive">{errors.gpa.message}</p>}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="major">Intended Major</Label>
-                  <Input id="major" {...register('major')} placeholder="e.g., Computer Science" />
+                  <Input id="major" {...register('major')} />
                   {errors.major && <p className="text-xs text-destructive">{errors.major.message}</p>}
                 </div>
               </div>
                <div className="space-y-2">
-                <Label htmlFor="school">High School</Label>
-                <Input id="school" {...register('school')} placeholder="e.g., Lake Travis High School" />
+                <Label htmlFor="school">Current High School</Label>
+                <Input id="school" {...register('school')} />
                 {errors.school && <p className="text-xs text-destructive">{errors.school.message}</p>}
               </div>
               <div className="space-y-2">
-                  <Label htmlFor="satActScore">SAT/ACT Score (Optional)</Label>
-                  <Input id="satActScore" {...register('satActScore')} placeholder="e.g., 1400 or 32" />
-                  {errors.satActScore && <p className="text-xs text-destructive">{errors.satActScore.message}</p>}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="activities">Activities</Label>
-                <Textarea id="activities" {...register('activities')} placeholder="e.g., Soccer, Wrestling, NHS" />
-                <p className="text-xs text-muted-foreground">Separate activities with commas.</p>
+                <Label htmlFor="activities">Activities & Leadership</Label>
+                <Textarea id="activities" {...register('activities')} placeholder="Clubs, sports, volunteering..." />
                 {errors.activities && <p className="text-xs text-destructive">{errors.activities.message}</p>}
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Application Essays</CardTitle>
+              <CardDescription>
+                Demonstrate your qualifications and shared values.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
               <div className="space-y-2">
-                <Label htmlFor="interests">Interests & Hobbies</Label>
-                <Textarea id="interests" {...register('interests')} placeholder="e.g., Coding, volunteering, hiking" />
-                <p className="text-xs text-muted-foreground">
-                  Separate interests with commas.
-                </p>
-                {errors.interests && <p className="text-xs text-destructive">{errors.interests.message}</p>}
+                <Label htmlFor="qualificationStatement">Why are you qualified for this scholarship?</Label>
+                <Textarea
+                  id="qualificationStatement"
+                  {...register('qualificationStatement')}
+                  rows={6}
+                  placeholder="Explain how you meet specific criteria and why the committee should select you..."
+                />
+                 {errors.qualificationStatement && <p className="text-xs text-destructive">{errors.qualificationStatement.message}</p>}
               </div>
+
               <div className="space-y-2">
-                <Label htmlFor="essay">Personal Essay</Label>
+                <Label htmlFor="essay">Personal Statement / General Essay</Label>
                 <Textarea
                   id="essay"
                   {...register('essay')}
-                  rows={8}
-                  placeholder="Tell us about yourself, your goals, and your achievements..."
+                  rows={10}
+                  placeholder="Tell us about your background, achievements, and future goals..."
                 />
                  {errors.essay && <p className="text-xs text-destructive">{errors.essay.message}</p>}
               </div>
-              
             </CardContent>
           </Card>
+
           <Card>
             <CardHeader>
-                <CardTitle>College / University Plans</CardTitle>
+                <CardTitle>College Plans</CardTitle>
                 <CardDescription>
-                    Let us know your top school choices.
+                    Where do you plan to attend next fall?
                 </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
                 <div className="space-y-4">
-                    <Label className="text-base">First Choice</Label>
                     <div className="space-y-2">
-                        <Label htmlFor="firstChoiceSchool">School Name</Label>
-                        <Input id="firstChoiceSchool" {...register('firstChoiceSchool')} placeholder="e.g., University of Texas at Austin"/>
-                         {errors.firstChoiceSchool && <p className="text-xs text-destructive">{errors.firstChoiceSchool.message}</p>}
+                        <Label htmlFor="firstChoiceSchool">Top School Choice</Label>
+                        <Input id="firstChoiceSchool" {...register('firstChoiceSchool')} />
                     </div>
                     <div className="flex items-center space-x-2">
-                        <Switch id="firstChoiceAccepted" {...register('firstChoiceAccepted')} onCheckedChange={(checked) => setValue('firstChoiceAccepted', checked)} />
-                        <Label htmlFor="firstChoiceAccepted">I have been accepted</Label>
-                    </div>
-                </div>
-                 <div className="space-y-4">
-                    <Label className="text-base">Second Choice</Label>
-                    <div className="space-y-2">
-                        <Label htmlFor="secondChoiceSchool">School Name</Label>
-                        <Input id="secondChoiceSchool" {...register('secondChoiceSchool')} placeholder="e.g., Texas A&M University"/>
-                        {errors.secondChoiceSchool && <p className="text-xs text-destructive">{errors.secondChoiceSchool.message}</p>}
-                    </div>
-                    <div className="flex items-center space-x-2">
-                        <Switch id="secondChoiceAccepted" {...register('secondChoiceAccepted')} onCheckedChange={(checked) => setValue('secondChoiceAccepted', checked)} />
-                        <Label htmlFor="secondChoiceAccepted">I have been accepted</Label>
-                    </div>
-                </div>
-                <Separator />
-                 <div className="space-y-4">
-                    <Label className="text-base">Third Choice</Label>
-                    <div className="space-y-2">
-                        <Label htmlFor="thirdChoiceSchool">School Name</Label>
-                        <Input id="thirdChoiceSchool" {...register('thirdChoiceSchool')} placeholder="e.g., Texas Tech University"/>
-                        {errors.thirdChoiceSchool && <p className="text-xs text-destructive">{errors.thirdChoiceSchool.message}</p>}
-                    </div>
-                    <div className="flex items-center space-x-2">
-                        <Switch id="thirdChoiceAccepted" {...register('thirdChoiceAccepted')} onCheckedChange={(checked) => setValue('thirdChoiceAccepted', checked)} />
-                        <Label htmlFor="thirdChoiceAccepted">I have been accepted</Label>
-                    </div>
-                </div>
-                <Separator />
-                 <div className="space-y-4">
-                    <Label className="text-base">Other Education / School</Label>
-                    <div className="space-y-2">
-                        <Label htmlFor="fourthChoiceSchool">School Name</Label>
-                        <Input id="fourthChoiceSchool" {...register('fourthChoiceSchool')} placeholder="e.g., Community College, Trade School"/>
-                        {errors.fourthChoiceSchool && <p className="text-xs text-destructive">{errors.fourthChoiceSchool.message}</p>}
-                    </div>
-                </div>
-                 <div className="space-y-4">
-                    <Label className="text-base">Other Education / School</Label>
-                    <div className="space-y-2">
-                        <Label htmlFor="fifthChoiceSchool">School Name</Label>
-                        <Input id="fifthChoiceSchool" {...register('fifthChoiceSchool')} placeholder="e.g., Online Program, Certification"/>
-                        {errors.fifthChoiceSchool && <p className="text-xs text-destructive">{errors.fifthChoiceSchool.message}</p>}
+                        <Switch id="firstChoiceAccepted" checked={watch('firstChoiceAccepted')} onCheckedChange={(checked) => setValue('firstChoiceAccepted', checked)} />
+                        <Label htmlFor="firstChoiceAccepted">I have already been accepted</Label>
                     </div>
                 </div>
             </CardContent>
           </Card>
+
            <div className="flex justify-end">
-                <Button type="submit" disabled={isSaving || isUserLoading}>
-                  {isSaving ? 'Saving...' : 'Save Changes'}
+                <Button type="submit" size="lg" className="w-full sm:w-auto" disabled={isSaving}>
+                  {isSaving ? 'Saving Application...' : 'Save & Submit Application'}
                 </Button>
               </div>
         </div>
 
         <div className="space-y-8">
-          <Card>
+          <Card className="sticky top-24">
             <CardHeader>
-              <CardTitle>My Documents</CardTitle>
+              <CardTitle>Supporting Documents</CardTitle>
               <CardDescription>
-                Upload your required documents here.
+                Upload required PDF or Word documents.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-2">
-                <Label htmlFor="transcripts">Transcripts</Label>
-                <Input 
-                  id="transcripts"
-                  type="file" 
-                  accept=".pdf,.doc,.docx"
-                  {...register('transcripts')}
-                />
-                {applicantData?.transcripts && !errors.transcripts && <p className="text-xs text-muted-foreground">Current file: <a href={applicantData.transcripts as string} target="_blank" rel="noopener noreferrer" className="underline">View Transcript</a></p>}
-                {errors.transcripts && <p className="text-xs text-destructive">{errors.transcripts.message}</p>}
+                <Label htmlFor="transcripts">Official Transcripts</Label>
+                <Input id="transcripts" type="file" accept=".pdf,.doc,.docx" {...register('transcripts')} />
+                {applicantData?.transcripts && <p className="text-[10px] text-muted-foreground">Current: <a href={applicantData.transcripts as string} target="_blank" className="underline">View Transcript</a></p>}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="resume">Resume/CV</Label>
-                <Input 
-                  id="resume"
-                  type="file" 
-                  accept=".pdf,.doc,.docx" 
-                  {...register('resume')}
-                />
-                 {applicantData?.resume && !errors.resume && <p className="text-xs text-muted-foreground">Current file: <a href={applicantData.resume as string} target="_blank" rel="noopener noreferrer" className="underline">View Resume</a></p>}
-                 {errors.resume && <p className="text-xs text-destructive">{errors.resume.message}</p>}
+                <Label htmlFor="resume">Resume / CV</Label>
+                <Input id="resume" type="file" accept=".pdf,.doc,.docx" {...register('resume')} />
+                {applicantData?.resume && <p className="text-[10px] text-muted-foreground">Current: <a href={applicantData.resume as string} target="_blank" className="underline">View Resume</a></p>}
               </div>
 
-               <div className="space-y-2">
-                <Label htmlFor="acceptanceLetter">Acceptance Letter</Label>
-                 <Input 
-                  id="acceptanceLetter"
-                  type="file" 
-                  accept=".pdf,.doc,.docx" 
-                  {...register('acceptanceLetter')}
-                />
-                <p className="text-xs text-muted-foreground">
-                  If accepted, upload your letter here.
-                </p>
-                 {applicantData?.acceptanceLetter && !errors.acceptanceLetter && <p className="text-xs text-muted-foreground">Current file: <a href={applicantData.acceptanceLetter as string} target="_blank" rel="noopener noreferrer" className="underline">View Letter</a></p>}
-                 {errors.acceptanceLetter && <p className="text-xs text-destructive">{errors.acceptanceLetter.message}</p>}
+              <Separator />
+
+              <div className="space-y-2">
+                <Label htmlFor="recommendationLetter1">Letter of Recommendation #1</Label>
+                <Input id="recommendationLetter1" type="file" accept=".pdf,.doc,.docx" {...register('recommendationLetter1')} />
+                {applicantData?.recommendationLetter1 && <p className="text-[10px] text-muted-foreground">Current: <a href={applicantData.recommendationLetter1 as string} target="_blank" className="underline">View Letter 1</a></p>}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="recommendationLetter2">Letter of Recommendation #2</Label>
+                <Input id="recommendationLetter2" type="file" accept=".pdf,.doc,.docx" {...register('recommendationLetter2')} />
+                {applicantData?.recommendationLetter2 && <p className="text-[10px] text-muted-foreground">Current: <a href={applicantData.recommendationLetter2 as string} target="_blank" className="underline">View Letter 2</a></p>}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="acceptanceLetter">Acceptance Letter (Optional)</Label>
+                 <Input id="acceptanceLetter" type="file" accept=".pdf,.doc,.docx" {...register('acceptanceLetter')} />
               </div>
             </CardContent>
           </Card>

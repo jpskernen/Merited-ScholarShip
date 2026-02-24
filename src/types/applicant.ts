@@ -23,6 +23,8 @@ export const ApplicantSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(1, 'Full name is required.'),
   email: z.string().email('Invalid email address.'),
+  secondaryEmail: z.string().email('Invalid secondary email address.').optional().or(z.literal('')),
+  address: z.string().min(5, 'Physical address is required.'),
   gpa: z.preprocess(
     (val) => (val === '' || val === undefined || val === null ? 0 : (typeof val === 'string' ? parseFloat(val) : val)),
     z.number().min(0).max(5.0, 'GPA must be between 0 and 5.0.')
@@ -32,8 +34,11 @@ export const ApplicantSchema = z.object({
   interests: z.string().min(1, 'Please list at least one interest.'),
   activities: z.string().min(1, 'Please list at least one activity.'),
   essay: z.string().min(50, 'Essay must be at least 50 characters long.'),
+  qualificationStatement: z.string().min(50, 'Qualification statement must be at least 50 characters long.'),
   transcripts: fileSchema,
   resume: fileSchema,
+  recommendationLetter1: fileSchema,
+  recommendationLetter2: fileSchema,
   isBlind: z.boolean().optional(),
   firstChoiceSchool: z.string().optional(),
   firstChoiceAccepted: z.boolean().optional(),
@@ -46,12 +51,13 @@ export const ApplicantSchema = z.object({
   acceptanceLetter: fileSchema,
   satActScore: z.string().optional(),
 }).transform(data => {
-    // This allows us to use zod's `optional` on file inputs but still have a `null` value in the db
     return {
         ...data,
         transcripts: data.transcripts || null,
         resume: data.resume || null,
         acceptanceLetter: data.acceptanceLetter || null,
+        recommendationLetter1: data.recommendationLetter1 || null,
+        recommendationLetter2: data.recommendationLetter2 || null,
     }
 });
 
