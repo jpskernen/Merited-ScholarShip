@@ -4,7 +4,7 @@ import {
   signInAnonymously,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  sendPasswordResetEmail,
+  // Assume getAuth and app are initialized elsewhere
 } from 'firebase/auth';
 
 /** Initiate anonymous sign-in (non-blocking). */
@@ -26,11 +26,4 @@ export function initiateEmailSignIn(authInstance: Auth, email: string, password:
   // CRITICAL: Call signInWithEmailAndPassword directly. Do NOT use 'await signInWithEmailAndPassword(...)'.
   signInWithEmailAndPassword(authInstance, email, password);
   // Code continues immediately. Auth state change is handled by onAuthStateChanged listener.
-}
-
-/** Initiate password reset email (non-blocking). */
-export function initiatePasswordReset(authInstance: Auth, email: string): void {
-  // CRITICAL: Call sendPasswordResetEmail directly. Do NOT use 'await sendPasswordResetEmail(...)'.
-  sendPasswordResetEmail(authInstance, email);
-  // Code continues immediately.
 }

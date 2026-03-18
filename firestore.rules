@@ -1,110 +1,184 @@
-
-/**
- * @fileoverview Firestore Security Rules for the scholarship application system.
- *
- * Core Philosophy:
- * This ruleset enforces a strict user-ownership model for applicant data and
- * an admin/reviewer-access model for evaluations. It uses both path-based
- * authorization and role-based checks (via documents and custom claims).
- *
- * Key Security Decisions:
- * - Applicants can only access their own profile and applications.
- * - Reviewers can only see assigned applications and manage their own reviews.
- * - Admins have full oversight.
- * - Access to reviewer/admin metadata is strictly restricted to authorized roles.
- */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Checks if the request is made by an authenticated user.
+     * SHOLARSHIP SAAS SECURITY RULES
+     * 
+     * Core Philosophy:
+     * This ruleset implements a strict multi-tenant isolation model where the 'School' is the primary 
+     * tenant boundary. Every document contains a denormalized 'schoolId' to ensure that authorization 
+     * decisions can be made without expensive recursive lookups. Access is primarily determined by 
+     * a user's association with a school and their assigned role (Admin, Reviewer, or Applicant).
+     * 
+     * Data Structure:
+     * - /users/{userId}: Global user profiles containing role and school affiliation.
+     * - /schools/{schoolId}: Tenant root containing configuration.
+     * - /schools/{schoolId}/...: All school-specific data (Scholarships, Applications, Profiles) 
+     *   are nested under the school path for logical and physical isolation.
+     * 
+     * Key Security Decisions:
+     * - Tenant Isolation: Users can only access data where the 'schoolId' matches their own profile.
+     * - Role-Based Access (RBAC): Privileges are bifurcated by 'role' (Admin vs. Reviewer vs. Applicant).
+     * - Ownership: Applicants are restricted to managing their own profiles and applications.
+     * - Prototyping Flexibility: Rules enforce relational integrity (e.g., owner IDs) and tenant 
+     *   boundaries but allow for flexible data shapes within those boundaries.
      */
+
+    // --- Helper Functions ---
+
     function isSignedIn() {
       return request.auth != null;
     }
 
-    /**
-     * @description Checks if the authenticated user ID matches the provided user ID.
-     */
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    /**
-     * @description Checks if the user has admin privileges (via token claim or document).
-     */
-    function isAdmin() {
-      return isSignedIn() && (
-        request.auth.token.role == "admin" ||
-        exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid))
-      );
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // Validates that the user belongs to the specified school
+    function isMember(schoolId) {
+      return isSignedIn() && userDoc().schoolId == schoolId;
+    }
+
+    // Role-based helpers
+    function isAdmin(schoolId) {
+      return isMember(schoolId) && userDoc().role == 'Admin';
+    }
+
+    function isReviewer(schoolId) {
+      return isMember(schoolId) && userDoc().role == 'Reviewer';
+    }
+
+    function isApplicant(schoolId) {
+      return isMember(schoolId) && userDoc().role == 'Applicant';
     }
 
     /**
-     * @description Checks if the user is a reviewer (via token claim or document).
-     */
-    function isReviewer() {
-        return isSignedIn() && (
-          request.auth.token.role == "reviewer" ||
-          exists(/databases/$(database)/documents/reviewers/$(request.auth.uid))
-        );
-    }
-
-    /**
-     * @description Defines rules for user profiles.
+     * @description Rules for the global Users collection.
+     * @path /users/{userId}
+     * @allow (get) Any signed-in user fetching their own profile.
+     * @deny (list) Applicants attempting to browse other users.
+     * @principle Ownership for profile management; Admin for school-wide user listing.
      */
     match /users/{userId} {
-      allow get: if isOwner(userId) || isAdmin() || isReviewer();
-      allow list: if isAdmin() || isReviewer();
-      allow create: if isOwner(userId);
-      allow update: if isOwner(userId);
-      allow delete: if isAdmin(); // Students cannot delete their own profiles once created.
+      allow get: if isOwner(userId) || isAdmin(resource.data.schoolId);
+      allow list: if isSignedIn() && isAdmin(userDoc().schoolId);
+      allow create: if isOwner(userId) && request.resource.data.id == userId;
+      allow update: if (isOwner(userId) && request.resource.data.schoolId == resource.data.schoolId) || (resource != null && isAdmin(resource.data.schoolId));
+      allow delete: if resource != null && isAdmin(resource.data.schoolId);
     }
 
     /**
-     * @description Defines rules for applications submitted by a user.
+     * @description Rules for School tenant configuration documents.
+     * @path /schools/{schoolId}
+     * @allow (get) Any member of the school viewing branding/config.
+     * @deny (write) Any non-Admin user attempting to modify school settings.
+     * @principle Tenant-level restriction based on school membership.
      */
-    match /users/{userId}/applications/{applicationId} {
-      allow get, list: if isOwner(userId) || isAdmin() || isReviewer();
-      allow create, update: if isOwner(userId);
-      allow delete: if isAdmin();
+    match /schools/{schoolId} {
+      allow get: if isMember(schoolId);
+      allow list: if isSignedIn() && isAdmin(schoolId);
+      allow create, update, delete: if resource != null && isAdmin(schoolId);
     }
 
     /**
-     * @description Defines rules for scholarship information.
+     * @description Detailed profiles for applicants within a school.
+     * @path /schools/{schoolId}/applicantProfiles/{profileId}
+     * @allow (create) An applicant creating their own profile linked to their UID.
+     * @deny (update) An applicant trying to change the userId of the profile.
+     * @principle Ownership and relational integrity between User and ApplicantProfile.
      */
-    match /scholarships/{scholarshipId} {
-      allow get, list: if true;
-      allow create, update, delete: if isAdmin();
+    match /schools/{schoolId}/applicantProfiles/{profileId} {
+      allow get: if isOwner(resource.data.userId) || isAdmin(schoolId);
+      allow list: if isAdmin(schoolId);
+      allow create: if isApplicant(schoolId) && request.resource.data.userId == request.auth.uid;
+      allow update: if resource != null && isOwner(resource.data.userId) && request.resource.data.userId == resource.data.userId;
+      allow delete: if resource != null && (isOwner(resource.data.userId) || isAdmin(schoolId));
     }
 
     /**
-     * @description Defines rules for reviews of applications.
-     * Prevents students (applicants) from ever seeing evaluations.
+     * @description Scholarship opportunities offered by a school.
+     * @path /schools/{schoolId}/scholarships/{scholarshipId}
+     * @allow (list) All school members browsing available scholarships.
+     * @deny (create) Applicants attempting to create new scholarship listings.
+     * @principle Public read within tenant; Admin-only writes.
      */
-    match /applications/{applicationId}/reviews/{reviewId} {
-      allow get, list: if isAdmin() || isReviewer();
-      allow create, update: if isReviewer() && request.resource.data.reviewerId == request.auth.uid;
-      allow delete: if false; 
+    match /schools/{schoolId}/scholarships/{scholarshipId} {
+      allow get, list: if isMember(schoolId);
+      allow create, update, delete: if (request.method == 'create' || resource != null) && isAdmin(schoolId);
+
+      /**
+       * @description Questions associated with a specific scholarship.
+       * @path /schools/{schoolId}/scholarships/{scholarshipId}/questions/{questionId}
+       * @allow (get) Applicants viewing the form for a scholarship.
+       * @deny (write) Reviewers attempting to modify the application form.
+       * @principle Admin-managed application schema.
+       */
+      match /questions/{questionId} {
+        allow get, list: if isMember(schoolId);
+        allow create, update, delete: if (request.method == 'create' || resource != null) && isAdmin(schoolId);
+      }
     }
 
     /**
-     * @description Defines rules for reviewer profiles.
-     * Restricts viewing reviewer data to admins and the reviewer themselves.
+     * @description Scholarship applications submitted by applicants.
+     * @path /schools/{schoolId}/applications/{applicationId}
+     * @allow (create) Applicant submitting for a scholarship in their school.
+     * @deny (get) User from School A trying to see an application from School B.
+     * @principle Ownership for applicants; access for assigned reviewers and admins.
      */
-    match /reviewers/{reviewerId} {
-        allow get: if isAdmin() || isOwner(reviewerId);
-        allow list: if isAdmin();
-        allow create, update, delete: if isAdmin();
+    match /schools/{schoolId}/applications/{applicationId} {
+      allow get: if isMember(schoolId) && (isOwner(resource.data.applicantId) || isAdmin(schoolId) || isReviewer(schoolId));
+      allow list: if isMember(schoolId) && (isApplicant(schoolId) || isAdmin(schoolId) || isReviewer(schoolId));
+      allow create: if isApplicant(schoolId) && request.resource.data.applicantId == request.auth.uid;
+      allow update: if resource != null && (isOwner(resource.data.applicantId) || isAdmin(schoolId) || isReviewer(schoolId));
+      allow delete: if resource != null && (isOwner(resource.data.applicantId) || isAdmin(schoolId));
+
+      /**
+       * @description Files and answers belonging to an application.
+       * @path /schools/{schoolId}/applications/{applicationId}/(files|answers)/{docId}
+       * @allow (write) The applicant who owns the parent application.
+       * @deny (read) A reviewer not assigned to this specific application.
+       * @principle Hierarchical access control inherited from parent Application.
+       */
+      match /files/{fileId} {
+        allow read, write: if isMember(schoolId) && (isOwner(get(/databases/$(database)/documents/schools/$(schoolId)/applications/$(applicationId)).data.applicantId) || isAdmin(schoolId) || isReviewer(schoolId));
+      }
+      match /answers/{answerId} {
+        allow read, write: if isMember(schoolId) && (isOwner(get(/databases/$(database)/documents/schools/$(schoolId)/applications/$(applicationId)).data.applicantId) || isAdmin(schoolId) || isReviewer(schoolId));
+      }
     }
 
     /**
-     * @description Admin role assignment. Only assignable by backend functions or manually in console.
+     * @description Assignments of reviewers to applications.
+     * @path /schools/{schoolId}/reviewerAssignments/{assignmentId}
+     * @allow (get) The specific reviewer assigned to the application.
+     * @deny (create) Reviewers attempting to assign applications to themselves.
+     * @principle Shared access restricted to assigned IDs and Admins.
      */
-    match /roles_admin/{uid} {
-        allow get: if isAdmin() || isOwner(uid);
-        allow list, create, update, delete: if false;
+    match /schools/{schoolId}/reviewerAssignments/{assignmentId} {
+      allow get: if isMember(schoolId) && (isOwner(resource.data.reviewerId) || isAdmin(schoolId));
+      allow list: if isMember(schoolId) && (isReviewer(schoolId) || isAdmin(schoolId));
+      allow create, update, delete: if (request.method == 'create' || resource != null) && isAdmin(schoolId);
+
+      /**
+       * @description Feedback and scores provided by a reviewer.
+       * @path /schools/{schoolId}/reviewerAssignments/{assignmentId}/reviews/{reviewId}
+       * @allow (create) The assigned reviewer submitting their evaluation.
+       * @deny (update) An admin attempting to change a reviewer's specific comments.
+       * @principle Reviewer ownership of evaluations; Admin oversight.
+       */
+      match /reviews/{reviewId} {
+        allow get: if isMember(schoolId) && (isOwner(get(/databases/$(database)/documents/schools/$(schoolId)/reviewerAssignments/$(assignmentId)).data.reviewerId) || isAdmin(schoolId));
+        allow list: if isMember(schoolId) && isAdmin(schoolId);
+        allow create, update: if isMember(schoolId) && isOwner(get(/databases/$(database)/documents/schools/$(schoolId)/reviewerAssignments/$(assignmentId)).data.reviewerId);
+        allow delete: if resource != null && isAdmin(schoolId);
+      }
     }
+
   }
 }

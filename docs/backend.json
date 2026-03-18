@@ -1,243 +1,577 @@
 {
   "entities": {
-    "Scholarship": {
+    "School": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "Scholarship",
+      "title": "School",
       "type": "object",
-      "description": "Represents a scholarship opportunity.",
+      "description": "Represents a tenant in the multi-tenant SaaS application, corresponding to an educational institution.",
       "properties": {
         "id": {
           "type": "string",
-          "description": "Unique identifier for the scholarship."
+          "description": "Unique identifier for the School entity."
         },
         "name": {
           "type": "string",
-          "description": "Name of the scholarship."
+          "description": "The official name of the school or institution."
         },
-        "description": {
+        "logoUrl": {
           "type": "string",
-          "description": "Detailed description of the scholarship."
+          "description": "URL to the school's logo, displayed in their portal.",
+          "format": "uri"
         },
-        "criteria": {
+        "customDomain": {
           "type": "string",
-          "description": "Eligibility criteria for the scholarship (e.g., GPA, major)."
+          "description": "Optional custom domain for the school's dedicated portal access.",
+          "format": "uri"
         },
-        "deadline": {
+        "createdAt": {
           "type": "string",
-          "description": "Application deadline (date and time).",
+          "description": "Timestamp when the school record was created.",
           "format": "date-time"
         },
-        "amount": {
-          "type": "number",
-          "description": "The amount of the scholarship award."
-        },
-        "applicationIds": {
-          "type": "array",
-          "description": "References to Applications. (Relationship: Scholarship 1:N Application)",
-          "items": {
-            "type": "string"
-          }
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp when the school record was last updated.",
+          "format": "date-time"
         }
       },
       "required": [
         "id",
         "name",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "User": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "User",
+      "type": "object",
+      "description": "Represents a user account within the system, belonging to a specific school and having a designated role.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the User entity."
+        },
+        "schoolId": {
+          "type": "string",
+          "description": "Reference to the School this user belongs to. (Relationship: School 1:N User)"
+        },
+        "email": {
+          "type": "string",
+          "description": "The user's email address, used for login and notifications.",
+          "format": "email"
+        },
+        "firstName": {
+          "type": "string",
+          "description": "The user's first name."
+        },
+        "lastName": {
+          "type": "string",
+          "description": "The user's last name."
+        },
+        "role": {
+          "type": "string",
+          "description": "The role of the user within the system (e.g., 'Applicant', 'Admin', 'Reviewer')."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when the user account was created.",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp when the user account was last updated.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "schoolId",
+        "email",
+        "firstName",
+        "lastName",
+        "role",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ApplicantProfile": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ApplicantProfile",
+      "type": "object",
+      "description": "Stores specific profile information for an applicant, linked to their user account.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the ApplicantProfile entity."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to the User account associated with this applicant profile. (Relationship: User 1:1 ApplicantProfile)"
+        },
+        "schoolId": {
+          "type": "string",
+          "description": "Reference to the School the applicant belongs to. (Relationship: School 1:N ApplicantProfile)"
+        },
+        "gpa": {
+          "type": "number",
+          "description": "The applicant's Grade Point Average (GPA)."
+        },
+        "highSchoolName": {
+          "type": "string",
+          "description": "The name of the applicant's high school."
+        },
+        "graduationYear": {
+          "type": "number",
+          "description": "The year the applicant is expected to graduate or has graduated from high school."
+        },
+        "dateOfBirth": {
+          "type": "string",
+          "description": "The applicant's date of birth.",
+          "format": "date"
+        },
+        "contactPhone": {
+          "type": "string",
+          "description": "The applicant's contact phone number."
+        },
+        "addressLine1": {
+          "type": "string",
+          "description": "The first line of the applicant's mailing address."
+        },
+        "addressLine2": {
+          "type": "string",
+          "description": "The second line of the applicant's mailing address (optional)."
+        },
+        "city": {
+          "type": "string",
+          "description": "The city of the applicant's mailing address."
+        },
+        "state": {
+          "type": "string",
+          "description": "The state or province of the applicant's mailing address."
+        },
+        "postalCode": {
+          "type": "string",
+          "description": "The postal code of the applicant's mailing address."
+        },
+        "country": {
+          "type": "string",
+          "description": "The country of the applicant's mailing address."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when the applicant profile was created.",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp when the applicant profile was last updated.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "schoolId",
+        "gpa",
+        "highSchoolName",
+        "graduationYear",
+        "dateOfBirth",
+        "contactPhone",
+        "addressLine1",
+        "city",
+        "state",
+        "postalCode",
+        "country",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Scholarship": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Scholarship",
+      "type": "object",
+      "description": "Defines a scholarship opportunity offered by a school, including its details and criteria.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Scholarship entity."
+        },
+        "schoolId": {
+          "type": "string",
+          "description": "Reference to the School offering this scholarship. (Relationship: School 1:N Scholarship)"
+        },
+        "title": {
+          "type": "string",
+          "description": "The name or title of the scholarship."
+        },
+        "description": {
+          "type": "string",
+          "description": "A detailed description of the scholarship, its purpose, and what it entails."
+        },
+        "awardAmount": {
+          "type": "number",
+          "description": "The financial amount awarded to the scholarship recipient."
+        },
+        "applicationDeadline": {
+          "type": "string",
+          "description": "The deadline by which applications for this scholarship must be submitted.",
+          "format": "date-time"
+        },
+        "eligibilityCriteria": {
+          "type": "string",
+          "description": "Textual description of the criteria applicants must meet to be eligible for the scholarship."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when the scholarship record was created.",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp when the scholarship record was last updated.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "schoolId",
+        "title",
         "description",
-        "criteria",
-        "deadline",
-        "amount"
+        "awardAmount",
+        "applicationDeadline",
+        "eligibilityCriteria",
+        "createdAt",
+        "updatedAt"
       ]
     },
     "Application": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "Application",
       "type": "object",
-      "description": "Represents a student's application for a scholarship.",
+      "description": "Represents an applicant's submission for a specific scholarship opportunity.",
       "properties": {
         "id": {
           "type": "string",
-          "description": "Unique identifier for the application."
+          "description": "Unique identifier for the Application entity."
         },
         "applicantId": {
           "type": "string",
-          "description": "Reference to Applicant. (Relationship: Applicant 1:N Application)"
+          "description": "Reference to the ApplicantProfile submitting this application. (Relationship: ApplicantProfile 1:N Application)"
         },
         "scholarshipId": {
           "type": "string",
-          "description": "Reference to Scholarship. (Relationship: Scholarship 1:N Application)"
+          "description": "Reference to the Scholarship this application is for. (Relationship: Scholarship 1:N Application)"
         },
-        "submissionDate": {
+        "schoolId": {
           "type": "string",
-          "description": "Date and time when the application was submitted.",
-          "format": "date-time"
+          "description": "Reference to the School the application belongs to. (Relationship: School 1:N Application)"
         },
         "status": {
           "type": "string",
-          "description": "Current status of the application (e.g., 'submitted', 'under review', 'accepted', 'rejected')."
+          "description": "The current status of the application (e.g., 'Draft', 'Submitted', 'Under Review', 'Awarded', 'Rejected')."
         },
-        "transcriptUrl": {
+        "submissionDate": {
           "type": "string",
-          "description": "URL to the applicant's transcript.",
-          "format": "uri"
+          "description": "The date and time the application was officially submitted by the applicant.",
+          "format": "date-time"
         },
-        "resumeUrl": {
+        "finalScore": {
+          "type": "number",
+          "description": "The final aggregated score for the application, typically calculated from reviewer scores."
+        },
+        "createdAt": {
           "type": "string",
-          "description": "URL to the applicant's resume.",
-          "format": "uri"
+          "description": "Timestamp when the application record was created (e.g., when an applicant started drafting).",
+          "format": "date-time"
         },
-        "essayUrl": {
+        "updatedAt": {
           "type": "string",
-          "description": "URL to the applicant's essay.",
-          "format": "uri"
-        },
-        "answers": {
-          "type": "string",
-          "description": "Answers to conditional questions."
-        },
-        "reviewIds": {
-          "type": "array",
-          "description": "References to Reviews. (Relationship: Application 1:N Review)",
-          "items": {
-            "type": "string"
-          }
+          "description": "Timestamp when the application record was last updated.",
+          "format": "date-time"
         }
       },
       "required": [
         "id",
         "applicantId",
         "scholarshipId",
-        "submissionDate",
+        "schoolId",
         "status",
-        "transcriptUrl",
-        "resumeUrl",
-        "essayUrl"
+        "createdAt",
+        "updatedAt"
       ]
     },
-    "Applicant": {
+    "ApplicationFile": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "Applicant",
+      "title": "ApplicationFile",
       "type": "object",
-      "description": "Represents a student applying for scholarships.",
+      "description": "Stores metadata about files uploaded by applicants as part of their scholarship application.",
       "properties": {
         "id": {
           "type": "string",
-          "description": "Unique identifier for the applicant."
-        },
-        "firstName": {
-          "type": "string",
-          "description": "First name of the applicant."
-        },
-        "lastName": {
-          "type": "string",
-          "description": "Last name of the applicant."
-        },
-        "email": {
-          "type": "string",
-          "description": "Email address of the applicant.",
-          "format": "email"
-        },
-        "gpa": {
-          "type": "number",
-          "description": "Grade point average of the applicant."
-        },
-        "major": {
-          "type": "string",
-          "description": "Major of the applicant."
-        },
-        "applicationIds": {
-          "type": "array",
-          "description": "References to Applications. (Relationship: Applicant 1:N Application)",
-          "items": {
-            "type": "string"
-          }
-        }
-      },
-      "required": [
-        "id",
-        "firstName",
-        "lastName",
-        "email",
-        "gpa",
-        "major"
-      ]
-    },
-    "Review": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "Review",
-      "type": "object",
-      "description": "Represents a review of an application by a reviewer.",
-      "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the review."
+          "description": "Unique identifier for the ApplicationFile entity."
         },
         "applicationId": {
           "type": "string",
-          "description": "Reference to Application. (Relationship: Application 1:N Review)"
+          "description": "Reference to the Application this file is associated with. (Relationship: Application 1:N ApplicationFile)"
         },
-        "reviewerId": {
+        "schoolId": {
           "type": "string",
-          "description": "Reference to Reviewer. (Relationship: Reviewer 1:N Review)"
+          "description": "Reference to the School this application file belongs to. (Relationship: School 1:N ApplicationFile)"
         },
-        "comment": {
+        "fileType": {
           "type": "string",
-          "description": "Comments provided by the reviewer."
+          "description": "The category or type of the uploaded file (e.g., 'Transcript', 'Resume', 'Essay', 'RecommendationLetter')."
         },
-        "score": {
-          "type": "number",
-          "description": "Score assigned by the reviewer."
-        },
-        "date": {
+        "fileName": {
           "type": "string",
-          "description": "Date and time of the review.",
+          "description": "The original name of the uploaded file."
+        },
+        "fileUrl": {
+          "type": "string",
+          "description": "A secure URL where the uploaded file can be accessed.",
+          "format": "uri"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when the file was uploaded.",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp when the file metadata was last updated.",
           "format": "date-time"
         }
       },
       "required": [
         "id",
         "applicationId",
-        "reviewerId",
-        "comment",
-        "score",
-        "date"
+        "schoolId",
+        "fileType",
+        "fileName",
+        "fileUrl",
+        "createdAt",
+        "updatedAt"
       ]
     },
-    "Reviewer": {
+    "ScholarshipQuestion": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "Reviewer",
+      "title": "ScholarshipQuestion",
       "type": "object",
-      "description": "Represents a reviewer who evaluates applications.",
+      "description": "Defines a question that is part of a scholarship application form, including its type and conditional logic.",
       "properties": {
         "id": {
           "type": "string",
-          "description": "Unique identifier for the reviewer."
+          "description": "Unique identifier for the ScholarshipQuestion entity."
         },
-        "firstName": {
+        "scholarshipId": {
           "type": "string",
-          "description": "First name of the reviewer."
+          "description": "Reference to the Scholarship this question belongs to. (Relationship: Scholarship 1:N ScholarshipQuestion)"
         },
-        "lastName": {
+        "questionText": {
           "type": "string",
-          "description": "Last name of the reviewer."
+          "description": "The actual text of the question presented to the applicant."
         },
-        "email": {
+        "questionType": {
           "type": "string",
-          "description": "Email address of the reviewer.",
-          "format": "email"
+          "description": "The expected input type for the answer (e.g., 'text', 'textarea', 'number', 'date', 'select', 'multiselect', 'file')."
         },
-        "reviewIds": {
+        "options": {
           "type": "array",
-          "description": "References to Reviews. (Relationship: Reviewer 1:N Review)",
+          "description": "An array of possible options for 'select' or 'multiselect' question types.",
           "items": {
             "type": "string"
           }
+        },
+        "conditionalOnQuestionId": {
+          "type": "string",
+          "description": "Reference to another ScholarshipQuestion whose answer dictates the visibility of this question. (Relationship: ScholarshipQuestion 1:N ScholarshipQuestion (self-referencing))"
+        },
+        "conditionalValue": {
+          "type": "string",
+          "description": "The specific value of the `conditionalOnQuestionId`'s answer that makes this question visible."
+        },
+        "order": {
+          "type": "number",
+          "description": "The display order of the question within the scholarship application form."
+        },
+        "isRequired": {
+          "type": "boolean",
+          "description": "Indicates whether the applicant is required to answer this question."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when the question was created.",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp when the question was last updated.",
+          "format": "date-time"
         }
       },
       "required": [
         "id",
-        "firstName",
-        "lastName",
-        "email"
+        "scholarshipId",
+        "questionText",
+        "questionType",
+        "order",
+        "isRequired",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ApplicationAnswer": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ApplicationAnswer",
+      "type": "object",
+      "description": "Records an applicant's answer to a specific question for a particular scholarship application.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the ApplicationAnswer entity."
+        },
+        "applicationId": {
+          "type": "string",
+          "description": "Reference to the Application this answer belongs to. (Relationship: Application 1:N ApplicationAnswer)"
+        },
+        "scholarshipQuestionId": {
+          "type": "string",
+          "description": "Reference to the ScholarshipQuestion this answer is for. (Relationship: ScholarshipQuestion 1:N ApplicationAnswer)"
+        },
+        "schoolId": {
+          "type": "string",
+          "description": "Reference to the School this application answer belongs to. (Relationship: School 1:N ApplicationAnswer)"
+        },
+        "answerValue": {
+          "type": "string",
+          "description": "The applicant's response to the question. For file types, this would store the ApplicationFile ID."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when the answer was recorded.",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp when the answer was last updated.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "applicationId",
+        "scholarshipQuestionId",
+        "schoolId",
+        "answerValue",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ReviewerAssignment": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ReviewerAssignment",
+      "type": "object",
+      "description": "Manages the assignment of an application to a specific reviewer for evaluation.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the ReviewerAssignment entity."
+        },
+        "reviewerId": {
+          "type": "string",
+          "description": "Reference to the User (reviewer role) assigned to review the application. (Relationship: User 1:N ReviewerAssignment)"
+        },
+        "applicationId": {
+          "type": "string",
+          "description": "Reference to the Application assigned for review. (Relationship: Application 1:N ReviewerAssignment)"
+        },
+        "schoolId": {
+          "type": "string",
+          "description": "Reference to the School this reviewer assignment belongs to. (Relationship: School 1:N ReviewerAssignment)"
+        },
+        "assignedDate": {
+          "type": "string",
+          "description": "The date and time the application was assigned to the reviewer.",
+          "format": "date-time"
+        },
+        "status": {
+          "type": "string",
+          "description": "The current status of the review assignment (e.g., 'Pending', 'In Progress', 'Completed', 'Cancelled')."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when the reviewer assignment was created.",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp when the reviewer assignment was last updated.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "reviewerId",
+        "applicationId",
+        "schoolId",
+        "assignedDate",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ApplicationReview": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ApplicationReview",
+      "type": "object",
+      "description": "Stores the comments and scores provided by a reviewer for a specific application.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the ApplicationReview entity."
+        },
+        "reviewerAssignmentId": {
+          "type": "string",
+          "description": "Reference to the ReviewerAssignment that this review is part of. (Relationship: ReviewerAssignment 1:1 ApplicationReview)"
+        },
+        "schoolId": {
+          "type": "string",
+          "description": "Reference to the School this application review belongs to. (Relationship: School 1:N ApplicationReview)"
+        },
+        "score": {
+          "type": "number",
+          "description": "The numerical score given by the reviewer for the application."
+        },
+        "comments": {
+          "type": "string",
+          "description": "Textual comments or feedback provided by the reviewer."
+        },
+        "submittedDate": {
+          "type": "string",
+          "description": "The date and time when the reviewer submitted their review.",
+          "format": "date-time"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when the application review was created.",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp when the application review was last updated.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "reviewerAssignmentId",
+        "schoolId",
+        "score",
+        "comments",
+        "submittedDate",
+        "createdAt",
+        "updatedAt"
       ]
     }
   },
@@ -250,50 +584,64 @@
   "firestore": {
     "structure": [
       {
+        "path": "/schools/{schoolId}",
+        "definition": {
+          "entityName": "School",
+          "schema": {
+            "$ref": "#/backend/entities/School"
+          },
+          "description": "Top-level collection for each school (tenant). Documents here store school-specific configuration and branding. The 'id' field of the document matches the '{schoolId}' wildcard. Access is restricted to administrators of the respective school."
+        }
+      },
+      {
         "path": "/users/{userId}",
         "definition": {
-          "entityName": "Applicant",
+          "entityName": "User",
           "schema": {
-            "$ref": "#/backend/entities/Applicant"
+            "$ref": "#/backend/entities/User"
           },
-          "description": "Stores applicant profiles. Root for path-based ownership.",
+          "description": "Stores user profiles. Each user document includes 'schoolId' which is critical for resolving the user's tenant context in security rules. The 'id' field of the document matches the '{userId}' wildcard. Users can manage their own profiles; school admins can manage users within their school. Includes denormalized 'schoolId' for authorization independence.",
           "params": [
             {
               "name": "userId",
-              "description": "The unique identifier of the applicant."
+              "description": "The unique identifier of the user, corresponding to Firebase Authentication UID."
             }
           ]
         }
       },
       {
-        "path": "/users/{userId}/applications/{applicationId}",
+        "path": "/schools/{schoolId}/applicantProfiles/{applicantProfileId}",
         "definition": {
-          "entityName": "Application",
+          "entityName": "ApplicantProfile",
           "schema": {
-            "$ref": "#/backend/entities/Application"
+            "$ref": "#/backend/entities/ApplicantProfile"
           },
-          "description": "Stores applications submitted by each user. Path-based ownership.",
+          "description": "Stores detailed profile information for applicants. Each document belongs to a specific user and school. The 'id' field matches '{applicantProfileId}'. Includes denormalized 'schoolId' (matches path) and 'userId' for authorization independence and ownership checks.",
           "params": [
             {
-              "name": "userId",
-              "description": "The unique identifier of the applicant."
+              "name": "schoolId",
+              "description": "The unique identifier of the school."
             },
             {
-              "name": "applicationId",
-              "description": "The unique identifier of the application."
+              "name": "applicantProfileId",
+              "description": "The unique identifier of the applicant's profile."
             }
           ]
         }
       },
       {
-        "path": "/scholarships/{scholarshipId}",
+        "path": "/schools/{schoolId}/scholarships/{scholarshipId}",
         "definition": {
           "entityName": "Scholarship",
           "schema": {
             "$ref": "#/backend/entities/Scholarship"
           },
-          "description": "Stores scholarship information. Accessible to admins for management.",
+          "description": "Defines scholarship opportunities offered by a school. The 'id' field matches '{scholarshipId}'. Includes denormalized 'schoolId' (matches path) for authorization independence. Accessible by all users in the school for reading, manageable by school administrators.",
           "params": [
+            {
+              "name": "schoolId",
+              "description": "The unique identifier of the school."
+            },
             {
               "name": "scholarshipId",
               "description": "The unique identifier of the scholarship."
@@ -302,58 +650,142 @@
         }
       },
       {
-        "path": "/applications/{applicationId}/reviews/{reviewId}",
+        "path": "/schools/{schoolId}/scholarships/{scholarshipId}/questions/{questionId}",
         "definition": {
-          "entityName": "Review",
+          "entityName": "ScholarshipQuestion",
           "schema": {
-            "$ref": "#/backend/entities/Review"
+            "$ref": "#/backend/entities/ScholarshipQuestion"
           },
-          "description": "Stores reviews for each application.",
+          "description": "Defines the questions for a specific scholarship application form. The 'id' field matches '{questionId}'. Includes denormalized 'schoolId' (matches parent path) and 'scholarshipId' for authorization independence. Manageable by school administrators, readable by applicants viewing the scholarship.",
           "params": [
+            {
+              "name": "schoolId",
+              "description": "The unique identifier of the school."
+            },
+            {
+              "name": "scholarshipId",
+              "description": "The unique identifier of the scholarship."
+            },
+            {
+              "name": "questionId",
+              "description": "The unique identifier of the scholarship question."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/schools/{schoolId}/applications/{applicationId}",
+        "definition": {
+          "entityName": "Application",
+          "schema": {
+            "$ref": "#/backend/entities/Application"
+          },
+          "description": "Represents an applicant's submission for a scholarship. The 'id' field matches '{applicationId}'. Includes denormalized 'schoolId' (matches path), 'applicantId', and 'scholarshipId' for authorization independence. Applicants can manage their own applications, while admins and assigned reviewers can read/update.",
+          "params": [
+            {
+              "name": "schoolId",
+              "description": "The unique identifier of the school."
+            },
+            {
+              "name": "applicationId",
+              "description": "The unique identifier of the application."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/schools/{schoolId}/applications/{applicationId}/files/{fileId}",
+        "definition": {
+          "entityName": "ApplicationFile",
+          "schema": {
+            "$ref": "#/backend/entities/ApplicationFile"
+          },
+          "description": "Stores metadata for files uploaded as part of an application. The 'id' field matches '{fileId}'. Includes denormalized 'schoolId' (matches path) and 'applicationId' for authorization independence. Applicants can manage their own application's files, while admins and reviewers can read.",
+          "params": [
+            {
+              "name": "schoolId",
+              "description": "The unique identifier of the school."
+            },
             {
               "name": "applicationId",
               "description": "The unique identifier of the application."
             },
             {
+              "name": "fileId",
+              "description": "The unique identifier of the application file."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/schools/{schoolId}/applications/{applicationId}/answers/{answerId}",
+        "definition": {
+          "entityName": "ApplicationAnswer",
+          "schema": {
+            "$ref": "#/backend/entities/ApplicationAnswer"
+          },
+          "description": "Records an applicant's answer to a specific question for an application. The 'id' field matches '{answerId}'. Includes denormalized 'schoolId' (matches path) and 'applicationId' for authorization independence. Applicants can manage their own application's answers, while admins and reviewers can read.",
+          "params": [
+            {
+              "name": "schoolId",
+              "description": "The unique identifier of the school."
+            },
+            {
+              "name": "applicationId",
+              "description": "The unique identifier of the application."
+            },
+            {
+              "name": "answerId",
+              "description": "The unique identifier of the application answer."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/schools/{schoolId}/reviewerAssignments/{assignmentId}",
+        "definition": {
+          "entityName": "ReviewerAssignment",
+          "schema": {
+            "$ref": "#/backend/entities/ReviewerAssignment"
+          },
+          "description": "Manages the assignment of applications to reviewers. The 'id' field matches '{assignmentId}'. Includes denormalized 'schoolId' (matches path), 'reviewerId', and 'applicationId' for authorization independence. Manageable by school administrators, readable by the assigned reviewer.",
+          "params": [
+            {
+              "name": "schoolId",
+              "description": "The unique identifier of the school."
+            },
+            {
+              "name": "assignmentId",
+              "description": "The unique identifier for the reviewer assignment."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/schools/{schoolId}/reviewerAssignments/{assignmentId}/reviews/{reviewId}",
+        "definition": {
+          "entityName": "ApplicationReview",
+          "schema": {
+            "$ref": "#/backend/entities/ApplicationReview"
+          },
+          "description": "Stores a reviewer's comments and scores for an application. The 'id' field matches '{reviewId}'. Includes denormalized 'schoolId' (matches path), 'reviewerAssignmentId' (matches parent path), 'applicationId' (denormalized from ReviewerAssignment), and 'reviewerId' (denormalized from ReviewerAssignment) for authorization independence. The assigned reviewer can manage their own review; school administrators can read all reviews.",
+          "params": [
+            {
+              "name": "schoolId",
+              "description": "The unique identifier of the school."
+            },
+            {
+              "name": "assignmentId",
+              "description": "The unique identifier for the reviewer assignment."
+            },
+            {
               "name": "reviewId",
-              "description": "The unique identifier of the review."
-            }
-          ]
-        }
-      },
-      {
-        "path": "/reviewers/{reviewerId}",
-        "definition": {
-          "entityName": "Reviewer",
-          "schema": {
-            "$ref": "#/backend/entities/Reviewer"
-          },
-          "description": "Stores reviewer information.",
-          "params": [
-            {
-              "name": "reviewerId",
-              "description": "The unique identifier of the reviewer."
-            }
-          ]
-        }
-      },
-      {
-        "path": "/roles_admin/{uid}",
-        "definition": {
-          "entityName": "adminRole",
-          "schema": {
-            "$ref": "#/backend/entities/Reviewer"
-          },
-          "description": "Indicates admin privileges. Existence of a document signifies admin access.",
-          "params": [
-            {
-              "name": "uid",
-              "description": "The unique identifier of the user (admin)."
+              "description": "The unique identifier of the application review."
             }
           ]
         }
       }
     ],
-    "reasoning": "The Firestore data structure is designed to support a scholarship application system with Applicants, Scholarships, Applications, Reviews, and Reviewers. It prioritizes authorization independence, clarity, and scalability, ensuring that security rules are robust and easy to maintain.\n\n**Authorization Independence:**\n\n*   The design eliminates the need for `get()` calls in security rules, ensuring atomic operations and simplifies debugging. Path-based ownership is used to associate Applications with Applicants (`/users/{userId}/applications/{applicationId}`) and leverages denormalization techniques to copy authorization context where needed.\n\n**Structural Segregation:**\n\n*   The structure segregates data with different access requirements into separate collections. User-specific data like Applications are stored under the `/users/{userId}` path to ensure only the user has access. Scholarship data is separate to allow admins to manage them.\n\n**Access Modeling:**\n\n*   **Path-Based Ownership:** Applications are stored as subcollections of Users (`/users/{userId}/applications/{applicationId}`). This ensures that only the authenticated user (`request.auth.uid == userId`) can access their applications.\n*   **Admin Roles:** A separate `/roles_admin/{uid}` collection manages admin privileges. The existence of a document with the user's UID in this collection grants admin rights. This avoids complex content-based rules and simplifies admin authorization.\n\n**QAPs (Rules are not Filters):**\n\n*   The structure enables secure `list` operations by using path-based ownership and segregation. For example, listing applications under `/users/{userId}/applications` is secure because rules can easily verify that the requesting user ID matches the path's user ID.\n\n**Invariants:**\n\n*   The structure supports data integrity by enforcing ownership and consistency. Path-based ownership inherently enforces that only the correct user can create, update, or delete their applications. Timestamps and other denormalized data can be validated in security rules to ensure consistency.\n\n**Explanation of Paths:**\n\n*   `/users/{userId}`: Stores user profiles. This is the root for path-based ownership of user-related data.\n*   `/users/{userId}/applications/{applicationId}`: Stores applications submitted by each user. Ensures that applications are owned by the respective user.\n*   `/scholarships/{scholarshipId}`: Stores scholarship information. Accessible to admins for management and readable by all users.\n*   `/applications/{applicationId}/reviews/{reviewId}`: Stores reviews for each application. Reviews are a subcollection of applications.\n*    `/reviewers/{reviewerId}`: Stores reviewer information.\n*   `/roles_admin/{uid}`: Indicates admin privileges. The existence of a document signifies admin access."
+    "reasoning": "This multi-tenant SaaS application, 'ScholarShip', is designed with a strong emphasis on tenant isolation, with each school representing a distinct tenant. The core principle driving this Firestore structure is **Authorization Independence**, ensuring that security rules are simple, robust, and easily debuggable by avoiding `get()` calls.\n\nTo achieve this, the `schoolId` is the primary authorization context and is **denormalized into every single document** related to application data (e.g., User, ApplicantProfile, Scholarship, Application, ApplicationFile, ScholarshipQuestion, ApplicationAnswer, ReviewerAssignment, ApplicationReview). This means that for any data document, its belonging `schoolId` can be directly accessed from `resource.data.schoolId` without needing to traverse parent documents. This denormalization strategy is critical for eliminating hierarchical authorization dependencies.\n\n**Structural Segregation** is implemented by making `/schools/{schoolId}` the root for all school-specific data. All subcollections under a `schoolId` inherit its tenant context, ensuring a homogeneous security posture where all documents within a given school's subtree implicitly belong to that school and are subject to its access rules. This significantly simplifies security rules, as access checks always involve comparing the authenticated user's `schoolId` (obtained from their `/users/{userId}` document) with the `schoolId` in the document's path and its `resource.data.schoolId` field.\n\n**Query as a Security Principal (QAPs)** is fully supported due to this design. Since `schoolId` is denormalized into every document and is present in the document path, `list` operations (queries) can be secured effectively. For example, a user authenticated with `request.auth.uid` can have their `schoolId` resolved from their `/users/{userId}` document. Then, all queries performed will target paths like `/schools/{request.auth.token.schoolId}/...`. The security rules will enforce that the `schoolId` in the path matches the user's `schoolId` and also matches the `schoolId` stored in `resource.data` for every document retrieved. This prevents users from querying or accessing data outside their authorized school, making rule writing straightforward (e.g., `allow read: if request.auth.token.schoolId == schoolId && resource.data.schoolId == schoolId;`).\n\nAdditionally, **Hierarchical Paths for User-Owned Data** are used, such as `/schools/{schoolId}/applicantProfiles/{applicantProfileId}`, where `applicantProfileId` documents also contain `userId`. This allows an applicant to manage their own profile and applications (`resource.data.userId == request.auth.uid`), while still being constrained by the tenant's `schoolId`.\n\nExplicit state modeling (e.g., `status` fields) and consistent naming (`schoolId`, `userId`, descriptive wildcards like `{scholarshipId}`) further enhance debuggability and predictability. Roles are stored directly in the `User` document, adhering to the **DBAC** principle without custom claims."
   }
 }
