@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/card';
 import { AppLogo } from '@/components/shared/AppLogo';
 import { Badge } from '@/components/ui/badge';
-import { GraduationCap, FileText, Target, Users, CheckCircle, Heart, Search, ArrowRight, ExternalLink } from 'lucide-react';
+import { FileText, CheckCircle, Heart, Search, ArrowRight, ExternalLink } from 'lucide-react';
 import scholarships from '@/data/scholarships.json';
 import { useState, useEffect } from 'react';
 
@@ -64,10 +64,10 @@ export default function Home() {
         <section className="bg-secondary/50 py-20 md:py-32">
           <div className="container mx-auto px-4 text-center md:px-6">
             <h1 className="text-4xl font-extrabold tracking-tight md:text-6xl text-foreground">
-              Scholarship Applications Open in February 2026.
+              Scholarship Applications Open
             </h1>
             <p className="mx-auto mt-4 max-w-2xl text-lg text-muted-foreground md:text-xl">
-              Scholarships open in Spring 2026. You can prepare by asking for two letters of recommendation, setting up reminders to obtain your transcripts from your counselor and review potential scholarship now.
+              You can prepare by asking for two letters of recommendation, setting up reminders to obtain your transcripts from your counselor, and reviewing potential scholarships now.
             </p>
             <div className="mt-8 flex justify-center gap-4">
               <Button size="lg" asChild>
@@ -135,7 +135,7 @@ export default function Home() {
                 Scholarship Application Guide
               </h2>
               <p className="mt-2 text-muted-foreground">
-                Scholarships open in Spring 2026. You will be alerted if you are selected. Award presentations are in May. Scholarships are sent directly to your school of choice. 
+                Scholarships open annually. You will be alerted if you are selected. Award presentations are in May. Scholarships are sent directly to your school of choice. 
               </p>
             </div>
             <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
@@ -182,7 +182,7 @@ export default function Home() {
         <div className="container mx-auto flex flex-col items-center justify-between gap-4 px-4 py-8 sm:flex-row md:px-6">
           <AppLogo />
           <p className="text-sm text-muted-foreground">
-            &copy; {mounted ? new Date().getFullYear() : '2026'} ScholarShip. All rights reserved.
+            &copy; {mounted ? new Date().getFullYear() : ''} ScholarShip. All rights reserved.
           </p>
           <div className="flex flex-wrap justify-center gap-4 sm:justify-end">
             <Link href="https://www.meritedapp.com/" target="_blank" rel="noopener noreferrer" className="flex items-center text-sm text-primary hover:underline">

@@ -11,7 +11,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { ArrowRight, FileText, Search, User, CheckCircle, Clock } from 'lucide-react';
+import { ArrowRight, FileText, Search, User, CheckCircle, Clock, Users } from 'lucide-react';
 import { useFirebase, useDoc, useMemoFirebase } from '@/firebase';
 import { doc } from 'firebase/firestore';
 import type { Applicant } from '@/types/applicant';
@@ -87,7 +87,7 @@ export default function DashboardPage() {
                <span className="text-4xl font-bold">22</span>
                <span className="text-sm text-muted-foreground">Programs</span>
              </div>
-             <p className="mt-2 text-xs text-muted-foreground">Deadlines approach in March 2026.</p>
+             <p className="mt-2 text-xs text-muted-foreground">Deadlines are approaching soon.</p>
           </CardContent>
           <CardFooter>
             <Button variant="outline" asChild className="w-full">
@@ -126,7 +126,7 @@ export default function DashboardPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Next Steps</CardTitle>
-          <CardDescription>Items required before the spring deadline.</CardDescription>
+          <CardDescription>Items required before the application deadline.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
            <div className="flex items-start gap-3 rounded-lg border p-4">
