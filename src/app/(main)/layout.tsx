@@ -20,9 +20,8 @@ import {
   FileText,
   Search,
   Users,
-  ClipboardCheck,
-  FileSearch,
   Award,
+  FileSearch,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -31,22 +30,22 @@ import { doc } from 'firebase/firestore';
 import { useEffect } from 'react';
 
 const applicantNav = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/dashboard/profile', label: 'My Profile', icon: User },
-  { href: '/dashboard/scholarships', label: 'Scholarships', icon: Search },
-  { href: '/dashboard/applications', label: 'My Applications', icon: FileText },
-];
-
-const adminNav = [
-  { href: '/admin', label: 'Admin Dashboard', icon: LayoutDashboard },
-  { href: '/admin/applicants', label: 'All Applicants', icon: Users },
-  { href: '/admin/scholarships', label: 'Scholarships', icon: Search },
+  { href: '/dashboard', label: 'My Dashboard', icon: LayoutDashboard },
+  { href: '/dashboard/profile', label: 'Scholarship Form', icon: User },
+  { href: '/dashboard/applications', label: 'My Status', icon: FileText },
+  { href: '/dashboard/scholarships', label: 'Opportunities', icon: Search },
 ];
 
 const reviewerNav = [
-  { href: '/review', label: 'Review Dashboard', icon: LayoutDashboard },
-  { href: '/review?status=pending', label: 'Review New Applications', icon: FileSearch },
-  { href: '/review?status=completed', label: 'Completed Scoring', icon: Award },
+  { href: '/review', label: 'Review Center', icon: LayoutDashboard },
+  { href: '/review?status=pending', label: 'New Assignments', icon: FileSearch },
+  { href: '/review?status=completed', label: 'Finalized Scores', icon: Award },
+];
+
+const adminNav = [
+  { href: '/admin', label: 'Admin Panel', icon: LayoutDashboard },
+  { href: '/admin/applicants', label: 'All Candidates', icon: Users },
+  { href: '/admin/scholarships', label: 'Programs', icon: Award },
 ];
 
 export default function DashboardLayout({
@@ -76,11 +75,10 @@ export default function DashboardLayout({
   const { data: adminRole, isLoading: isAdminRoleLoading } = useDoc(adminRoleRef);
   const { data: reviewerProfile, isLoading: isReviewerRoleLoading } = useDoc(reviewerProfileRef);
   
-  // Use the role from the auth token as the primary source of truth
   const isAdmin = role === 'admin' || !!adminRole;
   const isReviewer = role === 'reviewer' || !!reviewerProfile;
+  const isApplicant = !isAdmin && !isReviewer;
 
-  // Unified redirection logic
   useEffect(() => {
     if (!isUserLoading && !isAdminRoleLoading && !isReviewerRoleLoading) {
       if (!user) {
@@ -88,20 +86,22 @@ export default function DashboardLayout({
           router.push('/login');
         }
       } else {
-        // Redirection based on role
+        // Strict Role Separation Redirection
         if (isAdminPath && !isAdmin) {
            router.push('/dashboard');
         }
         if (isReviewerPath && !isReviewer && !isAdmin) {
            router.push('/dashboard');
         }
+        // Prevent Reviewers from seeing Applicant Dashboard to avoid confusion
+        if (isDashboardPath && isReviewer && !isAdmin) {
+          router.push('/review');
+        }
       }
     }
   }, [user, isUserLoading, isAdminRoleLoading, isReviewerRoleLoading, isAdmin, isReviewer, isAdminPath, isReviewerPath, isDashboardPath, router]);
 
-  const isActive = (href: string) => {
-    return pathname === href;
-  };
+  const isActive = (href: string) => pathname === href;
   
   const getNavItems = () => {
     if (isAdmin) return adminNav;
@@ -115,37 +115,38 @@ export default function DashboardLayout({
   if (isUserLoading || isAdminRoleLoading || isReviewerRoleLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <div className="animate-pulse text-muted-foreground">Loading application...</div>
+        <div className="animate-pulse text-muted-foreground">Verifying access...</div>
       </div>
     );
   }
   
-  if (!user && shouldShowLayout) {
-     return null;
-  }
+  if (!user && shouldShowLayout) return null;
 
-  // Prevent rendering children if unauthorized
+  // Final rendering guard
   if (isAdminPath && !isAdmin) return null;
   if (isReviewerPath && !isReviewer && !isAdmin) return null;
+  if (isDashboardPath && isReviewer && !isAdmin) return null;
 
-  if (!shouldShowLayout) {
-    return <>{children}</>;
-  }
+  if (!shouldShowLayout) return <>{children}</>;
 
   let navGroupLabel = 'Applicant';
   if (isAdmin) navGroupLabel = 'Admin';
-  else if (isReviewer) navGroupLabel = 'Reviewer';
+  else if (isReviewer) navGroupLabel = 'Committee';
 
   return (
     <SidebarProvider>
       <div className="flex min-h-screen">
         <Sidebar>
           <SidebarHeader>
-            <AppLogo />
+            <div className="px-4 py-2">
+               <AppLogo />
+            </div>
           </SidebarHeader>
           <SidebarContent className="p-2">
             <SidebarGroup>
-              <SidebarGroupLabel>{navGroupLabel}</SidebarGroupLabel>
+              <SidebarGroupLabel className="px-2 text-[10px] font-black uppercase tracking-widest opacity-50">
+                {navGroupLabel} Portal
+              </SidebarGroupLabel>
               <SidebarMenu>
                 {currentNav.map((item) => (
                   <SidebarMenuItem key={item.href + item.label}>
@@ -162,14 +163,16 @@ export default function DashboardLayout({
           </SidebarContent>
         </Sidebar>
 
-        <main className="flex-1">
-          <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b bg-background/80 px-4 backdrop-blur-md sm:justify-end">
+        <main className="flex-1 overflow-auto">
+          <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b bg-background/90 px-4 backdrop-blur-md sm:justify-end">
             <div className="sm:hidden">
               <SidebarTrigger />
             </div>
             <UserNav />
           </header>
-          <div className="p-4 sm:p-6 lg:p-8">{children}</div>
+          <div className="container mx-auto max-w-7xl p-4 sm:p-6 lg:p-8">
+            {children}
+          </div>
         </main>
       </div>
     </SidebarProvider>

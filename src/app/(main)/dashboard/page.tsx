@@ -1,3 +1,5 @@
+'use client';
+
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import {
@@ -9,62 +11,88 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { ArrowRight, FileText, Search, User } from 'lucide-react';
+import { ArrowRight, FileText, Search, User, CheckCircle, Clock } from 'lucide-react';
+import { useFirebase, useDoc, useMemoFirebase } from '@/firebase';
+import { doc } from 'firebase/firestore';
+import type { Applicant } from '@/types/applicant';
 
 export default function DashboardPage() {
+  const { user, firestore } = useFirebase();
+
+  const userDocRef = useMemoFirebase(() => {
+    if (!user || !firestore) return null;
+    return doc(firestore, 'users', user.uid);
+  }, [user, firestore]);
+
+  const { data: profile, isLoading } = useDoc<Applicant>(userDocRef);
+
+  // Calculate completion percentage based on core fields
+  const calculateProgress = (data: Applicant | null) => {
+    if (!data) return 0;
+    const fields: (keyof Applicant)[] = ['name', 'address', 'gpa', 'major', 'school', 'essay', 'qualificationStatement', 'transcripts', 'recommendationLetter1'];
+    const completedFields = fields.filter(field => !!data[field]);
+    return Math.round((completedFields.length / fields.length) * 100);
+  };
+
+  const progress = calculateProgress(profile);
+
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-bold">Welcome back, Jane!</h1>
+        <h1 className="text-3xl font-bold">Applicant Dashboard</h1>
         <p className="text-muted-foreground">
-          Here&apos;s a summary of your scholarship journey.
+          Hello {user?.displayName || 'Student'}, manage your scholarship application and track your status here.
         </p>
       </div>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        <Card>
+        <Card className={progress === 100 ? 'border-green-500/50 bg-green-500/5' : ''}>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2 text-lg">
               <User className="h-5 w-5 text-primary" />
-              <span>Profile Completion</span>
+              <span>Application Progress</span>
             </CardTitle>
             <CardDescription>
-              Complete your profile to get better scholarship matches.
+              {progress === 100 ? 'Your profile is ready for review!' : 'Complete your form to be eligible for awards.'}
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">75% Complete</span>
-              <Progress value={75} className="w-2/3" />
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between text-sm font-medium">
+              <span>{progress}% Complete</span>
+              {progress === 100 && <CheckCircle className="h-4 w-4 text-green-500" />}
             </div>
+            <Progress value={progress} className="h-2" />
           </CardContent>
           <CardFooter>
-            <Button variant="outline" asChild>
+            <Button variant={progress === 100 ? 'outline' : 'default'} asChild className="w-full">
               <Link href="/dashboard/profile">
-                Update Profile <ArrowRight className="ml-2 h-4 w-4" />
+                {progress === 100 ? 'View Application' : 'Continue Application'} <ArrowRight className="ml-2 h-4 w-4" />
               </Link>
             </Button>
           </CardFooter>
         </Card>
 
-        <Card className="bg-primary/10 border-primary">
+        <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2 text-lg">
               <Search className="h-5 w-5 text-primary" />
-              <span>Find Scholarships</span>
+              <span>Available Scholarships</span>
             </CardTitle>
             <CardDescription>
-              Explore new scholarship opportunities tailored for you.
+              New opportunities matching your academic profile.
             </CardDescription>
           </CardHeader>
           <CardContent>
-             <p className="text-4xl font-bold">12</p>
-             <p className="text-sm text-muted-foreground">New scholarships match your profile!</p>
+             <div className="flex items-baseline gap-2">
+               <span className="text-4xl font-bold">22</span>
+               <span className="text-sm text-muted-foreground">Programs</span>
+             </div>
+             <p className="mt-2 text-xs text-muted-foreground">Deadlines approach in March 2026.</p>
           </CardContent>
           <CardFooter>
-            <Button asChild>
+            <Button variant="outline" asChild className="w-full">
               <Link href="/dashboard/scholarships">
-                View Scholarships <ArrowRight className="ml-2 h-4 w-4" />
+                Explore Programs <ArrowRight className="ml-2 h-4 w-4" />
               </Link>
             </Button>
           </CardFooter>
@@ -72,27 +100,51 @@ export default function DashboardPage() {
         
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5 text-primary" />
-              <span>Active Applications</span>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Clock className="h-5 w-5 text-primary" />
+              <span>Submission Status</span>
             </CardTitle>
             <CardDescription>
-              Keep track of the status of your applications.
+              Real-time updates from the selection committee.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-4xl font-bold">3</p>
-            <p className="text-sm text-muted-foreground">Applications submitted</p>
+            <div className="rounded-md bg-muted/50 p-3 text-sm font-medium">
+              {progress < 50 ? 'Incomplete' : progress < 100 ? 'Draft Saved' : 'Pending Review'}
+            </div>
           </CardContent>
           <CardFooter>
-            <Button variant="outline" asChild>
+            <Button variant="outline" asChild className="w-full">
               <Link href="/dashboard/applications">
-                View Applications <ArrowRight className="ml-2 h-4 w-4" />
+                Detailed Status <ArrowRight className="ml-2 h-4 w-4" />
               </Link>
             </Button>
           </CardFooter>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Next Steps</CardTitle>
+          <CardDescription>Items required before the spring deadline.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 sm:grid-cols-2">
+           <div className="flex items-start gap-3 rounded-lg border p-4">
+             <div className="rounded-full bg-primary/10 p-2"><FileText className="h-4 w-4 text-primary" /></div>
+             <div>
+               <p className="font-semibold">Transcripts</p>
+               <p className="text-xs text-muted-foreground">Request your official HS transcript.</p>
+             </div>
+           </div>
+           <div className="flex items-start gap-3 rounded-lg border p-4">
+             <div className="rounded-full bg-primary/10 p-2"><Users className="h-4 w-4 text-primary" /></div>
+             <div>
+               <p className="font-semibold">Recommendations</p>
+               <p className="text-xs text-muted-foreground">Ask two teachers for letters early.</p>
+             </div>
+           </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
