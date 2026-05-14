@@ -1,3 +1,4 @@
+
 'use client';
 
 import Link from 'next/link';
@@ -12,14 +13,17 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useAuth, initiateEmailSignIn } from '@/firebase';
+import { useAuth, initiateEmailSignIn, useFirestore } from '@/firebase';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, ShieldCheck } from 'lucide-react';
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 
 export default function ReviewerLoginPage() {
   const auth = useAuth();
+  const firestore = useFirestore();
   const router = useRouter();
   const { toast } = useToast();
   const [email, setEmail] = useState('');
@@ -34,10 +38,9 @@ export default function ReviewerLoginPage() {
     try {
       initiateEmailSignIn(auth, email, password);
       toast({
-        title: 'Logging in as Reviewer...',
-        description: 'Verifying credentials.',
+        title: 'Verifying Credentials',
+        description: 'Authenticating for secure portal access.',
       });
-      router.push('/review');
     } catch (error: any) {
       toast({
         variant: 'destructive',
@@ -48,22 +51,54 @@ export default function ReviewerLoginPage() {
     }
   };
 
+  useEffect(() => {
+    if (!auth || !firestore) return;
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user && isSigningIn) {
+        try {
+          // Check roles to determine redirect
+          const adminDoc = await getDoc(doc(firestore, 'roles_admin', user.uid));
+          const userDoc = await getDoc(doc(firestore, 'users', user.uid));
+          
+          const isAdmin = adminDoc.exists() && (adminDoc.data().role === 'Admin' || adminDoc.data().role === 'Sponsor');
+          const isReviewer = userDoc.exists() && userDoc.data().role === 'Reviewer';
+
+          if (isAdmin) {
+            router.push('/admin');
+          } else if (isReviewer) {
+            router.push('/review');
+          } else {
+            router.push('/dashboard');
+          }
+        } catch (err) {
+          console.error("Redirection error:", err);
+          router.push('/dashboard');
+        }
+      }
+    });
+    return () => unsubscribe();
+  }, [auth, firestore, isSigningIn, router]);
+
   return (
     <form onSubmit={handleLogin}>
-      <Card>
-        <CardHeader>
+      <Card className="border-primary/20 shadow-xl">
+        <CardHeader className="space-y-1">
+          <div className="flex items-center gap-2 text-primary">
+            <ShieldCheck className="h-5 w-5" />
+            <span className="text-xs font-black uppercase tracking-widest">Secure Access</span>
+          </div>
           <CardTitle className="text-2xl">Reviewer Portal</CardTitle>
           <CardDescription>
-            Enter your credentials to access the scholarship review portal.
+            Enter your credentials to access the scholarship committee workspace.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email">Work Email</Label>
             <Input 
               id="email" 
               type="email" 
-              placeholder="reviewer@example.com" 
+              placeholder="reviewer@organization.org" 
               required 
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -74,7 +109,7 @@ export default function ReviewerLoginPage() {
             <div className="flex items-center justify-between">
               <Label htmlFor="password">Password</Label>
               <Link href="/forgot-password" size="sm" className="text-sm font-medium text-primary hover:underline">
-                Forgot password?
+                Forgot?
               </Link>
             </div>
             <div className="relative">
@@ -93,21 +128,18 @@ export default function ReviewerLoginPage() {
                 onClick={() => setShowPassword(!showPassword)}
               >
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                <span className="sr-only">
-                  {showPassword ? "Hide password" : "Show password"}
-                </span>
               </button>
             </div>
           </div>
         </CardContent>
         <CardFooter className="flex flex-col gap-4">
-          <Button type="submit" className="w-full" disabled={isSigningIn}>
-            {isSigningIn ? 'Logging in...' : 'Log in'}
+          <Button type="submit" className="w-full font-bold" disabled={isSigningIn}>
+            {isSigningIn ? 'Authenticating...' : 'Secure Login'}
           </Button>
-          <div className="text-center text-sm text-muted-foreground">
-            Are you a student?{' '}
-            <Link href="/login" className="font-medium text-primary hover:underline">
-              Applicant Login
+          <div className="text-center text-xs text-muted-foreground">
+            Student applicant?{' '}
+            <Link href="/login" className="font-bold text-primary hover:underline">
+              Applicant Gateway
             </Link>
           </div>
         </CardFooter>
