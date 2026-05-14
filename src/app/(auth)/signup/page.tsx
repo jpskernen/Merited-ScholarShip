@@ -14,9 +14,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth, initiateEmailSignUp } from '@/firebase';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Eye, EyeOff } from 'lucide-react';
+import { onAuthStateChanged } from 'firebase/auth';
 
 export default function SignupPage() {
   const auth = useAuth();
@@ -34,15 +35,15 @@ export default function SignupPage() {
     setIsSigningUp(true);
 
     try {
+      // initiateEmailSignUp is non-blocking. 
+      // We rely on onAuthStateChanged to detect the success.
       initiateEmailSignUp(auth, email, password);
       
       toast({
-        title: 'Account created!',
-        description: 'You will be redirected to the dashboard.',
+        title: 'Creating account...',
+        description: 'Verifying your credentials.',
       });
       
-      router.push('/dashboard/profile');
-
     } catch (error: any) {
       console.error(error);
       toast({
@@ -53,6 +54,21 @@ export default function SignupPage() {
       setIsSigningUp(false);
     }
   };
+
+  // Watch for auth state changes to redirect after successful signup
+  useEffect(() => {
+    if (!auth) return;
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user && isSigningUp) {
+        toast({
+          title: 'Account created!',
+          description: 'Welcome to your dashboard.',
+        });
+        router.push('/dashboard/profile');
+      }
+    });
+    return () => unsubscribe();
+  }, [auth, router, isSigningUp, toast]);
 
   return (
     <form onSubmit={handleSignup}>

@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
   CardFooter,
@@ -67,7 +66,7 @@ export default function Home() {
               Scholarship Applications Open
             </h1>
             <p className="mx-auto mt-4 max-w-2xl text-lg text-muted-foreground md:text-xl">
-              You can prepare by asking for two letters of recommendation, setting up reminders to obtain your transcripts from your counselor, and reviewing potential scholarships now.
+              Start your journey today. Prepare by requesting letters of recommendation, gathering your official transcripts, and reviewing our current opportunities.
             </p>
             <div className="mt-8 flex justify-center gap-4">
               <Button size="lg" asChild>
@@ -135,7 +134,7 @@ export default function Home() {
                 Scholarship Application Guide
               </h2>
               <p className="mt-2 text-muted-foreground">
-                Scholarships open annually. You will be alerted if you are selected. Award presentations are in May. Scholarships are sent directly to your school of choice. 
+                Scholarships open annually. Our committee reviews every application thoroughly to ensure fair and merit-based awards for students.
               </p>
             </div>
             <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
@@ -165,12 +164,12 @@ export default function Home() {
                     Fund a Scholarship
                 </h2>
                 <p className="mx-auto mt-4 max-w-3xl text-lg text-muted-foreground md:text-xl">
-                    The Lake Travis Education Foundation is committed to the students of the Lake Travis Independent School District. One of the ways that we support our students is by providing named scholarships that allow us to help them in their post-secondary journeys.
+                    Our foundation is committed to supporting students in their post-secondary journeys. By providing named scholarships, we help bridge the financial gap and empower the next generation of leaders.
                 </p>
                 <div className="mt-8">
                     <Button size="lg" asChild>
-                        <Link href="https://app.betterunite.com/laketraviseducationfoundation-scholarships" target="_blank" rel="noopener noreferrer">
-                            Donate Now
+                        <Link href="/signup" target="_blank" rel="noopener noreferrer">
+                            Inquire Now
                         </Link>
                     </Button>
                 </div>
@@ -185,9 +184,6 @@ export default function Home() {
             &copy; {mounted ? new Date().getFullYear() : ''} ScholarShip. All rights reserved.
           </p>
           <div className="flex flex-wrap justify-center gap-4 sm:justify-end">
-            <Link href="https://www.meritedapp.com/" target="_blank" rel="noopener noreferrer" className="flex items-center text-sm text-primary hover:underline">
-              Visit Merited App <ExternalLink className="ml-1 h-3 w-3" />
-            </Link>
             <Link href="#" className="text-sm text-muted-foreground hover:text-primary">
               Terms
             </Link>

@@ -1,4 +1,3 @@
-
 'use client';
 
 import { Button } from '@/components/ui/button';
@@ -29,7 +28,6 @@ export default function ProfilePage() {
   const [isSaving, setIsSaving] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
-  // Properly memoize the Firestore document reference to prevent infinite loading loops
   const userDocRef = useMemoFirebase(() => {
     if (!user || !firestore) return null;
     return doc(firestore, 'users', user.uid);
@@ -43,6 +41,7 @@ export default function ProfilePage() {
     formState: { errors },
     setValue,
     reset,
+    watch,
   } = useForm<Applicant>({
     resolver: zodResolver(ApplicantSchema),
     defaultValues: {
@@ -119,7 +118,7 @@ export default function ProfilePage() {
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-bold">Scholarship Application</h1>
         <p className="text-muted-foreground">
-          Complete your profile to apply for the Lake Travis Education Foundation Scholarships.
+          Complete your profile to apply for active scholarship opportunities.
         </p>
       </div>
 

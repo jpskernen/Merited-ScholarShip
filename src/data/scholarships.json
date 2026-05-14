@@ -1,178 +1,66 @@
 [
   {
-    "id": "eagle-scout-scholarship",
-    "name": "Bernalee Hawkins Foundation - Eagle Scouting",
+    "id": "academic-excellence",
+    "name": "Academic Excellence Scholarship",
     "amount": "$5,000",
     "deadline": "May 01",
-    "tags": ["Eagle Scout"],
-    "description": "Confirm recipient is an Eagle Scout - must upload certification card."
+    "tags": ["Academics", "Merit"],
+    "description": "Awarded to students with a minimum 3.8 GPA who have demonstrated exceptional academic performance throughout high school."
   },
   {
-    "id": "mens-soccer-scholarship",
-    "name": "Bernalee Hawkins Foundation - Mens Soccer",
-    "amount": "$5,000",
+    "id": "stem-innovation",
+    "name": "STEM Innovation Grant",
+    "amount": "$7,500",
     "deadline": "May 01",
-    "tags": ["Soccer", "Athletics"],
-    "description": "Two year participant on the soccer team."
+    "tags": ["STEM", "Technology"],
+    "description": "For students pursuing degrees in Science, Technology, Engineering, or Mathematics with a focus on innovative problem solving."
   },
   {
-    "id": "model-un-scholarship",
-    "name": "Bernalee Hawkins Foundation - Model UN",
-    "amount": "$5,000",
+    "id": "community-leadership",
+    "name": "Community Leadership Award",
+    "amount": "$3,000",
     "deadline": "May 01",
-    "tags": ["Model UN", "Academics"],
-    "description": "Two year participant on Model United Nations."
+    "tags": ["Leadership", "Service"],
+    "description": "Recognizing students who have led significant community service initiatives and demonstrated strong leadership qualities."
   },
   {
-    "id": "peeler-memorial-scholarship",
-    "name": "Christopher Peeler Memorial Scholarship",
-    "amount": "$1,000",
-    "deadline": "May 01",
-    "tags": ["Study Abroad"],
-    "description": "Student who plans to study abroad their first year."
-  },
-  {
-    "id": "colins-holst-scholarship",
-    "name": "Colin's Holst \"Best Day Ever\" Scholarship",
-    "amount": "$1,000",
-    "deadline": "May 01",
-    "tags": ["Community Impact"],
-    "description": "Awarded to a student who has balanced their school commitments along with their passion for making a positive impact on their classmates and/or community."
-  },
-  {
-    "id": "dana-lappin-scholarship",
-    "name": "Dana Lappin Memorial Scholarship",
-    "amount": "$1,000",
-    "deadline": "May 01",
-    "tags": ["Residency"],
-    "description": "Student that is a resident of the local community."
-  },
-  {
-    "id": "daniel-hoffmann-scholarship",
-    "name": "Daniel Hoffmann Scholarship",
+    "id": "arts-and-humanities",
+    "name": "Arts & Humanities Foundation Scholarship",
     "amount": "$2,500",
     "deadline": "May 01",
-    "tags": ["Swimming", "Diving", "Athletics"],
-    "description": "Student on Swim or Dive team."
+    "tags": ["Arts", "Humanities"],
+    "description": "Supporting students who show outstanding promise in the visual or performing arts, or the study of human culture."
   },
   {
-    "id": "dawlett-family-scholarship",
-    "name": "Dawlett Family Foundation Legacy Scholarship",
-    "amount": "$25,000",
+    "id": "first-generation-success",
+    "name": "First-Generation Success Scholarship",
+    "amount": "$10,000",
     "deadline": "May 01",
-    "tags": ["Business", "Financial Need"],
-    "description": "Student that is studying business and has a financial need."
+    "tags": ["First-Gen", "Need-Based"],
+    "description": "Designed for students who are the first in their family to attend college and show high potential for success."
   },
   {
-    "id": "fourlane-scholarship",
-    "name": "Fourlane Scholarship",
-    "amount": "$1,000",
-    "deadline": "May 01",
-    "tags": ["Accounting", "Software"],
-    "description": "Student that is studying accounting and software implementation."
-  },
-  {
-    "id": "hugh-wolff-scholarship",
-    "name": "Hugh L Wolff Career and Technical Education",
-    "amount": "$1,500",
-    "deadline": "May 01",
-    "tags": ["CTE", "Trade School"],
-    "description": "Student who plans to attend a career or technical trade school (or community college) to pursue a career."
-  },
-  {
-    "id": "jerry-campbell-scholarship",
-    "name": "Jerry P Campbell Memorial Scholarship",
-    "amount": "$1,000",
-    "deadline": "May 01",
-    "tags": ["Continuous Learning"],
-    "description": "Continuous learning, positive impression, prioritizing education and learning."
-  },
-  {
-    "id": "kaden-forke-scholarship",
-    "name": "Kaden Michael Forke Memorial Scholarship",
-    "amount": "$1,000",
-    "deadline": "May 01",
-    "tags": ["Wrestling", "Athletics"],
-    "description": "Student that participated in wrestling."
-  },
-  {
-    "id": "cavalier-band-scholarship",
-    "name": "Cavalier Band Scholarship",
+    "id": "future-educators",
+    "name": "Future Educators Scholarship",
     "amount": "$4,000",
     "deadline": "May 01",
-    "tags": ["Band", "Color Guard", "Arts"],
-    "description": "4 year Band or color guard; top 25%."
+    "tags": ["Education", "Teaching"],
+    "description": "For high-achieving students planning to pursue a career in K-12 education."
   },
   {
-    "id": "lakeway-pto-scholarship",
-    "name": "Elementary PTO",
-    "amount": "$2,500",
-    "deadline": "May 01",
-    "tags": ["Alumni"],
-    "description": "School Alumni."
-  },
-  {
-    "id": "linda-holt-scholarship",
-    "name": "Linda Holt Scholarship",
-    "amount": "$1,000",
-    "deadline": "May 01",
-    "tags": ["Education"],
-    "description": "Student that is studying elementary education."
-  },
-  {
-    "id": "ltef-scholarships",
-    "name": "LTEF Scholarships",
-    "amount": "$20,000",
-    "deadline": "May 01",
-    "tags": ["Excellence", "Culture"],
-    "description": "A student who embodies in words and deeds the exemplary culture of the school district."
-  },
-  {
-    "id": "lths-alumni-scholarship",
-    "name": "Alumni Scholarship",
-    "amount": "$1,000",
-    "deadline": "May 01",
-    "tags": ["Academics", "Community Service", "Leadership"],
-    "description": "Student who exhibits strong academic performance, community service, and leadership skills."
-  },
-  {
-    "id": "primrose-education-scholarship",
-    "name": "Primrose Schools - Education",
-    "amount": "$1,000",
-    "deadline": "May 01",
-    "tags": ["Education", "Childhood Development"],
-    "description": "Student that is studying education or childhood development."
-  },
-  {
-    "id": "rachel-spelman-scholarship",
-    "name": "Rachel Spelman Scholarship",
-    "amount": "$1,500",
-    "deadline": "May 01",
-    "tags": ["College", "Volunteering"],
-    "description": "Involved in volunteering, charitable organizations and is currently working."
-  },
-  {
-    "id": "skylar-linn-scholarship",
-    "name": "Skylar Linn Memorial Scholarship",
-    "amount": "$1,000",
-    "deadline": "May 01",
-    "tags": ["Technical Theatre", "Arts"],
-    "description": "Technical Theatre student evaluation will be part of the selection process."
-  },
-  {
-    "id": "texas-regional-bank-scholarship",
-    "name": "Regional Bank Scholarship",
-    "amount": "$1,500",
-    "deadline": "May 01",
-    "tags": ["Banking", "Business"],
-    "description": "Student who plans to continue their education (college/university or trade school program)."
-  },
-  {
-    "id": "womens-leadership-scholarship",
-    "name": "Women's Leadership Scholarship",
+    "id": "athletic-scholar-award",
+    "name": "Varsity Scholar-Athlete Award",
     "amount": "$2,000",
     "deadline": "May 01",
-    "tags": ["Leadership", "Female"],
-    "description": "Female student who has exhibited strong leadership skills, participating in clubs and/or extra curricular activities and volunteering in the community."
+    "tags": ["Athletics", "Academics"],
+    "description": "Awarded to a student-athlete who maintains a balance between high-level sports participation and academic achievement."
+  },
+  {
+    "id": "entrepreneurial-spirit",
+    "name": "Entrepreneurial Spirit Scholarship",
+    "amount": "$1,500",
+    "deadline": "May 01",
+    "tags": ["Business", "Innovation"],
+    "description": "Recognizing students who have started their own small business or demonstrated significant entrepreneurial initiative."
   }
 ]
