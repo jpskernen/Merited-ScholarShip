@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/card';
 import { AppLogo } from '@/components/shared/AppLogo';
 import { Badge } from '@/components/ui/badge';
-import { FileText, CheckCircle, Heart, Search, ArrowRight, ExternalLink } from 'lucide-react';
+import { FileText, CheckCircle, Heart, Search, ArrowRight } from 'lucide-react';
 import scholarships from '@/data/scholarships.json';
 import { useState, useEffect } from 'react';
 

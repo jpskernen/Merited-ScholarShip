@@ -10,9 +10,9 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { useCollection, useFirebase } from '@/firebase';
-import { collection, query, where } from 'firebase/firestore';
-import { useMemo, useState, useEffect } from 'react';
+import { useCollection, useFirebase, useMemoFirebase } from '@/firebase';
+import { collection, query } from 'firebase/firestore';
+import { useState, useEffect } from 'react';
 
 const getStatusVariant = (status: string): 'default' | 'secondary' | 'destructive' | 'outline' => {
   switch (status) {
@@ -36,7 +36,7 @@ export default function ApplicationsPage() {
     setMounted(true);
   }, []);
 
-  const applicationsQuery = useMemo(() => {
+  const applicationsQuery = useMemoFirebase(() => {
     if (!user || !firestore) return null;
     return query(collection(firestore, `users/${user.uid}/applications`));
   }, [user, firestore]);
@@ -44,7 +44,11 @@ export default function ApplicationsPage() {
   const { data: applications, isLoading } = useCollection(applicationsQuery);
 
   if (isLoading || !mounted) {
-    return <div>Loading applications...</div>
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <div className="animate-pulse text-muted-foreground font-medium">Loading applications...</div>
+      </div>
+    );
   }
 
   return (
@@ -71,7 +75,7 @@ export default function ApplicationsPage() {
               <TableRow key={app.id}>
                 <TableCell className="font-medium">{app.scholarshipName || 'N/A'}</TableCell>
                 <TableCell>
-                  {app.submissionDate 
+                  {app.submissionDate && mounted
                     ? new Date(app.submissionDate).toLocaleDateString() 
                     : 'N/A'}
                 </TableCell>

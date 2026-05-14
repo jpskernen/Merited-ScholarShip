@@ -15,18 +15,12 @@ import { Progress } from '@/components/ui/progress';
 import { Card, CardContent } from '@/components/ui/card';
 import { 
   ArrowRight, 
-  EyeOff, 
-  Search, 
-  Clock, 
-  CheckCircle2, 
-  ClipboardList,
-  AlertCircle,
+  ArrowUpDown,
   MessageSquare,
-  ArrowUpDown
 } from 'lucide-react';
 import Link from 'next/link';
 import { useCollection, useFirebase, useMemoFirebase } from '@/firebase';
-import { collection, collectionGroup, query, where } from 'firebase/firestore';
+import { collection, collectionGroup } from 'firebase/firestore';
 
 export default function ReviewerDashboardPage() {
   const { firestore, user } = useFirebase();
@@ -38,7 +32,7 @@ export default function ReviewerDashboardPage() {
     setMounted(true);
   }, []);
 
-  // 1. Fetch all applicants (assigned to committee)
+  // 1. Fetch all applicants
   const applicantsQuery = useMemoFirebase(() => {
     if (!firestore) return null;
     return collection(firestore, 'users');
@@ -67,7 +61,7 @@ export default function ReviewerDashboardPage() {
 
     const myReviews = allReviews.filter(r => r.reviewerId === user.uid);
 
-    let data = applicants.map(app => {
+    let data = applicants.filter(u => u.role === 'Applicant').map(app => {
       const review = myReviews.find(r => r.applicationId === app.id);
       return {
         ...app,
