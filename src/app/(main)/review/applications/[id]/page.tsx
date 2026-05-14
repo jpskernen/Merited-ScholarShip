@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
@@ -14,20 +15,13 @@ import { Switch } from '@/components/ui/switch';
 import { 
   FileText, 
   UserCircle, 
-  CheckCircle, 
-  ExternalLink, 
-  GraduationCap, 
-  Trophy, 
-  MessageSquare,
-  ChevronLeft,
-  Calculator,
-  Lock,
-  EyeOff,
-  Sparkles,
-  Loader2,
-  TrendingUp,
-  AlertCircle,
-  History
+  Sparkles, 
+  Loader2, 
+  ChevronLeft, 
+  Calculator, 
+  Lock, 
+  History,
+  MessageSquare
 } from 'lucide-react';
 import { notFound, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -192,7 +186,7 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
         <div className="flex items-center gap-6">
           <Button variant="outline" size="sm" onClick={runAiAnalysis} disabled={isAnalyzing || isReadOnly}>
             {isAnalyzing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2 text-primary" />}
-            Run AI Fit Check
+            AI Fit Assessment
           </Button>
           <div className="text-right">
             <p className="text-[10px] font-bold text-muted-foreground uppercase">Weighted Total</p>
@@ -208,28 +202,28 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
               <section>
                 <div className="flex items-center gap-2 mb-4">
                   <UserCircle className="h-5 w-5 text-primary" />
-                  <h3 className="text-lg font-semibold">Candidate Dossier</h3>
+                  <h3 className="text-lg font-semibold">Candidate Profile</h3>
                 </div>
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div><Label className="text-muted-foreground">GPA</Label><p className="font-bold">{application.gpa.toFixed(2)}</p></div>
-                  <div><Label className="text-muted-foreground">Major</Label><p className="font-bold">{application.major}</p></div>
-                  <div><Label className="text-muted-foreground">School</Label><p className="font-bold">{application.school}</p></div>
+                  <div><Label className="text-muted-foreground">Intended Major</Label><p className="font-bold">{application.major}</p></div>
+                  {!application.isBlind && <div><Label className="text-muted-foreground">School</Label><p className="font-bold">{application.school}</p></div>}
                 </div>
               </section>
               <Separator />
               <section>
-                <h4 className="font-semibold text-sm mb-2">Activities</h4>
-                <p className="text-sm text-muted-foreground leading-relaxed">{application.activities}</p>
+                <h4 className="font-semibold text-sm mb-2">Activities & Leadership</h4>
+                <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{application.activities}</p>
               </section>
               <section>
                 <h4 className="font-semibold text-sm mb-2">Personal Statement</h4>
-                <div className="p-4 rounded-lg bg-muted/20 border text-sm italic leading-relaxed whitespace-pre-wrap">
-                  "{application.essay}"
+                <div className="p-4 rounded-lg bg-muted/20 border text-sm leading-relaxed whitespace-pre-wrap">
+                  {application.essay}
                 </div>
               </section>
               <Separator />
               <section>
-                <h3 className="text-lg font-semibold mb-4">Documents</h3>
+                <h3 className="text-lg font-semibold mb-4">Uploaded Documents</h3>
                 <div className="grid grid-cols-2 gap-2">
                   {application.transcripts && <Button variant="outline" className="justify-start" asChild><Link href={application.transcripts as string} target="_blank"><FileText className="h-4 w-4 mr-2" /> Transcript</Link></Button>}
                   {application.resume && <Button variant="outline" className="justify-start" asChild><Link href={application.resume as string} target="_blank"><FileText className="h-4 w-4 mr-2" /> Resume</Link></Button>}
@@ -243,10 +237,10 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
           <Card className={`flex flex-col min-h-0 shadow-lg ${isReadOnly ? 'border-green-200' : 'border-primary/20'}`}>
             <CardHeader className="bg-primary/5 border-b py-4">
               <div className="flex justify-between items-center">
-                <CardTitle className="text-lg flex items-center gap-2"><Calculator className="h-5 w-5" /> Weighted Rubric</CardTitle>
+                <CardTitle className="text-lg flex items-center gap-2"><Calculator className="h-5 w-5" /> Scoring Rubric</CardTitle>
                 <div className="flex items-center gap-2">
                   <History className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Auto-Saving Drafts</span>
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Persistence Enabled</span>
                 </div>
               </div>
               <Progress value={scorePercentage} className="h-1.5 mt-2" />
@@ -256,11 +250,10 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
               {aiAnalysis && (
                 <div className="p-4 rounded-xl bg-primary/5 border border-primary/20">
                   <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-[10px] font-bold uppercase text-primary flex items-center gap-1.5"><Sparkles className="h-3 w-3" /> AI Fit Confidence</h4>
-                    <Badge variant="secondary" className="font-mono">{aiAnalysis.fitScore}%</Badge>
+                    <h4 className="text-[10px] font-bold uppercase text-primary flex items-center gap-1.5">AI Fit Analysis</h4>
+                    <Badge variant="secondary" className="font-mono">{aiAnalysis.fitScore}% Match</Badge>
                   </div>
                   <p className="text-xs text-muted-foreground italic leading-relaxed mb-2">"{aiAnalysis.justification}"</p>
-                  <p className="text-[10px] font-bold uppercase text-primary">Recommendation: {aiAnalysis.recommendation}</p>
                 </div>
               )}
 
@@ -286,11 +279,11 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
 
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <Label className="flex items-center gap-2"><MessageSquare className="h-4 w-4" /> Mark for Committee Discussion</Label>
+                  <Label className="flex items-center gap-2"><MessageSquare className="h-4 w-4" /> Discuss with Committee</Label>
                   <Switch checked={markForDiscussion} onCheckedChange={setMarkForDiscussion} disabled={isReadOnly} />
                 </div>
                 <Textarea 
-                  placeholder="Reviewer comments and rationale..." 
+                  placeholder="Reviewer rationale and notes..." 
                   className="min-h-[100px] text-sm" 
                   value={comment} 
                   onChange={(e) => setComment(e.target.value)} 
@@ -302,12 +295,12 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
             <CardFooter className="bg-muted/10 border-t p-6 gap-3">
               {!isReadOnly ? (
                 <>
-                  <Button variant="outline" className="flex-1" onClick={() => handleSubmitReview(true)} disabled={isSubmitting}>Save Draft</Button>
-                  <Button className="flex-1 font-bold" onClick={() => handleSubmitReview(false)} disabled={isSubmitting}>Submit Review</Button>
+                  <Button variant="outline" className="flex-1" onClick={() => handleSubmitReview(true)} disabled={isSubmitting}>Save Progress</Button>
+                  <Button className="flex-1 font-bold" onClick={() => handleSubmitReview(false)} disabled={isSubmitting}>Submit Evaluation</Button>
                 </>
               ) : (
                 <div className="w-full flex items-center justify-center py-2 text-xs text-muted-foreground italic gap-2 bg-muted/50 rounded-md">
-                   <Lock className="h-3 w-3" /> Review Locked
+                   <Lock className="h-3 w-3" /> Evaluation Finalized
                 </div>
               )}
             </CardFooter>

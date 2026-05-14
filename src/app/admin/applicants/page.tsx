@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useMemo } from 'react';
@@ -11,16 +12,14 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { 
   EyeOff, 
   AlertTriangle, 
-  CheckCircle2, 
   Users, 
   BarChart3, 
   MessageSquare,
-  Star,
-  ArrowUpDown
+  Star
 } from 'lucide-react';
 import { useCollection, useFirebase, useMemoFirebase } from '@/firebase';
 import { collection, doc, updateDoc, collectionGroup } from 'firebase/firestore';
@@ -38,7 +37,6 @@ const RUBRIC_WEIGHTS = {
 
 export default function AdminApplicantsPage() {
   const { firestore } = useFirebase();
-  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
 
   // Fetch all applicants
   const applicantsQuery = useMemoFirebase(() => {
@@ -47,7 +45,7 @@ export default function AdminApplicantsPage() {
   }, [firestore]);
   const { data: applicants, isLoading: isApplicantsLoading } = useCollection(applicantsQuery);
 
-  // Fetch ALL reviews across ALL applications using collectionGroup
+  // Fetch ALL reviews across ALL applications
   const reviewsQuery = useMemoFirebase(() => {
     if (!firestore) return null;
     return collectionGroup(firestore, 'reviews');
@@ -58,10 +56,8 @@ export default function AdminApplicantsPage() {
   const tableData = useMemo(() => {
     if (!applicants) return [];
 
-    return applicants.map(applicant => {
-      // Find all reviews associated with this applicant's ID
+    return applicants.filter(u => u.role === 'Applicant').map(applicant => {
       const applicantReviews = allReviews?.filter(r => r.applicationId === applicant.id) || [];
-      
       const reviewCount = applicantReviews.length;
       let totalWeightedScore = 0;
       let scores: number[] = [];
@@ -82,8 +78,6 @@ export default function AdminApplicantsPage() {
       });
 
       const averageScore = reviewCount > 0 ? totalWeightedScore / reviewCount : 0;
-      
-      // Outlier Detection (Flag if any reviewer's score is > 0.8 points away from average)
       const hasOutlier = scores.length >= 2 && scores.some(s => Math.abs(s - averageScore) > 0.8);
 
       return {
@@ -103,29 +97,29 @@ export default function AdminApplicantsPage() {
   };
 
   if (isApplicantsLoading || isReviewsLoading) {
-    return <div className="animate-pulse text-muted-foreground">Analyzing committee data...</div>;
+    return <div className="animate-pulse text-muted-foreground p-8">Consolidating committee results...</div>;
   }
 
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Committee Review Panel</h1>
+          <h1 className="text-3xl font-bold">Committee Review Board</h1>
           <p className="text-muted-foreground">
-            Aggregated scores, outlier detection, and shortlist management.
+            Centralized evaluation analytics and candidate shortlisting.
           </p>
         </div>
         <div className="flex gap-4">
-          <Card className="p-3 bg-primary/5">
+          <Card className="p-3 bg-primary/5 border-primary/20">
             <div className="flex items-center gap-2">
               <Users className="h-4 w-4 text-primary" />
               <div className="text-xs">
                 <p className="font-bold text-primary">{tableData.length}</p>
-                <p className="text-muted-foreground">Total Candidates</p>
+                <p className="text-muted-foreground">Applicants</p>
               </div>
             </div>
           </Card>
-          <Card className="p-3 bg-green-500/5">
+          <Card className="p-3 bg-green-500/5 border-green-500/20">
             <div className="flex items-center gap-2">
               <Star className="h-4 w-4 text-green-600" />
               <div className="text-xs">
@@ -142,14 +136,10 @@ export default function AdminApplicantsPage() {
           <TableHeader>
             <TableRow>
               <TableHead className="w-[300px]">Candidate</TableHead>
-              <TableHead>Review Count</TableHead>
-              <TableHead>
-                <div className="flex items-center gap-1">
-                  Avg. Weighted Score <BarChart3 className="h-3 w-3" />
-                </div>
-              </TableHead>
-              <TableHead>Status Flags</TableHead>
-              <TableHead className="text-right">Decision</TableHead>
+              <TableHead>Evaluations</TableHead>
+              <TableHead>Avg Weighted Score</TableHead>
+              <TableHead>Status Indicators</TableHead>
+              <TableHead className="text-right">Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -158,40 +148,36 @@ export default function AdminApplicantsPage() {
                 <TableCell>
                   <div className="flex flex-col">
                     <span className="font-semibold flex items-center gap-2">
-                      {row.name}
+                      {row.isBlind ? `Applicant ${row.id.substring(0, 6)}` : row.name}
                       {row.isBlind && <EyeOff className="h-3 w-3 opacity-30" />}
                     </span>
-                    <span className="text-[10px] text-muted-foreground uppercase">{row.school}</span>
+                    {!row.isBlind && <span className="text-[10px] text-muted-foreground uppercase">{row.school}</span>}
                   </div>
+                </TableCell>
+                <TableCell>
+                  <Badge variant="outline">{row.reviewCount}</Badge>
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-2">
-                    <Badge variant="outline">{row.reviewCount}</Badge>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="flex flex-col gap-1">
-                    <div className="text-lg font-bold text-primary">
-                      {row.averageScore.toFixed(2)}
-                      <span className="text-[10px] text-muted-foreground font-normal ml-1">/ 5.00</span>
-                    </div>
+                    <span className="text-lg font-bold text-primary">{row.averageScore.toFixed(2)}</span>
+                    <BarChart3 className="h-4 w-4 text-muted-foreground" />
                   </div>
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-2">
                     {row.hasOutlier && (
                       <Badge variant="destructive" className="bg-red-500/10 text-red-600 border-red-200">
-                        <AlertTriangle className="h-3 w-3 mr-1" /> Outlier
+                        <AlertTriangle className="h-3 w-3 mr-1" /> High Variance
                       </Badge>
                     )}
                     {row.needsDiscussion && (
                       <Badge variant="secondary" className="bg-amber-500/10 text-amber-600 border-amber-200">
-                        <MessageSquare className="h-3 w-3 mr-1" /> Discuss
+                        <MessageSquare className="h-3 w-3 mr-1" /> Flagged
                       </Badge>
                     )}
                     {row.isShortlisted && (
                       <Badge className="bg-green-600">
-                        <Star className="h-3 w-3 mr-1" /> Shortlisted
+                        <Star className="h-3 w-3 mr-1" /> Shortlist
                       </Badge>
                     )}
                   </div>
@@ -199,7 +185,7 @@ export default function AdminApplicantsPage() {
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-2">
                     <Button variant="outline" size="sm" asChild>
-                      <Link href={`/review/applications/${row.id}`}>Analytics</Link>
+                      <Link href={`/review/applications/${row.id}`}>Review</Link>
                     </Button>
                     <Button 
                       variant={row.isShortlisted ? 'destructive' : 'default'} 

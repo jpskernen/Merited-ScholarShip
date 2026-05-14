@@ -1,3 +1,4 @@
+
 'use client';
 
 import Link from 'next/link';
@@ -12,15 +13,17 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useAuth, initiateEmailSignUp } from '@/firebase';
+import { useAuth, initiateEmailSignUp, useFirestore } from '@/firebase';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Eye, EyeOff } from 'lucide-react';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, updateProfile } from 'firebase/auth';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 
 export default function SignupPage() {
   const auth = useAuth();
+  const firestore = useFirestore();
   const router = useRouter();
   const { toast } = useToast();
   const [email, setEmail] = useState('');
@@ -31,7 +34,7 @@ export default function SignupPage() {
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!auth) return;
+    if (!auth || !firestore) return;
     setIsSigningUp(true);
 
     try {
@@ -55,20 +58,39 @@ export default function SignupPage() {
     }
   };
 
-  // Watch for auth state changes to redirect after successful signup
   useEffect(() => {
-    if (!auth) return;
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    if (!auth || !firestore) return;
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user && isSigningUp) {
-        toast({
-          title: 'Account created!',
-          description: 'Welcome to your dashboard.',
-        });
-        router.push('/dashboard/profile');
+        try {
+          // Set display name in Auth
+          await updateProfile(user, { displayName: name });
+
+          // Create the user document in Firestore with default role
+          const userRef = doc(firestore, 'users', user.uid);
+          await setDoc(userRef, {
+            id: user.uid,
+            name: name,
+            email: user.email,
+            role: 'Applicant',
+            schoolId: 'default-school', // Default tenant for MVP
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          }, { merge: true });
+
+          toast({
+            title: 'Account created!',
+            description: 'Welcome to your dashboard.',
+          });
+          router.push('/dashboard/profile');
+        } catch (err: any) {
+          console.error("Error finalizing signup:", err);
+          setIsSigningUp(false);
+        }
       }
     });
     return () => unsubscribe();
-  }, [auth, router, isSigningUp, toast]);
+  }, [auth, firestore, name, router, isSigningUp, toast]);
 
   return (
     <form onSubmit={handleSignup}>
