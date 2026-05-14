@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, use } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
@@ -42,22 +42,24 @@ const RUBRIC_WEIGHTS = {
   other: 0.20
 };
 
-export default function ApplicationReviewPage({ params }: { params: { id: string } }) {
+export default function ApplicationReviewPage({ params }: { params: Promise<{ id: string }> }) {
+  const resolvedParams = use(params);
+  const applicationId = resolvedParams.id;
   const router = useRouter();
   const { toast } = useToast();
   const { firestore, user: reviewer } = useFirebase();
   
   const applicantRef = useMemoFirebase(() => {
-    if (!firestore || !params.id) return null;
-    return doc(firestore, 'users', params.id);
-  }, [firestore, params.id]);
+    if (!firestore || !applicationId) return null;
+    return doc(firestore, 'users', applicationId);
+  }, [firestore, applicationId]);
 
   const { data: application, isLoading } = useDoc<Applicant>(applicantRef);
 
   const reviewRef = useMemoFirebase(() => {
-    if (!firestore || !reviewer || !params.id) return null;
-    return doc(firestore, 'applications', params.id, 'reviews', reviewer.uid);
-  }, [firestore, reviewer, params.id]);
+    if (!firestore || !reviewer || !applicationId) return null;
+    return doc(firestore, 'applications', applicationId, 'reviews', reviewer.uid);
+  }, [firestore, reviewer, applicationId]);
 
   const { data: existingReview, isLoading: isReviewLoading } = useDoc(reviewRef);
 
@@ -101,13 +103,13 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
   const scorePercentage = (totalWeightedScore / 5) * 100;
 
   const handleSubmitReview = async (isDraft: boolean = false) => {
-    if (!firestore || !reviewer || !params.id || (isReadOnly && !isDraft)) return;
+    if (!firestore || !reviewer || !applicationId || (isReadOnly && !isDraft)) return;
     setIsSubmitting(true);
 
     try {
-      const reviewDocRef = doc(firestore, 'applications', params.id, 'reviews', reviewer.uid);
+      const reviewDocRef = doc(firestore, 'applications', applicationId, 'reviews', reviewer.uid);
       await setDoc(reviewDocRef, {
-        applicationId: params.id,
+        applicationId: applicationId,
         reviewerId: reviewer.uid,
         reviewerName: reviewer.displayName || 'Reviewer',
         scores,
@@ -152,7 +154,7 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
   };
 
   if (isLoading || isReviewLoading) {
-    return <div className="flex h-[80vh] items-center justify-center animate-pulse">Loading Application...</div>;
+    return <div className="flex h-[80vh] items-center justify-center animate-pulse text-muted-foreground">Loading Application...</div>;
   }
 
   if (!application) notFound();
@@ -166,7 +168,7 @@ export default function ApplicationReviewPage({ params }: { params: { id: string
     { key: 'other', label: 'Overall Impression', weight: '20%', desc: 'Essay & X-factor.' },
   ];
 
-  const displayName = application.isBlind ? `Applicant ${params.id.substring(0, 6)}` : application.name;
+  const displayName = application.isBlind ? `Applicant ${applicationId.substring(0, 6)}` : application.name;
 
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)]">

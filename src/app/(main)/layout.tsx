@@ -1,3 +1,4 @@
+
 'use client';
 
 import {
@@ -27,7 +28,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useUser, useDoc, useMemoFirebase, useFirestore } from '@/firebase';
 import { doc } from 'firebase/firestore';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 const applicantNav = [
   { href: '/dashboard', label: 'My Dashboard', icon: LayoutDashboard },
@@ -55,8 +56,13 @@ export default function DashboardLayout({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, role, isUserLoading } = useUser();
+  const { user, isUserLoading } = useUser();
   const firestore = useFirestore();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
   
   const isAdminPath = pathname.startsWith('/admin');
   const isReviewerPath = pathname.startsWith('/review');
@@ -72,15 +78,21 @@ export default function DashboardLayout({
     return doc(firestore, 'reviewers', user.uid);
   }, [firestore, user]);
 
+  const userDocRef = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return doc(firestore, 'users', user.uid);
+  }, [firestore, user]);
+
   const { data: adminRole, isLoading: isAdminRoleLoading } = useDoc(adminRoleRef);
   const { data: reviewerProfile, isLoading: isReviewerRoleLoading } = useDoc(reviewerProfileRef);
+  const { data: userDoc, isLoading: isUserDocLoading } = useDoc(userDocRef);
   
-  const isAdmin = role === 'admin' || !!adminRole;
-  const isReviewer = role === 'reviewer' || !!reviewerProfile;
-  const isApplicant = !isAdmin && !isReviewer;
+  const isAdmin = userDoc?.role === 'Admin' || !!adminRole;
+  const isReviewer = userDoc?.role === 'Reviewer' || !!reviewerProfile;
+  const isApplicant = userDoc?.role === 'Applicant' || (!isAdmin && !isReviewer);
 
   useEffect(() => {
-    if (!isUserLoading && !isAdminRoleLoading && !isReviewerRoleLoading) {
+    if (mounted && !isUserLoading && !isAdminRoleLoading && !isReviewerRoleLoading && !isUserDocLoading) {
       if (!user) {
         if (isDashboardPath || isAdminPath || isReviewerPath) {
           router.push('/login');
@@ -99,7 +111,7 @@ export default function DashboardLayout({
         }
       }
     }
-  }, [user, isUserLoading, isAdminRoleLoading, isReviewerRoleLoading, isAdmin, isReviewer, isAdminPath, isReviewerPath, isDashboardPath, router]);
+  }, [mounted, user, isUserLoading, isAdminRoleLoading, isReviewerRoleLoading, isUserDocLoading, isAdmin, isReviewer, isAdminPath, isReviewerPath, isDashboardPath, router]);
 
   const isActive = (href: string) => pathname === href;
   
@@ -112,10 +124,10 @@ export default function DashboardLayout({
   const currentNav = getNavItems();
   const shouldShowLayout = isDashboardPath || isAdminPath || isReviewerPath;
 
-  if (isUserLoading || isAdminRoleLoading || isReviewerRoleLoading) {
+  if (!mounted || isUserLoading || isAdminRoleLoading || isReviewerRoleLoading || isUserDocLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="animate-pulse text-muted-foreground">Verifying access...</div>
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="animate-pulse text-muted-foreground font-medium">Verifying access...</div>
       </div>
     );
   }
