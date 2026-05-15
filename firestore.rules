@@ -71,8 +71,9 @@ service cloud.firestore {
       }
     }
 
+    // Programs are public for viewing on the landing page
     match /programs/{programId} {
-      allow read: if isSignedIn();
+      allow read: if true;
       allow write: if isSponsor();
     }
 

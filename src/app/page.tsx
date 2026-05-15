@@ -13,10 +13,11 @@ import {
 import { AppLogo } from '@/components/shared/AppLogo';
 import { Badge } from '@/components/ui/badge';
 import { FileText, CheckCircle, Heart, Search, ArrowRight, Loader2 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useCollection, useFirebase, useMemoFirebase } from '@/firebase';
 import { collection } from 'firebase/firestore';
 import type { Scholarship } from '@/types/scholarship';
+import scholarshipsData from '@/data/scholarships.json';
 
 export default function Home() {
   const [mounted, setMounted] = useState(false);
@@ -31,7 +32,14 @@ export default function Home() {
     return collection(firestore, 'programs');
   }, [firestore]);
 
-  const { data: scholarships, isLoading } = useCollection<Scholarship>(scholarshipsQuery);
+  const { data: dbScholarships, isLoading } = useCollection<Scholarship>(scholarshipsQuery);
+
+  // Combine database scholarships with fallback local data if the database is empty
+  const scholarships = useMemo(() => {
+    if (!mounted) return [];
+    if (dbScholarships && dbScholarships.length > 0) return dbScholarships;
+    return scholarshipsData;
+  }, [dbScholarships, mounted]);
 
   const features = [
     {
