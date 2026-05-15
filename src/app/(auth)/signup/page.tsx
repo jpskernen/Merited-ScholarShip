@@ -1,4 +1,3 @@
-
 'use client';
 
 import Link from 'next/link';
@@ -38,21 +37,29 @@ export default function SignupPage() {
     setIsSigningUp(true);
 
     try {
-      // initiateEmailSignUp is non-blocking. 
-      // We rely on onAuthStateChanged to detect the success.
-      initiateEmailSignUp(auth, email, password);
+      // We await this to catch specific auth errors like email-already-in-use
+      await initiateEmailSignUp(auth, email, password);
       
       toast({
-        title: 'Creating account...',
-        description: 'Verifying your credentials.',
+        title: 'Success',
+        description: 'Creating your profile...',
       });
       
     } catch (error: any) {
       console.error(error);
+      let message = 'An unexpected error occurred during signup.';
+      if (error.code === 'auth/email-already-in-use') {
+        message = 'This email is already registered. Please try logging in instead.';
+      } else if (error.code === 'auth/weak-password') {
+        message = 'The password is too weak. Please use at least 6 characters.';
+      } else if (error.code === 'auth/invalid-email') {
+        message = 'The email address is badly formatted.';
+      }
+      
       toast({
         variant: 'destructive',
         title: 'Signup Failed',
-        description: error.message || 'An unexpected error occurred.',
+        description: message,
       });
       setIsSigningUp(false);
     }

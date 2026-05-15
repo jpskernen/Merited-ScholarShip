@@ -32,18 +32,25 @@ export default function LoginPage() {
     if (!auth) return;
     setIsSigningIn(true);
     try {
-      initiateEmailSignIn(auth, email, password);
+      await initiateEmailSignIn(auth, email, password);
       toast({
-        title: 'Logging in...',
-        description: 'You will be redirected shortly.',
+        title: 'Success',
+        description: 'You are now logged in.',
       });
       router.push('/dashboard');
     } catch (error: any) {
       console.error(error);
+      let message = 'Please check your credentials and try again.';
+      if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+        message = 'Invalid email or password.';
+      } else if (error.code === 'auth/too-many-requests') {
+        message = 'Too many failed login attempts. Please try again later.';
+      }
+      
       toast({
         variant: 'destructive',
         title: 'Login Failed',
-        description: error.message || 'An unexpected error occurred.',
+        description: message,
       });
       setIsSigningIn(false);
     }
