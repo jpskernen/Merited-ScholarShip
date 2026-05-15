@@ -8,9 +8,10 @@ service cloud.firestore {
     }
 
     function isSponsor() {
-      return isSignedIn() && 
+      return isSignedIn() && (
         exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/roles_admin/$(request.auth.uid)).data.role in ['sponsor', 'Admin', 'Sponsor'];
+        get(/databases/$(database)/documents/roles_admin/$(request.auth.uid)).data.role in ['sponsor', 'Admin', 'Sponsor']
+      );
     }
 
     function isReviewer() {
@@ -28,7 +29,13 @@ service cloud.firestore {
 
     // Reviewer Invites
     match /invites/{inviteId} {
-      allow read: if true; // Needed for verify invite link
+      allow read: if true;
+      allow write: if isSponsor();
+    }
+
+    // Admin Invites
+    match /admin_invites/{inviteId} {
+      allow read: if true;
       allow write: if isSponsor();
     }
 

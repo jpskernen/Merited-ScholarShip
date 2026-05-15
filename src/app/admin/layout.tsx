@@ -19,7 +19,8 @@ import {
   LayoutDashboard,
   Users,
   Award,
-  UserPlus
+  UserPlus,
+  ShieldCheck
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -28,6 +29,7 @@ const adminNav = [
   { href: '/admin', label: 'Admin Dashboard', icon: LayoutDashboard },
   { href: '/admin/applicants', label: 'All Applicants', icon: Users },
   { href: '/admin/reviewers', label: 'Manage Reviewers', icon: UserPlus },
+  { href: '/admin/admins', label: 'Administrators', icon: ShieldCheck },
   { href: '/admin/scholarships', label: 'Scholarships', icon: Award },
 ];
 
@@ -49,16 +51,16 @@ export default function AdminLayout({
       <div className="flex min-h-screen">
         <Sidebar>
           <SidebarHeader>
-            <AppLogo />
+            <AppLogo className="p-4" />
           </SidebarHeader>
           <SidebarContent className="p-2">
             <SidebarGroup>
-              <SidebarGroupLabel>Admin</SidebarGroupLabel>
+              <SidebarGroupLabel className="text-[10px] font-black uppercase tracking-widest text-primary/60 px-4 mb-2">System Admin</SidebarGroupLabel>
               <SidebarMenu>
                 {adminNav.map((item) => (
                   <SidebarMenuItem key={item.href}>
                     <Link href={item.href} className="w-full">
-                       <SidebarMenuButton isActive={isActive(item.href)}>
+                       <SidebarMenuButton isActive={isActive(item.href)} tooltip={item.label}>
                         <item.icon className="h-4 w-4" />
                         <span>{item.label}</span>
                       </SidebarMenuButton>

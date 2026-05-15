@@ -14,6 +14,19 @@
       },
       "required": ["id", "email", "status", "createdAt", "schoolId"]
     },
+    "AdminInvite": {
+      "title": "AdminInvite",
+      "description": "Represents an invitation sent to a potential administrator.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "status": { "type": "string", "enum": ["Pending", "Accepted", "Expired"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "schoolId": { "type": "string" }
+      },
+      "required": ["id", "email", "status", "createdAt", "schoolId"]
+    },
     "School": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "School",
@@ -120,6 +133,10 @@
     "/invites/{inviteId}": {
       "schema": "#/backend/entities/ReviewerInvite",
       "description": "Secure invitations for new reviewers."
+    },
+    "/admin_invites/{inviteId}": {
+      "schema": "#/backend/entities/AdminInvite",
+      "description": "Secure invitations for new administrators."
     },
     "/schools/{schoolId}": {
       "schema": "#/backend/entities/School",
