@@ -1,3 +1,4 @@
+
 'use client';
 
 import Link from 'next/link';
@@ -11,13 +12,31 @@ import {
 } from '@/components/ui/card';
 import { AppLogo } from '@/components/shared/AppLogo';
 import { Badge } from '@/components/ui/badge';
-import { FileText, CheckCircle, Heart, Search, ArrowRight } from 'lucide-react';
-import scholarships from '@/data/scholarships.json';
+import { FileText, CheckCircle, Heart, Search, ArrowRight, Loader2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { useCollection, initializeFirebase, useMemoFirebase } from '@/firebase';
+import { collection } from 'firebase/firestore';
+import type { Scholarship } from '@/types/scholarship';
 
 export default function Home() {
   const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  
+  // For landing page where hooks like useFirebase might not be ready, 
+  // we initialize manually or handle null
+  const [services, setServices] = useState<any>(null);
+
+  useEffect(() => {
+    setMounted(true);
+    const s = initializeFirebase();
+    setServices(s);
+  }, []);
+
+  const scholarshipsQuery = useMemoFirebase(() => {
+    if (!services?.firestore) return null;
+    return collection(services.firestore, 'programs');
+  }, [services]);
+
+  const { data: scholarships, isLoading } = useCollection<Scholarship>(scholarshipsQuery);
 
   const features = [
     {
@@ -89,36 +108,51 @@ export default function Home() {
                 Sign up to view all opportunities and start your application.
               </p>
             </div>
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {scholarships.slice(0, 6).map((scholarship) => (
-                <Card key={scholarship.id} className="flex flex-col">
-                  <CardHeader>
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <CardTitle className="text-xl">{scholarship.name}</CardTitle>
+            
+            {isLoading ? (
+              <div className="flex justify-center py-20">
+                <Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" />
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {scholarships?.slice(0, 6).map((scholarship) => (
+                  <Card key={scholarship.id} className="flex flex-col border-primary/10 shadow-sm transition-all hover:-translate-y-1">
+                    <CardHeader>
+                      <div className="flex justify-between items-start">
+                        <div className="max-w-[70%]">
+                          <CardTitle className="text-xl">{scholarship.name}</CardTitle>
+                        </div>
+                        <Badge variant="secondary" className="whitespace-nowrap">{scholarship.amount}</Badge>
                       </div>
-                      <Badge variant="secondary" className="whitespace-nowrap">{scholarship.amount}</Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="flex-grow">
-                    <p className="text-sm text-muted-foreground mb-4 line-clamp-3">{scholarship.description}</p>
-                    <div className="flex flex-wrap gap-2">
-                      {scholarship.tags.map(tag => <Badge key={tag} variant="outline">{tag}</Badge>)}
-                    </div>
-                  </CardContent>
-                  <CardFooter className="flex justify-between items-center border-t pt-4">
-                    <div className="text-xs text-muted-foreground">
-                      <p>Deadline: {scholarship.deadline}</p>
-                    </div>
-                    <Button asChild size="sm">
-                      <Link href="/signup">
-                        Sign Up to Apply <ArrowRight className="ml-2 h-4 w-4" />
-                      </Link>
-                    </Button>
-                  </CardFooter>
-                </Card>
-              ))}
-            </div>
+                    </CardHeader>
+                    <CardContent className="flex-grow">
+                      <p className="text-sm text-muted-foreground mb-4 line-clamp-3">{scholarship.description}</p>
+                      <div className="flex flex-wrap gap-2">
+                        {Array.isArray(scholarship.tags) && scholarship.tags.map(tag => <Badge key={tag} variant="outline" className="text-[10px]">{tag}</Badge>)}
+                      </div>
+                    </CardContent>
+                    <CardFooter className="flex justify-between items-center border-t pt-4">
+                      <div className="text-xs text-muted-foreground">
+                        <p className="font-semibold">Deadline</p>
+                        <p>{scholarship.deadline}</p>
+                      </div>
+                      <Button asChild size="sm">
+                        <Link href="/signup">
+                          Apply Now <ArrowRight className="ml-2 h-4 w-4" />
+                        </Link>
+                      </Button>
+                    </CardFooter>
+                  </Card>
+                ))}
+              </div>
+            )}
+
+            {!isLoading && (!scholarships || scholarships.length === 0) && (
+              <div className="text-center py-20 bg-muted/5 border-2 border-dashed rounded-2xl">
+                <p className="text-muted-foreground italic">New scholarship opportunities are being posted soon.</p>
+              </div>
+            )}
+
             <div className="mt-12 text-center">
               <Button variant="outline" size="lg" asChild>
                 <Link href="/signup">View All Scholarships</Link>
@@ -168,7 +202,7 @@ export default function Home() {
                 </p>
                 <div className="mt-8">
                     <Button size="lg" asChild>
-                        <Link href="/signup" target="_blank" rel="noopener noreferrer">
+                        <Link href="/signup">
                             Inquire Now
                         </Link>
                     </Button>

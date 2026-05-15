@@ -1,4 +1,6 @@
-// src/app/admin/scholarships/page.tsx
+
+'use client';
+
 import {
   Table,
   TableBody,
@@ -10,17 +12,50 @@ import {
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
-import scholarships from '@/data/scholarships.json';
-import { PlusCircle, Trash2, Edit } from 'lucide-react';
+import { PlusCircle, Trash2, Edit, Loader2 } from 'lucide-react';
+import { useCollection, useFirebase, useMemoFirebase } from '@/firebase';
+import { collection, doc, deleteDoc } from 'firebase/firestore';
+import { useToast } from '@/hooks/use-toast';
+import type { Scholarship } from '@/types/scholarship';
 
 export default function AdminScholarshipsPage() {
+  const { firestore } = useFirebase();
+  const { toast } = useToast();
+
+  const scholarshipsQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return collection(firestore, 'programs');
+  }, [firestore]);
+
+  const { data: scholarships, isLoading } = useCollection<Scholarship>(scholarshipsQuery);
+
+  const handleDelete = async (id: string) => {
+    if (!firestore || !id) return;
+    if (!confirm('Are you sure you want to delete this scholarship?')) return;
+
+    try {
+      await deleteDoc(doc(firestore, 'programs', id));
+      toast({ title: "Deleted", description: "Scholarship removed successfully." });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to delete scholarship.", variant: "destructive" });
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Manage Scholarships</h1>
           <p className="text-muted-foreground">
-            Add, edit, or remove scholarship listings.
+            Add, edit, or remove scholarship listings for your institution.
           </p>
         </div>
         <Button asChild>
@@ -31,7 +66,7 @@ export default function AdminScholarshipsPage() {
         </Button>
       </div>
 
-      <div className="overflow-hidden rounded-lg border">
+      <div className="overflow-hidden rounded-lg border bg-card">
         <Table>
           <TableHeader>
             <TableRow>
@@ -42,7 +77,7 @@ export default function AdminScholarshipsPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {scholarships.map((scholarship) => (
+            {scholarships?.map((scholarship) => (
               <TableRow key={scholarship.id}>
                 <TableCell className="font-medium">{scholarship.name}</TableCell>
                 <TableCell>
@@ -56,8 +91,8 @@ export default function AdminScholarshipsPage() {
                       Edit
                     </Link>
                   </Button>
-                  <Button variant="destructive" size="sm">
-                    <Trash2 className="h-4 w-4 mr-2" />
+                  <Button variant="ghost" size="sm" onClick={() => handleDelete(scholarship.id!)}>
+                    <Trash2 className="h-4 w-4 mr-2 text-destructive" />
                     Delete
                   </Button>
                 </TableCell>
@@ -66,11 +101,11 @@ export default function AdminScholarshipsPage() {
           </TableBody>
         </Table>
       </div>
-       {scholarships.length === 0 && (
-          <div className="text-center py-12 text-muted-foreground">
-            No scholarships have been added yet.
-          </div>
-        )}
+      {(!scholarships || scholarships.length === 0) && (
+        <div className="text-center py-12 text-muted-foreground bg-muted/20 rounded-lg border border-dashed">
+          No scholarships have been added yet. Click "Add New Scholarship" to begin.
+        </div>
+      )}
     </div>
   );
 }
