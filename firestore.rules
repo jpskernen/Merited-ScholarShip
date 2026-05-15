@@ -4,13 +4,6 @@ service cloud.firestore {
 
     /**
      * SCHOLARSHIP PORTAL SECURITY RULES
-     * 
-     * Core logic:
-     * - roles_admin: Stores administrative roles (e.g., 'sponsor').
-     * - users: Basic profile data for all users.
-     * - applications: Scholarship submissions, owned by applicants.
-     * - programs: Scholarship opportunities, managed by sponsors.
-     * - reviews: Evaluation data (nested under applications), managed by committee members.
      */
 
     function isSignedIn() {
@@ -19,12 +12,13 @@ service cloud.firestore {
 
     function isSponsor() {
       return isSignedIn() && 
-        get(/databases/$(database)/documents/roles_admin/$(request.auth.uid)).data.role == 'sponsor';
+        exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/roles_admin/$(request.auth.uid)).data.role in ['sponsor', 'Admin', 'Sponsor'];
     }
 
     function isReviewer() {
       return isSignedIn() && (
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Reviewer' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Reviewer') ||
         exists(/databases/$(database)/documents/reviewers/$(request.auth.uid))
       );
     }
@@ -33,6 +27,12 @@ service cloud.firestore {
     match /roles_admin/{userId} {
       allow read: if request.auth != null && request.auth.uid == userId;
       allow write: if false; 
+    }
+
+    // Reviewer Registry
+    match /reviewers/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isSponsor());
+      allow write: if isSponsor();
     }
 
     // User Profiles
@@ -44,17 +44,20 @@ service cloud.firestore {
     // Applications - Applicants own theirs, Sponsors/Reviewers can evaluate
     match /applications/{appId} {
       allow read: if isSignedIn() && (
-        request.auth.uid == resource.data.applicantId || 
+        (resource != null && request.auth.uid == resource.data.applicantId) || 
         isSponsor() || 
         isReviewer()
       );
       allow create: if isSignedIn() && request.resource.data.applicantId == request.auth.uid;
       allow update: if isSignedIn() && (
-        request.auth.uid == resource.data.applicantId || 
+        (resource != null && request.auth.uid == resource.data.applicantId) || 
         isSponsor() || 
         isReviewer()
       );
-      allow delete: if isSignedIn() && (request.auth.uid == resource.data.applicantId || isSponsor());
+      allow delete: if isSignedIn() && (
+        (resource != null && request.auth.uid == resource.data.applicantId) || 
+        isSponsor()
+      );
 
       // Nested reviews for committee evaluations
       match /reviews/{reviewId} {
@@ -69,7 +72,7 @@ service cloud.firestore {
       allow write: if isSponsor();
     }
 
-    // Fallback for subcollections or legacy structures used by the UI
+    // Fallback for subcollections used by collectionGroup queries
     match /{path=**}/reviews/{reviewDoc} {
       allow read, list: if isSignedIn() && (isSponsor() || isReviewer());
     }

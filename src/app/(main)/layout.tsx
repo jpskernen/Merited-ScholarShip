@@ -1,4 +1,3 @@
-
 'use client';
 
 import {
@@ -15,6 +14,7 @@ import {
 } from '@/components/ui/sidebar';
 import { AppLogo } from '@/components/shared/AppLogo';
 import { UserNav } from '@/components/shared/UserNav';
+import { Badge } from '@/components/ui/badge';
 import {
   LayoutDashboard,
   User,
@@ -85,9 +85,13 @@ export default function DashboardLayout({
   const { data: userDoc, isLoading: isUserDocLoading } = useDoc(userDocRef);
   
   const userMetadata = useMemo(() => {
+    // Determine role based on which document was found
     const role = userDoc?.role || adminRole?.role || (reviewerProfile ? 'Reviewer' : null);
+    
+    // Check flags
     const isAdmin = role === 'Admin' || role === 'Sponsor' || !!adminRole;
     const isReviewer = role === 'Reviewer' || !!reviewerProfile;
+    // Default to applicant if no other role is explicitly verified yet
     const isApplicant = role === 'Applicant' || (!isAdmin && !isReviewer);
     
     return { role, isAdmin, isReviewer, isApplicant };
@@ -97,8 +101,6 @@ export default function DashboardLayout({
 
   useEffect(() => {
     if (mounted && !isMetadataLoading) {
-      const { isAdmin, isReviewer, isApplicant } = userMetadata;
-      
       if (!user) {
         if (pathname.startsWith('/dashboard') || pathname.startsWith('/admin') || pathname.startsWith('/review')) {
           router.push('/login');
@@ -117,7 +119,10 @@ export default function DashboardLayout({
     }
   }, [mounted, user, isMetadataLoading, userMetadata, pathname, router]);
 
-  const isActive = (href: string) => pathname === href || (href !== '/dashboard' && pathname.startsWith(href));
+  const isActive = (href: string) => {
+    const cleanPath = pathname.split('?')[0];
+    return cleanPath === href || (href !== '/dashboard' && cleanPath.startsWith(href));
+  };
   
   const getNavItems = () => {
     if (userMetadata.isAdmin) return adminNav;
