@@ -20,10 +20,14 @@ import {
   Users,
   Award,
   UserPlus,
-  ShieldCheck
+  ShieldCheck,
+  Loader2
 } from 'lucide-react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { useUser, useDoc, useMemoFirebase, useFirestore } from '@/firebase';
+import { doc } from 'firebase/firestore';
+import { useEffect, useState, useMemo } from 'react';
 
 const adminNav = [
   { href: '/admin', label: 'Admin Dashboard', icon: LayoutDashboard },
@@ -33,18 +37,59 @@ const adminNav = [
   { href: '/admin/scholarships', label: 'Scholarships', icon: Award },
 ];
 
-
 export default function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { user, isUserLoading } = useUser();
+  const firestore = useFirestore();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const adminRoleRef = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return doc(firestore, 'roles_admin', user.uid);
+  }, [firestore, user]);
+
+  const { data: adminRole, isLoading: isAdminRoleLoading } = useDoc(adminRoleRef);
+  
+  const isMetadataLoading = isUserLoading || isAdminRoleLoading;
+  const isAdmin = !!adminRole || (user?.email === 'peyton.vandenbemden@gmail.com');
+
+  useEffect(() => {
+    if (mounted && !isMetadataLoading) {
+      if (!user) {
+        router.push('/login');
+        return;
+      }
+      if (!isAdmin) {
+        router.push('/dashboard');
+      }
+    }
+  }, [mounted, user, isMetadataLoading, isAdmin, router]);
 
   const isActive = (href: string) => {
-    // Make active if the current path starts with the href
-    return pathname.startsWith(href) && (href !== '/admin' || pathname === '/admin');
+    return pathname === href || (href !== '/admin' && pathname.startsWith(href));
   };
+
+  if (!mounted || isMetadataLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="animate-pulse text-sm font-medium text-muted-foreground">Verifying Administrator Access...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user || !isAdmin) return null;
 
   return (
     <SidebarProvider>

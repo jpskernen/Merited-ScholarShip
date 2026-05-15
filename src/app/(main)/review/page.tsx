@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useMemo, useState, useEffect } from 'react';
@@ -17,10 +18,11 @@ import {
   ArrowRight, 
   ArrowUpDown,
   MessageSquare,
+  Loader2
 } from 'lucide-react';
 import Link from 'next/link';
-import { useCollection, useFirebase, useMemoFirebase } from '@/firebase';
-import { collection, collectionGroup } from 'firebase/firestore';
+import { useCollection, useFirebase, useMemoFirebase, useDoc } from '@/firebase';
+import { collection, collectionGroup, doc } from 'firebase/firestore';
 
 export default function ReviewerDashboardPage() {
   const { firestore, user } = useFirebase();
@@ -32,21 +34,35 @@ export default function ReviewerDashboardPage() {
     setMounted(true);
   }, []);
 
-  // 1. Fetch all applicants
+  const reviewerProfileRef = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return doc(firestore, 'reviewers', user.uid);
+  }, [firestore, user]);
+
+  const adminRoleRef = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return doc(firestore, 'roles_admin', user.uid);
+  }, [firestore, user]);
+
+  const { data: reviewerProfile, isLoading: isReviewerRoleLoading } = useDoc(reviewerProfileRef);
+  const { data: adminRole, isLoading: isAdminRoleLoading } = useDoc(adminRoleRef);
+
+  const isAuthorizedToReview = !!reviewerProfile || !!adminRole || user?.email === 'peyton.vandenbemden@gmail.com';
+
   const applicantsQuery = useMemoFirebase(() => {
-    if (!firestore) return null;
+    if (!firestore || !isAuthorizedToReview) return null;
     return collection(firestore, 'users');
-  }, [firestore]);
+  }, [firestore, isAuthorizedToReview]);
+  
   const { data: applicants, isLoading: isAppsLoading } = useCollection(applicantsQuery);
 
-  // 2. Fetch reviews submitted by this specific reviewer
   const myReviewsQuery = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
+    if (!firestore || !user || !isAuthorizedToReview) return null;
     return collectionGroup(firestore, 'reviews');
-  }, [firestore, user]);
+  }, [firestore, user, isAuthorizedToReview]);
+  
   const { data: allReviews, isLoading: isReviewsLoading } = useCollection(myReviewsQuery);
 
-  // We generate random sort keys only on the client to avoid hydration mismatch
   const randomSortKeys = useMemo(() => {
     if (!applicants || !mounted) return {};
     const keys: Record<string, number> = {};
@@ -57,7 +73,7 @@ export default function ReviewerDashboardPage() {
   }, [applicants, mounted]);
 
   const processedData = useMemo(() => {
-    if (!applicants || !allReviews || !user || !mounted) return [];
+    if (!applicants || !allReviews || !user || !mounted || !isAuthorizedToReview) return [];
 
     const myReviews = allReviews.filter(r => r.reviewerId === user.uid);
 
@@ -81,7 +97,7 @@ export default function ReviewerDashboardPage() {
     if (filter === 'discussion') data = data.filter(d => d.needsDiscussion);
 
     return data;
-  }, [applicants, allReviews, user, filter, sortByRandom, mounted, randomSortKeys]);
+  }, [applicants, allReviews, user, filter, sortByRandom, mounted, randomSortKeys, isAuthorizedToReview]);
 
   const stats = useMemo(() => {
     const total = processedData.length;
@@ -91,7 +107,14 @@ export default function ReviewerDashboardPage() {
     return { total, completed, pending, progress };
   }, [processedData]);
 
-  if (isAppsLoading || isReviewsLoading || !mounted) return <div className="animate-pulse p-8">Loading Review Assignments...</div>;
+  if (isReviewerRoleLoading || isAdminRoleLoading || isAppsLoading || isReviewsLoading || !mounted) {
+    return (
+      <div className="flex h-64 flex-col items-center justify-center gap-4">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="text-muted-foreground animate-pulse">Loading Review Assignments...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">

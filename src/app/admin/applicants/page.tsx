@@ -19,13 +19,13 @@ import {
   Users, 
   BarChart3, 
   MessageSquare,
-  Star
+  Star,
+  Loader2
 } from 'lucide-react';
-import { useCollection, useFirebase, useMemoFirebase } from '@/firebase';
+import { useCollection, useFirebase, useMemoFirebase, useDoc } from '@/firebase';
 import { collection, doc, updateDoc, collectionGroup } from 'firebase/firestore';
 import Link from 'next/link';
 
-// Rubric Weights (Total = 1.0)
 const RUBRIC_WEIGHTS = {
   gpa: 0.25,
   extracurriculars: 0.15,
@@ -36,25 +36,32 @@ const RUBRIC_WEIGHTS = {
 };
 
 export default function AdminApplicantsPage() {
-  const { firestore } = useFirebase();
+  const { firestore, user } = useFirebase();
 
-  // Fetch all applicants
+  const adminRoleRef = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return doc(firestore, 'roles_admin', user.uid);
+  }, [firestore, user]);
+
+  const { data: adminRole, isLoading: isAdminRoleLoading } = useDoc(adminRoleRef);
+  const isAdminVerified = !!adminRole || user?.email === 'peyton.vandenbemden@gmail.com';
+
   const applicantsQuery = useMemoFirebase(() => {
-    if (!firestore) return null;
+    if (!firestore || !isAdminVerified) return null;
     return collection(firestore, 'users');
-  }, [firestore]);
+  }, [firestore, isAdminVerified]);
+  
   const { data: applicants, isLoading: isApplicantsLoading } = useCollection(applicantsQuery);
 
-  // Fetch ALL reviews across ALL applications
   const reviewsQuery = useMemoFirebase(() => {
-    if (!firestore) return null;
+    if (!firestore || !isAdminVerified) return null;
     return collectionGroup(firestore, 'reviews');
-  }, [firestore]);
+  }, [firestore, isAdminVerified]);
+  
   const { data: allReviews, isLoading: isReviewsLoading } = useCollection(reviewsQuery);
 
-  // Process data for the table
   const tableData = useMemo(() => {
-    if (!applicants) return [];
+    if (!applicants || !isAdminVerified) return [];
 
     return applicants.filter(u => u.role === 'Applicant').map(applicant => {
       const applicantReviews = allReviews?.filter(r => r.applicationId === applicant.id) || [];
@@ -88,16 +95,21 @@ export default function AdminApplicantsPage() {
         needsDiscussion: applicantReviews.some(r => r.markForDiscussion),
       };
     });
-  }, [applicants, allReviews]);
+  }, [applicants, allReviews, isAdminVerified]);
 
   const handleToggleShortlist = async (id: string, current: boolean) => {
     if (!firestore) return;
     const docRef = doc(firestore, 'users', id);
-    await updateDoc(docRef, { isShortlisted: !current });
+    updateDoc(docRef, { isShortlisted: !current });
   };
 
-  if (isApplicantsLoading || isReviewsLoading) {
-    return <div className="animate-pulse text-muted-foreground p-8">Consolidating committee results...</div>;
+  if (isAdminRoleLoading || isApplicantsLoading || isReviewsLoading) {
+    return (
+      <div className="flex h-64 flex-col items-center justify-center gap-4">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="text-muted-foreground animate-pulse">Consolidating committee results...</p>
+      </div>
+    );
   }
 
   return (

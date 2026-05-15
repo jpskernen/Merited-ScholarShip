@@ -40,6 +40,10 @@ service cloud.firestore {
     }
 
     // User Profiles
+    match /users {
+      allow list: if isSignedIn() && (isSponsor() || isReviewer());
+    }
+    
     match /users/{userId} {
       allow read: if isSignedIn() && (request.auth.uid == userId || isSponsor() || isReviewer());
       allow write: if isSignedIn() && request.auth.uid == userId;
