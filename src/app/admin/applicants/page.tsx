@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Table,
   TableBody,
@@ -36,7 +36,7 @@ const RUBRIC_WEIGHTS = {
 };
 
 export default function AdminApplicantsPage() {
-  const { firestore, user } = useFirebase();
+  const { firestore, user, isUserLoading } = useFirebase();
 
   const adminRoleRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
@@ -44,19 +44,28 @@ export default function AdminApplicantsPage() {
   }, [firestore, user]);
 
   const { data: adminRole, isLoading: isAdminRoleLoading } = useDoc(adminRoleRef);
-  const isAdminVerified = !!adminRole || user?.email === 'peyton.vandenbemden@gmail.com';
+  
+  // High-certainty admin check for bootstrap user
+  const isAdminVerified = useMemo(() => {
+    if (isUserLoading) return false;
+    if (user?.email === 'peyton.vandenbemden@gmail.com') return true;
+    return !!adminRole;
+  }, [user, adminRole, isUserLoading]);
+
+  // Wait for auth and metadata before querying broad collections
+  const canQuery = !isUserLoading && !isAdminRoleLoading && isAdminVerified;
 
   const applicantsQuery = useMemoFirebase(() => {
-    if (!firestore || !isAdminVerified) return null;
+    if (!firestore || !canQuery) return null;
     return collection(firestore, 'users');
-  }, [firestore, isAdminVerified]);
+  }, [firestore, canQuery]);
   
   const { data: applicants, isLoading: isApplicantsLoading } = useCollection(applicantsQuery);
 
   const reviewsQuery = useMemoFirebase(() => {
-    if (!firestore || !isAdminVerified) return null;
+    if (!firestore || !canQuery) return null;
     return collectionGroup(firestore, 'reviews');
-  }, [firestore, isAdminVerified]);
+  }, [firestore, canQuery]);
   
   const { data: allReviews, isLoading: isReviewsLoading } = useCollection(reviewsQuery);
 
@@ -103,7 +112,7 @@ export default function AdminApplicantsPage() {
     updateDoc(docRef, { isShortlisted: !current });
   };
 
-  if (isAdminRoleLoading || isApplicantsLoading || isReviewsLoading) {
+  if (isUserLoading || isAdminRoleLoading || isApplicantsLoading || isReviewsLoading) {
     return (
       <div className="flex h-64 flex-col items-center justify-center gap-4">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

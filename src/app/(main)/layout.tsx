@@ -1,3 +1,4 @@
+
 'use client';
 
 import {
@@ -85,17 +86,20 @@ export default function DashboardLayout({
   const { data: userDoc, isLoading: isUserDocLoading } = useDoc(userDocRef);
   
   const userMetadata = useMemo(() => {
+    // Bootstrap Admin check
+    const isBootstrapAdmin = user?.email === 'peyton.vandenbemden@gmail.com';
+    
     // Determine role based on which document was found
     const role = userDoc?.role || adminRole?.role || (reviewerProfile ? 'Reviewer' : null);
     
     // Check flags
-    const isAdmin = role === 'Admin' || role === 'Sponsor' || !!adminRole;
-    const isReviewer = role === 'Reviewer' || !!reviewerProfile;
+    const isAdmin = isBootstrapAdmin || role === 'Admin' || role === 'Sponsor' || !!adminRole;
+    const isReviewer = role === 'Reviewer' || !!reviewerProfile || isAdmin;
     // Default to applicant if no other role is explicitly verified yet
     const isApplicant = role === 'Applicant' || (!isAdmin && !isReviewer);
     
     return { role, isAdmin, isReviewer, isApplicant };
-  }, [userDoc, adminRole, reviewerProfile]);
+  }, [userDoc, adminRole, reviewerProfile, user?.email]);
 
   const isMetadataLoading = isUserLoading || isAdminRoleLoading || isReviewerRoleLoading || isUserDocLoading;
 

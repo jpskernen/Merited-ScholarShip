@@ -7,23 +7,28 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // High-security check for administrative privileges
     function isSponsor() {
       return isSignedIn() && (
-        exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/roles_admin/$(request.auth.uid)).data.role in ['sponsor', 'Admin', 'Sponsor']
+        (exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/roles_admin/$(request.auth.uid)).data.role in ['sponsor', 'Admin', 'Sponsor']) ||
+        request.auth.token.email == 'peyton.vandenbemden@gmail.com'
       );
     }
 
+    // Check for reviewer registry or specific user role
     function isReviewer() {
       return isSignedIn() && (
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Reviewer') ||
-        exists(/databases/$(database)/documents/reviewers/$(request.auth.uid))
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Reviewer') ||
+        exists(/databases/$(database)/documents/reviewers/$(request.auth.uid)) ||
+        isSponsor()
       );
     }
 
     // Role Admin Collection
     match /roles_admin/{userId} {
-      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow read: if isSignedIn() && (request.auth.uid == userId || isSponsor());
       allow write: if false; 
     }
 
@@ -46,7 +51,7 @@ service cloud.firestore {
     
     match /users/{userId} {
       allow read: if isSignedIn() && (request.auth.uid == userId || isSponsor() || isReviewer());
-      allow write: if isSignedIn() && request.auth.uid == userId;
+      allow write: if isSignedIn() && (request.auth.uid == userId || isSponsor());
     }
 
     // Reviewers Registry
@@ -75,12 +80,13 @@ service cloud.firestore {
       }
     }
 
-    // Programs are public for viewing on the landing page
+    // Programs are public for viewing
     match /programs/{programId} {
       allow read: if true;
       allow write: if isSponsor();
     }
 
+    // Allow collection group queries for reviews
     match /{path=**}/reviews/{reviewDoc} {
       allow read, list: if isSignedIn() && (isSponsor() || isReviewer());
     }
