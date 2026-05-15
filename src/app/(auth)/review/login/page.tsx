@@ -1,4 +1,3 @@
-
 'use client';
 
 import Link from 'next/link';
@@ -17,7 +16,7 @@ import { useAuth, initiateEmailSignIn, useFirestore } from '@/firebase';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { Eye, EyeOff, ShieldCheck } from 'lucide-react';
+import { Eye, EyeOff, ShieldCheck, Loader2 } from 'lucide-react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 
@@ -31,37 +30,20 @@ export default function ReviewerLoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isSigningIn, setIsSigningIn] = useState(false);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!auth) return;
-    setIsSigningIn(true);
-    try {
-      initiateEmailSignIn(auth, email, password);
-      toast({
-        title: 'Verifying Credentials',
-        description: 'Authenticating for secure portal access.',
-      });
-    } catch (error: any) {
-      toast({
-        variant: 'destructive',
-        title: 'Login Failed',
-        description: error.message || 'An unexpected error occurred.',
-      });
-      setIsSigningIn(false);
-    }
-  };
-
   useEffect(() => {
     if (!auth || !firestore) return;
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user && isSigningIn) {
         try {
           // Check roles to determine redirect
-          const adminDoc = await getDoc(doc(firestore, 'roles_admin', user.uid));
-          const userDoc = await getDoc(doc(firestore, 'users', user.uid));
+          const [adminDoc, userDoc] = await Promise.all([
+            getDoc(doc(firestore, 'roles_admin', user.uid)),
+            getDoc(doc(firestore, 'users', user.uid))
+          ]);
           
-          const isAdmin = adminDoc.exists() && (adminDoc.data().role === 'Admin' || adminDoc.data().role === 'Sponsor');
-          const isReviewer = userDoc.exists() && userDoc.data().role === 'Reviewer';
+          const isAdmin = adminDoc.exists() || user.email === 'peyton.vandenbemden@gmail.com';
+          const userData = userDoc.exists() ? userDoc.data() : null;
+          const isReviewer = userData?.role === 'Reviewer';
 
           if (isAdmin) {
             router.push('/admin');
@@ -71,13 +53,36 @@ export default function ReviewerLoginPage() {
             router.push('/dashboard');
           }
         } catch (err) {
-          console.error("Redirection error:", err);
           router.push('/dashboard');
         }
       }
     });
     return () => unsubscribe();
   }, [auth, firestore, isSigningIn, router]);
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!auth) return;
+    setIsSigningIn(true);
+    try {
+      await initiateEmailSignIn(auth, email, password);
+      toast({
+        title: 'Verifying Credentials',
+        description: 'Authenticating for secure portal access.',
+      });
+    } catch (error: any) {
+      let message = 'Invalid credentials. Please try again.';
+      if (error.code === 'auth/too-many-requests') {
+        message = 'Too many failed login attempts. Please try again later.';
+      }
+      toast({
+        variant: 'destructive',
+        title: 'Login Failed',
+        description: message,
+      });
+      setIsSigningIn(false);
+    }
+  };
 
   return (
     <form onSubmit={handleLogin}>
@@ -134,6 +139,7 @@ export default function ReviewerLoginPage() {
         </CardContent>
         <CardFooter className="flex flex-col gap-4">
           <Button type="submit" className="w-full font-bold" disabled={isSigningIn}>
+            {isSigningIn ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             {isSigningIn ? 'Authenticating...' : 'Secure Login'}
           </Button>
           <div className="text-center text-xs text-muted-foreground">

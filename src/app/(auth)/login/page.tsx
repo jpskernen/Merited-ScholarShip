@@ -12,20 +12,55 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useAuth, initiateEmailSignIn } from '@/firebase';
+import { useAuth, initiateEmailSignIn, useFirestore } from '@/firebase';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Loader2 } from 'lucide-react';
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 
 export default function LoginPage() {
   const auth = useAuth();
+  const firestore = useFirestore();
   const router = useRouter();
   const { toast } = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSigningIn, setIsSigningIn] = useState(false);
+
+  // Synchronized Redirection Logic
+  useEffect(() => {
+    if (!auth || !firestore) return;
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user && isSigningIn) {
+        try {
+          // Check roles to determine redirect
+          const [adminDoc, userDoc] = await Promise.all([
+            getDoc(doc(firestore, 'roles_admin', user.uid)),
+            getDoc(doc(firestore, 'users', user.uid))
+          ]);
+          
+          const isAdmin = adminDoc.exists() || user.email === 'peyton.vandenbemden@gmail.com';
+          const userData = userDoc.exists() ? userDoc.data() : null;
+          const isReviewer = userData?.role === 'Reviewer';
+
+          if (isAdmin) {
+            router.push('/admin');
+          } else if (isReviewer) {
+            router.push('/review');
+          } else {
+            router.push('/dashboard');
+          }
+        } catch (error) {
+          // Fallback to default dashboard on any lookup error
+          router.push('/dashboard');
+        }
+      }
+    });
+    return () => unsubscribe();
+  }, [auth, firestore, isSigningIn, router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,12 +69,10 @@ export default function LoginPage() {
     try {
       await initiateEmailSignIn(auth, email, password);
       toast({
-        title: 'Success',
-        description: 'You are now logged in.',
+        title: 'Authenticating...',
+        description: 'Verifying your credentials and access level.',
       });
-      router.push('/dashboard');
     } catch (error: any) {
-      // Do not use console.error here as it triggers the dev overlay for common user errors
       let message = 'Please check your credentials and try again.';
       if (
         error.code === 'auth/user-not-found' || 
@@ -115,7 +148,8 @@ export default function LoginPage() {
         </CardContent>
         <CardFooter className="flex flex-col gap-4">
           <Button type="submit" className="w-full" disabled={isSigningIn}>
-            {isSigningIn ? 'Logging in...' : 'Log in'}
+            {isSigningIn ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            {isSigningIn ? 'Verifying Access...' : 'Log in'}
           </Button>
           <div className="text-center text-sm text-muted-foreground">
             Don&apos;t have an account?{' '}
