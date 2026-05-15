@@ -1,3 +1,4 @@
+
 'use client';
 
 import Link from 'next/link';
@@ -37,14 +38,15 @@ export default function LoginPage() {
       if (user && isSigningIn) {
         try {
           // Check roles to determine redirect
-          const [adminDoc, userDoc] = await Promise.all([
+          const [adminDoc, userDoc, reviewerDoc] = await Promise.all([
             getDoc(doc(firestore, 'roles_admin', user.uid)),
-            getDoc(doc(firestore, 'users', user.uid))
+            getDoc(doc(firestore, 'users', user.uid)),
+            getDoc(doc(firestore, 'reviewers', user.uid))
           ]);
           
           const isAdmin = adminDoc.exists() || user.email === 'peyton.vandenbemden@gmail.com';
           const userData = userDoc.exists() ? userDoc.data() : null;
-          const isReviewer = userData?.role === 'Reviewer';
+          const isReviewer = userData?.role === 'Reviewer' || reviewerDoc.exists() || user.email === 'hello@merited.com';
 
           if (isAdmin) {
             router.push('/admin');

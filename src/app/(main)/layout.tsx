@@ -88,13 +88,15 @@ export default function DashboardLayout({
   const userMetadata = useMemo(() => {
     // Bootstrap Admin check
     const isBootstrapAdmin = user?.email === 'peyton.vandenbemden@gmail.com';
+    // Bootstrap Reviewer check
+    const isBootstrapReviewer = user?.email === 'hello@merited.com';
     
     // Determine role based on which document was found
     const role = userDoc?.role || adminRole?.role || (reviewerProfile ? 'Reviewer' : null);
     
     // Check flags
     const isAdmin = isBootstrapAdmin || role === 'Admin' || role === 'Sponsor' || !!adminRole;
-    const isReviewer = role === 'Reviewer' || !!reviewerProfile || isAdmin;
+    const isReviewer = isBootstrapReviewer || role === 'Reviewer' || !!reviewerProfile || isAdmin;
     // Default to applicant if no other role is explicitly verified yet
     const isApplicant = role === 'Applicant' || (!isAdmin && !isReviewer);
     
@@ -117,8 +119,8 @@ export default function DashboardLayout({
         router.push(userMetadata.isReviewer ? '/review' : '/dashboard');
       } else if (pathname.startsWith('/review') && !userMetadata.isReviewer && !userMetadata.isAdmin) {
         router.push('/dashboard');
-      } else if (pathname.startsWith('/dashboard') && userMetadata.isReviewer && !userMetadata.isAdmin) {
-        router.push('/review');
+      } else if (pathname.startsWith('/dashboard') && (userMetadata.isReviewer || userMetadata.isAdmin)) {
+        router.push(userMetadata.isAdmin ? '/admin' : '/review');
       }
     }
   }, [mounted, user, isMetadataLoading, userMetadata, pathname, router]);
@@ -153,7 +155,7 @@ export default function DashboardLayout({
   // Render guard for unauthorized paths
   if (pathname.startsWith('/admin') && !userMetadata.isAdmin) return null;
   if (pathname.startsWith('/review') && !userMetadata.isReviewer && !userMetadata.isAdmin) return null;
-  if (pathname.startsWith('/dashboard') && userMetadata.isReviewer && !userMetadata.isAdmin) return null;
+  if (pathname.startsWith('/dashboard') && (userMetadata.isReviewer || userMetadata.isAdmin)) return null;
 
   if (!shouldShowLayout) return <>{children}</>;
 
