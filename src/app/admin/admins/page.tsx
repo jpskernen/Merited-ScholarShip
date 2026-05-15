@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState } from 'react';
@@ -10,8 +9,27 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { useCollection, useFirebase, useMemoFirebase } from '@/firebase';
 import { collection, addDoc, serverTimestamp, deleteDoc, doc } from 'firebase/firestore';
-import { UserPlus, Trash2, Copy, Check, ShieldAlert } from 'lucide-react';
+import { UserPlus, Trash2, Copy, Check, ShieldAlert, Sparkles, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { generateInvitationEmail } from '@/ai/flows/generate-invitation-email';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Separator } from '@/components/ui/separator';
+
+function generatePassword(length = 12) {
+  const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
+  let retVal = "";
+  for (let i = 0, n = charset.length; i < length; ++i) {
+    retVal += charset.charAt(Math.floor(Math.random() * n));
+  }
+  return retVal;
+}
 
 export default function ManageAdminsPage() {
   const { firestore } = useFirebase();
@@ -19,6 +37,8 @@ export default function ManageAdminsPage() {
   const [email, setEmail] = useState('');
   const [isInviting, setIsInviting] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [generatingEmailFor, setGeneratingEmailFor] = useState<string | null>(null);
+  const [aiEmail, setAiEmail] = useState<{ subject: string; body: string } | null>(null);
 
   const invitesQuery = useMemoFirebase(() => {
     if (!firestore) return null;
@@ -32,17 +52,20 @@ export default function ManageAdminsPage() {
     if (!firestore || !email) return;
     setIsInviting(true);
 
+    const tempPassword = generatePassword();
+
     try {
       await addDoc(collection(firestore, 'admin_invites'), {
         email,
+        tempPassword,
         status: 'Pending',
         createdAt: serverTimestamp(),
         schoolId: 'default-school'
       });
 
       toast({
-        title: "Admin Invite Created",
-        description: `A secure onboarding link has been generated for ${email}.`,
+        title: "Admin Account Prepared",
+        description: `A secure administrator account has been prepared for ${email}.`,
       });
       setEmail('');
     } catch (error) {
@@ -64,6 +87,25 @@ export default function ManageAdminsPage() {
     toast({ title: "Copied", description: "Admin onboarding link copied." });
   };
 
+  const handleGenerateAiEmail = async (invite: any) => {
+    setGeneratingEmailFor(invite.id);
+    setAiEmail(null);
+    try {
+      const link = `${window.location.origin}/admin/invite/${invite.id}`;
+      const result = await generateInvitationEmail({
+        recipientEmail: invite.email,
+        role: 'Admin',
+        temporaryPassword: invite.tempPassword,
+        onboardingLink: link,
+      });
+      setAiEmail(result);
+    } catch (err) {
+      toast({ title: "AI Error", description: "Failed to generate email draft.", variant: "destructive" });
+    } finally {
+      setGeneratingEmailFor(null);
+    }
+  };
+
   const deleteInvite = async (id: string) => {
     if (!firestore) return;
     try {
@@ -80,7 +122,7 @@ export default function ManageAdminsPage() {
         <h1 className="text-3xl font-bold">Manage Administrators</h1>
         <p className="text-muted-foreground flex items-center gap-2">
           <ShieldAlert className="h-4 w-4 text-amber-600" />
-          Assign system-wide privileges to committee chairs or sponsors.
+          Assign system-wide privileges and generate secure onboarding links.
         </p>
       </div>
 
@@ -88,7 +130,7 @@ export default function ManageAdminsPage() {
         <CardHeader>
           <CardTitle>Invite New Administrator</CardTitle>
           <CardDescription>
-            Administrators have full access to manage scholarships, applicants, and other users.
+            A high-entropy temporary password will be generated for the account.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -106,7 +148,7 @@ export default function ManageAdminsPage() {
             </div>
             <Button type="submit" disabled={isInviting} className="bg-amber-600 hover:bg-amber-700">
               <UserPlus className="mr-2 h-4 w-4" />
-              {isInviting ? 'Generating...' : 'Invite Administrator'}
+              {isInviting ? 'Preparing...' : 'Invite Administrator'}
             </Button>
           </form>
         </CardContent>
@@ -117,8 +159,8 @@ export default function ManageAdminsPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Email Address</TableHead>
+              <TableHead>Temp Password</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>Issued</TableHead>
               <TableHead className="text-right">Manage</TableHead>
             </TableRow>
           </TableHeader>
@@ -129,14 +171,51 @@ export default function ManageAdminsPage() {
               <TableRow key={invite.id}>
                 <TableCell className="font-semibold">{invite.email}</TableCell>
                 <TableCell>
+                  <code className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono">{invite.tempPassword || 'N/A'}</code>
+                </TableCell>
+                <TableCell>
                   <Badge variant={invite.status === 'Accepted' ? 'default' : 'outline'} className={invite.status === 'Accepted' ? 'bg-green-600' : ''}>
                     {invite.status}
                   </Badge>
                 </TableCell>
-                <TableCell className="text-xs text-muted-foreground">
-                  {invite.createdAt?.seconds ? new Date(invite.createdAt.seconds * 1000).toLocaleDateString() : 'N/A'}
-                </TableCell>
                 <TableCell className="text-right flex justify-end gap-2">
+                  <Dialog>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" size="sm" onClick={() => handleGenerateAiEmail(invite)}>
+                        {generatingEmailFor === invite.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4 text-amber-600" />}
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-2xl">
+                      <DialogHeader>
+                        <DialogTitle>Admin Invitation Draft</DialogTitle>
+                        <DialogDescription>
+                          AI-generated invitation for peer administrative onboarding.
+                        </DialogDescription>
+                      </DialogHeader>
+                      {aiEmail ? (
+                        <div className="space-y-4">
+                          <div className="rounded-md bg-muted p-4">
+                            <p className="text-xs font-bold uppercase text-muted-foreground mb-1">Subject</p>
+                            <p className="font-semibold">{aiEmail.subject}</p>
+                            <Separator className="my-3" />
+                            <p className="text-xs font-bold uppercase text-muted-foreground mb-1">Body</p>
+                            <p className="text-sm whitespace-pre-wrap">{aiEmail.body}</p>
+                          </div>
+                          <Button className="w-full bg-amber-600 hover:bg-amber-700" onClick={() => {
+                            navigator.clipboard.writeText(`Subject: ${aiEmail.subject}\n\n${aiEmail.body}`);
+                            toast({ title: "Copied", description: "Draft copied for sending." });
+                          }}>
+                            <Copy className="h-4 w-4 mr-2" /> Copy Full Draft
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex h-32 items-center justify-center">
+                          <Loader2 className="h-8 w-8 animate-spin text-amber-600" />
+                        </div>
+                      )}
+                    </DialogContent>
+                  </Dialog>
+
                   <Button variant="outline" size="sm" onClick={() => copyInviteLink(invite.id)} title="Copy Onboarding Link">
                     {copiedId === invite.id ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
                   </Button>

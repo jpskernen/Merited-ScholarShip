@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useEffect, useState, use } from 'react';
@@ -9,9 +8,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth, initiateEmailSignUp, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { doc, updateDoc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { ShieldCheck, Loader2, Eye, EyeOff } from 'lucide-react';
+import { ShieldCheck, Loader2, Eye, EyeOff, Key } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { updateProfile, onAuthStateChanged } from 'firebase/auth';
+import { updateProfile } from 'firebase/auth';
 
 export default function ReviewerOnboardingPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: inviteId } = use(params);
@@ -36,6 +35,8 @@ export default function ReviewerOnboardingPage({ params }: { params: Promise<{ i
     if (!isInviteLoading && !invite) {
       toast({ title: "Invalid Link", description: "This invitation is no longer valid.", variant: "destructive" });
       router.push('/');
+    } else if (invite?.tempPassword) {
+      setPassword(invite.tempPassword);
     }
   }, [invite, isInviteLoading, router, toast]);
 
@@ -100,9 +101,9 @@ export default function ReviewerOnboardingPage({ params }: { params: Promise<{ i
                 <ShieldCheck className="h-5 w-5" />
                 <span className="text-xs font-black uppercase tracking-widest">Committee Invitation</span>
               </div>
-              <CardTitle className="text-2xl">Create Reviewer Account</CardTitle>
+              <CardTitle className="text-2xl">Finalize Reviewer Account</CardTitle>
               <CardDescription>
-                Account for <strong>{invite?.email}</strong>
+                Activating credentials for <strong>{invite?.email}</strong>
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -113,12 +114,12 @@ export default function ReviewerOnboardingPage({ params }: { params: Promise<{ i
                   required 
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Reviewer Name"
+                  placeholder="Your full name"
                   disabled={isSubmitting}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="password">Set Secure Password</Label>
+                <Label htmlFor="password">Temporary Password</Label>
                 <div className="relative">
                   <Input 
                     id="password" 
@@ -137,11 +138,14 @@ export default function ReviewerOnboardingPage({ params }: { params: Promise<{ i
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
+                <p className="text-[10px] text-muted-foreground flex items-center gap-1 mt-1">
+                  <Key className="h-3 w-3" /> Use the password sent in your invitation email.
+                </p>
               </div>
             </CardContent>
             <CardFooter>
               <Button type="submit" className="w-full font-bold" disabled={isSubmitting}>
-                {isSubmitting ? 'Finalizing...' : 'Complete Onboarding'}
+                {isSubmitting ? 'Finalizing...' : 'Join Committee'}
               </Button>
             </CardFooter>
           </Card>
