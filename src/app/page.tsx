@@ -14,56 +14,51 @@ import { AppLogo } from '@/components/shared/AppLogo';
 import { Badge } from '@/components/ui/badge';
 import { FileText, CheckCircle, Heart, Search, ArrowRight, Loader2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { useCollection, initializeFirebase, useMemoFirebase } from '@/firebase';
+import { useCollection, useFirebase, useMemoFirebase } from '@/firebase';
 import { collection } from 'firebase/firestore';
 import type { Scholarship } from '@/types/scholarship';
 
 export default function Home() {
   const [mounted, setMounted] = useState(false);
-  
-  // For landing page where hooks like useFirebase might not be ready, 
-  // we initialize manually or handle null
-  const [services, setServices] = useState<any>(null);
+  const { firestore } = useFirebase();
 
   useEffect(() => {
     setMounted(true);
-    const s = initializeFirebase();
-    setServices(s);
   }, []);
 
   const scholarshipsQuery = useMemoFirebase(() => {
-    if (!services?.firestore) return null;
-    return collection(services.firestore, 'programs');
-  }, [services]);
+    if (!firestore) return null;
+    return collection(firestore, 'programs');
+  }, [firestore]);
 
   const { data: scholarships, isLoading } = useCollection<Scholarship>(scholarshipsQuery);
 
   const features = [
     {
       icon: <Search className="h-10 w-10 text-primary" />,
-      title: 'View Scholarship Opportunities',
+      title: 'View Opportunities',
       description:
-        'Browse and learn about the available scholarships.',
+        'Browse and learn about available scholarships matching your profile.',
       href: '#scholarships'
     },
     {
       icon: <FileText className="h-10 w-10 text-primary" />,
-      title: 'Apply for a Scholarship',
+      title: 'Simple Application',
       description:
-        'Easily upload your transcripts, resumes, and essays to a single platform.',
+        'Easily upload your transcripts, resumes, and essays to a single secure platform.',
       href: '/signup'
     },
     {
       icon: <CheckCircle className="h-10 w-10 text-primary" />,
-      title: 'Track Your Progress',
+      title: 'Real-time Tracking',
       description:
-        'Stay updated with notifications and track your application status in real-time.',
+        'Stay updated with notifications and track your application status as it moves through review.',
       href: '/login'
     },
   ];
 
   return (
-    <div className="flex min-h-screen flex-col bg-background text-foreground">
+    <div className="flex min-h-screen flex-col bg-background text-foreground font-sans">
       <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur-md">
         <div className="container mx-auto flex h-16 items-center justify-between px-4 md:px-6">
           <AppLogo />
@@ -79,20 +74,20 @@ export default function Home() {
       </header>
 
       <main className="flex-1">
-        <section className="bg-secondary/50 py-20 md:py-32">
+        <section className="bg-secondary/20 py-20 md:py-32">
           <div className="container mx-auto px-4 text-center md:px-6">
             <h1 className="text-4xl font-extrabold tracking-tight md:text-6xl text-foreground">
-              Scholarship Applications Open
+              Your Journey to Excellence Starts Here
             </h1>
-            <p className="mx-auto mt-4 max-w-2xl text-lg text-muted-foreground md:text-xl">
-              Start your journey today. Prepare by requesting letters of recommendation, gathering your official transcripts, and reviewing our current opportunities.
+            <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground md:text-xl">
+              Apply for scholarships, track your progress, and connect with academic opportunities designed to fuel your future.
             </p>
-            <div className="mt-8 flex justify-center gap-4">
-              <Button size="lg" asChild>
+            <div className="mt-10 flex justify-center gap-4">
+              <Button size="lg" asChild className="rounded-full px-8">
                 <Link href="#scholarships">Browse Scholarships</Link>
               </Button>
-              <Button size="lg" variant="outline" asChild>
-                <Link href="/signup">Create Account</Link>
+              <Button size="lg" variant="outline" asChild className="rounded-full px-8">
+                <Link href="/signup">Create Student Profile</Link>
               </Button>
             </div>
           </div>
@@ -102,10 +97,10 @@ export default function Home() {
           <div className="container mx-auto px-4 md:px-6">
             <div className="mb-12 text-center">
               <h2 className="text-3xl font-bold tracking-tight text-foreground">
-                Available Scholarships
+                Current Scholarship Programs
               </h2>
               <p className="mt-2 text-muted-foreground">
-                Sign up to view all opportunities and start your application.
+                Explore active awards and program details.
               </p>
             </div>
             
@@ -116,29 +111,35 @@ export default function Home() {
             ) : (
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {scholarships?.slice(0, 6).map((scholarship) => (
-                  <Card key={scholarship.id} className="flex flex-col border-primary/10 shadow-sm transition-all hover:-translate-y-1">
+                  <Card key={scholarship.id} className="flex flex-col border-primary/10 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md">
                     <CardHeader>
-                      <div className="flex justify-between items-start">
-                        <div className="max-w-[70%]">
-                          <CardTitle className="text-xl">{scholarship.name}</CardTitle>
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="flex-1">
+                          <CardTitle className="text-xl leading-tight">{scholarship.name}</CardTitle>
                         </div>
-                        <Badge variant="secondary" className="whitespace-nowrap">{scholarship.amount}</Badge>
+                        <Badge variant="secondary" className="whitespace-nowrap bg-primary/10 text-primary border-none">{scholarship.amount}</Badge>
                       </div>
                     </CardHeader>
                     <CardContent className="flex-grow">
-                      <p className="text-sm text-muted-foreground mb-4 line-clamp-3">{scholarship.description}</p>
+                      <p className="text-sm text-muted-foreground mb-4 line-clamp-3">
+                        {scholarship.description}
+                      </p>
                       <div className="flex flex-wrap gap-2">
-                        {Array.isArray(scholarship.tags) && scholarship.tags.map(tag => <Badge key={tag} variant="outline" className="text-[10px]">{tag}</Badge>)}
+                        {Array.isArray(scholarship.tags) && scholarship.tags.map(tag => (
+                          <Badge key={tag} variant="outline" className="text-[10px] uppercase tracking-wider px-2 py-0">
+                            {tag}
+                          </Badge>
+                        ))}
                       </div>
                     </CardContent>
                     <CardFooter className="flex justify-between items-center border-t pt-4">
                       <div className="text-xs text-muted-foreground">
-                        <p className="font-semibold">Deadline</p>
+                        <p className="font-semibold text-foreground">Deadline</p>
                         <p>{scholarship.deadline}</p>
                       </div>
-                      <Button asChild size="sm">
+                      <Button asChild size="sm" variant="ghost" className="text-primary font-bold hover:bg-primary/5">
                         <Link href="/signup">
-                          Apply Now <ArrowRight className="ml-2 h-4 w-4" />
+                          Apply <ArrowRight className="ml-1 h-4 w-4" />
                         </Link>
                       </Button>
                     </CardFooter>
@@ -149,43 +150,43 @@ export default function Home() {
 
             {!isLoading && (!scholarships || scholarships.length === 0) && (
               <div className="text-center py-20 bg-muted/5 border-2 border-dashed rounded-2xl">
-                <p className="text-muted-foreground italic">New scholarship opportunities are being posted soon.</p>
+                <p className="text-muted-foreground italic">New scholarship opportunities are posted periodically. Check back soon!</p>
               </div>
             )}
 
             <div className="mt-12 text-center">
-              <Button variant="outline" size="lg" asChild>
-                <Link href="/signup">View All Scholarships</Link>
+              <Button variant="outline" size="lg" asChild className="rounded-full">
+                <Link href="/signup">View All Opportunities</Link>
               </Button>
             </div>
           </div>
         </section>
 
-        <section id="features" className="py-20 md:py-24 bg-secondary/30">
+        <section id="features" className="py-20 md:py-24 bg-secondary/10">
           <div className="container mx-auto px-4 md:px-6">
-            <div className="mb-12 text-center">
+            <div className="mb-16 text-center">
               <h2 className="text-3xl font-bold tracking-tight text-foreground">
-                Scholarship Application Guide
+                How it Works
               </h2>
-              <p className="mt-2 text-muted-foreground">
-                Scholarships open annually. Our committee reviews every application thoroughly to ensure fair and merit-based awards for students.
+              <p className="mt-4 text-muted-foreground max-w-2xl mx-auto">
+                Our platform streamlines the connection between ambitious students and the funding they need to succeed.
               </p>
             </div>
             <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
               {features.map((feature, index) => (
-                <Link key={index} href={feature.href} className="block">
-                  <Card className="transform transition-transform hover:scale-105 hover:shadow-lg h-full cursor-pointer">
-                    <CardHeader className="items-center">
+                <Card key={index} className="border-none shadow-none bg-transparent h-full">
+                  <CardHeader className="items-center pb-2">
+                    <div className="p-3 bg-primary/10 rounded-2xl mb-4">
                       {feature.icon}
-                    </CardHeader>
-                    <CardContent className="text-center">
-                      <h3 className="text-lg font-semibold">{feature.title}</h3>
-                      <p className="mt-2 text-sm text-muted-foreground">
-                        {feature.description}
-                      </p>
-                    </CardContent>
-                  </Card>
-                </Link>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="text-center">
+                    <h3 className="text-xl font-bold mb-3">{feature.title}</h3>
+                    <p className="text-muted-foreground leading-relaxed">
+                      {feature.description}
+                    </p>
+                  </CardContent>
+                </Card>
               ))}
             </div>
           </div>
@@ -193,17 +194,17 @@ export default function Home() {
         
         <section id="donate" className="bg-background py-20 md:py-24">
             <div className="container mx-auto px-4 text-center md:px-6">
-                 <Heart className="h-12 w-12 text-primary mx-auto mb-4" />
+                 <Heart className="h-12 w-12 text-primary mx-auto mb-6" />
                 <h2 className="text-3xl font-bold tracking-tight text-foreground">
-                    Fund a Scholarship
+                    Support Student Success
                 </h2>
-                <p className="mx-auto mt-4 max-w-3xl text-lg text-muted-foreground md:text-xl">
-                    Our foundation is committed to supporting students in their post-secondary journeys. By providing named scholarships, we help bridge the financial gap and empower the next generation of leaders.
+                <p className="mx-auto mt-6 max-w-3xl text-lg text-muted-foreground md:text-xl leading-relaxed">
+                    Partner with us to create new opportunities. Our foundation works with donors to establish named scholarships that empower the next generation of academic leaders.
                 </p>
-                <div className="mt-8">
-                    <Button size="lg" asChild>
+                <div className="mt-10">
+                    <Button size="lg" asChild className="rounded-full px-10">
                         <Link href="/signup">
-                            Inquire Now
+                            Partner With Us
                         </Link>
                     </Button>
                 </div>
@@ -212,20 +213,25 @@ export default function Home() {
       </main>
 
       <footer className="border-t bg-card">
-        <div className="container mx-auto flex flex-col items-center justify-between gap-4 px-4 py-8 sm:flex-row md:px-6">
-          <AppLogo />
-          <p className="text-sm text-muted-foreground">
+        <div className="container mx-auto flex flex-col items-center justify-between gap-6 px-4 py-10 sm:flex-row md:px-6">
+          <div className="flex flex-col items-center sm:items-start gap-2">
+            <AppLogo />
+            <p className="text-xs text-muted-foreground">
+              Empowering students through academic opportunities.
+            </p>
+          </div>
+          <p className="text-sm text-muted-foreground order-last sm:order-none">
             &copy; {mounted ? new Date().getFullYear() : ''} ScholarShip. All rights reserved.
           </p>
-          <div className="flex flex-wrap justify-center gap-4 sm:justify-end">
-            <Link href="#" className="text-sm text-muted-foreground hover:text-primary">
+          <div className="flex flex-wrap justify-center gap-6 sm:justify-end">
+            <Link href="#" className="text-sm text-muted-foreground hover:text-primary transition-colors">
               Terms
             </Link>
-            <Link href="#" className="text-sm text-muted-foreground hover:text-primary">
+            <Link href="#" className="text-sm text-muted-foreground hover:text-primary transition-colors">
               Privacy
             </Link>
-            <Link href="/review/login" className="text-sm text-red-600 hover:underline">
-              Reviewers
+            <Link href="/review/login" className="text-sm font-semibold text-primary hover:underline">
+              Reviewer Portal
             </Link>
           </div>
         </div>
