@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState } from 'react';
@@ -100,6 +101,15 @@ export default function ManageReviewersPage() {
       console.log(`Subject: ${result.subject}\n\n${result.body}`);
 
       if (firestore) {
+        // Record the email in the outbox
+        await addDoc(collection(firestore, 'sent_emails'), {
+          recipient: invite.email,
+          subject: result.subject,
+          body: result.body,
+          type: 'Reviewer Invitation',
+          sentAt: serverTimestamp()
+        });
+
         await updateDoc(doc(firestore, 'invites', invite.id), {
           emailSent: true,
           lastEmailSentAt: serverTimestamp()
@@ -107,8 +117,8 @@ export default function ManageReviewersPage() {
       }
 
       toast({
-        title: "Invitation Sent",
-        description: `An onboarding email has been sent to ${invite.email}.`,
+        title: "Invitation Sent (Simulated)",
+        description: `An onboarding email record has been created for ${invite.email}.`,
       });
       
       setAiEmail(result);

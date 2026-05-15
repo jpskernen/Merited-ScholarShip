@@ -27,6 +27,20 @@
       },
       "required": ["id", "email", "status", "createdAt", "schoolId"]
     },
+    "SentEmail": {
+      "title": "SentEmail",
+      "description": "A record of a simulated email sent by the system.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "recipient": { "type": "string" },
+        "subject": { "type": "string" },
+        "body": { "type": "string" },
+        "type": { "type": "string" },
+        "sentAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["recipient", "subject", "body", "type", "sentAt"]
+    },
     "Scholarship": {
       "title": "Scholarship",
       "description": "Represents a scholarship program managed by a school.",
@@ -153,6 +167,10 @@
     "/admin_invites/{inviteId}": {
       "schema": "#/backend/entities/AdminInvite",
       "description": "Secure invitations for new administrators."
+    },
+    "/sent_emails/{emailId}": {
+      "schema": "#/backend/entities/SentEmail",
+      "description": "Simulated outbox for system notifications."
     },
     "/schools/{schoolId}": {
       "schema": "#/backend/entities/School",

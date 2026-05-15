@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState } from 'react';
@@ -9,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { useCollection, useFirebase, useMemoFirebase } from '@/firebase';
 import { collection, addDoc, serverTimestamp, deleteDoc, doc, updateDoc } from 'firebase/firestore';
-import { UserPlus, Trash2, Copy, Check, ShieldAlert, Sparkles, Loader2, Send } from 'lucide-react';
+import { UserPlus, Trash2, Copy, Check, ShieldAlert, Loader2, Send } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { generateInvitationEmail } from '@/ai/flows/generate-invitation-email';
 import {
@@ -100,6 +101,15 @@ export default function ManageAdminsPage() {
       console.log(`Subject: ${result.subject}\n\n${result.body}`);
 
       if (firestore) {
+        // Record the email in the outbox
+        await addDoc(collection(firestore, 'sent_emails'), {
+          recipient: invite.email,
+          subject: result.subject,
+          body: result.body,
+          type: 'Admin Invitation',
+          sentAt: serverTimestamp()
+        });
+
         await updateDoc(doc(firestore, 'admin_invites', invite.id), {
           emailSent: true,
           lastEmailSentAt: serverTimestamp()
@@ -107,8 +117,8 @@ export default function ManageAdminsPage() {
       }
 
       toast({
-        title: "Invitation Sent",
-        description: `An onboarding email has been sent to ${invite.email}.`,
+        title: "Invitation Sent (Simulated)",
+        description: `An onboarding email record has been created for ${invite.email}.`,
       });
       
       setAiEmail(result);

@@ -44,6 +44,11 @@ service cloud.firestore {
       allow write: if isSponsor();
     }
 
+    // Sent Emails Outbox
+    match /sent_emails/{emailId} {
+      allow read, write: if isSponsor();
+    }
+
     // User Profiles
     match /users {
       allow list: if isSignedIn() && (isSponsor() || isReviewer());
