@@ -46,7 +46,11 @@ export default function LoginPage() {
           
           const isAdmin = adminDoc.exists() || user.email === 'peyton.vandenbemden@gmail.com';
           const userData = userDoc.exists() ? userDoc.data() : null;
-          const isReviewer = userData?.role === 'Reviewer' || reviewerDoc.exists() || user.email === 'hello@merited.com';
+          const isReviewer = 
+            userData?.role === 'Reviewer' || 
+            reviewerDoc.exists() || 
+            user.email === 'hello@merited.com' || 
+            user.email === 'hellow@meritedapp.com';
 
           if (isAdmin) {
             router.push('/admin');

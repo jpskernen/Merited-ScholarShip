@@ -47,7 +47,12 @@ export default function ReviewerDashboardPage() {
   const { data: reviewerProfile, isLoading: isReviewerRoleLoading } = useDoc(reviewerProfileRef);
   const { data: adminRole, isLoading: isAdminRoleLoading } = useDoc(adminRoleRef);
 
-  const isAuthorizedToReview = !!reviewerProfile || !!adminRole || user?.email === 'peyton.vandenbemden@gmail.com' || user?.email === 'hello@merited.com';
+  const isAuthorizedToReview = 
+    !!reviewerProfile || 
+    !!adminRole || 
+    user?.email === 'peyton.vandenbemden@gmail.com' || 
+    user?.email === 'hello@merited.com' || 
+    user?.email === 'hellow@meritedapp.com';
 
   const applicantsQuery = useMemoFirebase(() => {
     if (!firestore || !isAuthorizedToReview) return null;
