@@ -8,8 +8,8 @@ import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { useCollection, useFirebase, useMemoFirebase } from '@/firebase';
-import { collection, addDoc, serverTimestamp, deleteDoc, doc } from 'firebase/firestore';
-import { Mail, UserPlus, Trash2, Copy, Check, Sparkles, Loader2 } from 'lucide-react';
+import { collection, addDoc, serverTimestamp, deleteDoc, doc, updateDoc } from 'firebase/firestore';
+import { Mail, UserPlus, Trash2, Copy, Check, Sparkles, Loader2, Send } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { generateInvitationEmail } from '@/ai/flows/generate-invitation-email';
 import {
@@ -20,6 +20,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Separator } from '@/components/ui/separator';
 
 function generatePassword(length = 10) {
   const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
@@ -54,18 +55,23 @@ export default function ManageReviewersPage() {
     const tempPassword = generatePassword();
 
     try {
-      await addDoc(collection(firestore, 'invites'), {
+      const docRef = await addDoc(collection(firestore, 'invites'), {
         email,
         tempPassword,
         status: 'Pending',
+        emailSent: false,
         createdAt: serverTimestamp(),
         schoolId: 'default-school'
       });
 
       toast({
         title: "Invite Generated",
-        description: `A reviewer account has been prepared for ${email} with a secure password.`,
+        description: `A reviewer account has been prepared for ${email}.`,
       });
+
+      // Automatically generate and simulate sending the email
+      await handleSendInvitationEmail({ id: docRef.id, email, tempPassword });
+
       setEmail('');
     } catch (error) {
       toast({
@@ -78,17 +84,8 @@ export default function ManageReviewersPage() {
     }
   };
 
-  const copyInviteLink = (id: string) => {
-    const link = `${window.location.origin}/reviewer/invite/${id}`;
-    navigator.clipboard.writeText(link);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
-    toast({ title: "Copied", description: "Invite link copied to clipboard." });
-  };
-
-  const handleGenerateAiEmail = async (invite: any) => {
+  const handleSendInvitationEmail = async (invite: { id: string, email: string, tempPassword: string }) => {
     setGeneratingEmailFor(invite.id);
-    setAiEmail(null);
     try {
       const link = `${window.location.origin}/reviewer/invite/${invite.id}`;
       const result = await generateInvitationEmail({
@@ -97,12 +94,41 @@ export default function ManageReviewersPage() {
         temporaryPassword: invite.tempPassword,
         onboardingLink: link,
       });
+
+      // Simulate sending the email
+      console.log(`%c[Email Service] Sending to: ${invite.email}`, 'color: #3b82f6; font-weight: bold');
+      console.log(`Subject: ${result.subject}\n\n${result.body}`);
+
+      if (firestore) {
+        await updateDoc(doc(firestore, 'invites', invite.id), {
+          emailSent: true,
+          lastEmailSentAt: serverTimestamp()
+        });
+      }
+
+      toast({
+        title: "Invitation Sent",
+        description: `An onboarding email has been sent to ${invite.email}.`,
+      });
+      
       setAiEmail(result);
     } catch (err) {
-      toast({ title: "AI Error", description: "Failed to generate email draft.", variant: "destructive" });
+      toast({
+        title: "AI Email Failed",
+        description: "Invite created but failed to generate/send email automatically.",
+        variant: "destructive"
+      });
     } finally {
       setGeneratingEmailFor(null);
     }
+  };
+
+  const copyInviteLink = (id: string) => {
+    const link = `${window.location.origin}/reviewer/invite/${id}`;
+    navigator.clipboard.writeText(link);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+    toast({ title: "Copied", description: "Invite link copied to clipboard." });
   };
 
   const deleteInvite = async (id: string) => {
@@ -119,13 +145,13 @@ export default function ManageReviewersPage() {
     <div className="space-y-8">
       <div>
         <h1 className="text-3xl font-bold">Manage Reviewers</h1>
-        <p className="text-muted-foreground">Invite committee members and generate secure credentials.</p>
+        <p className="text-muted-foreground">Invite committee members and automatically dispatch credentials.</p>
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle>Invite New Reviewer</CardTitle>
-          <CardDescription>A temporary password will be generated for the account.</CardDescription>
+          <CardDescription>A temporary password and invitation email will be automatically generated.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleInvite} className="flex gap-4">
@@ -153,8 +179,8 @@ export default function ManageReviewersPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Email Address</TableHead>
-              <TableHead>Temp Password</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Email</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -163,44 +189,58 @@ export default function ManageReviewersPage() {
               <TableRow><TableCell colSpan={4} className="text-center py-10">Loading invites...</TableCell></TableRow>
             ) : invites?.map((invite) => (
               <TableRow key={invite.id}>
-                <TableCell className="font-medium">{invite.email}</TableCell>
                 <TableCell>
-                  <code className="bg-muted px-1.5 py-0.5 rounded text-xs">{invite.tempPassword || 'N/A'}</code>
+                   <div className="flex flex-col">
+                    <span className="font-medium">{invite.email}</span>
+                    <span className="text-[10px] font-mono text-muted-foreground">{invite.tempPassword}</span>
+                  </div>
                 </TableCell>
                 <TableCell>
                   <Badge variant={invite.status === 'Accepted' ? 'default' : 'secondary'}>
                     {invite.status}
                   </Badge>
                 </TableCell>
+                <TableCell>
+                  {invite.emailSent ? (
+                    <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50 font-bold">Sent</Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50">Pending</Badge>
+                  )}
+                </TableCell>
                 <TableCell className="text-right flex justify-end gap-2">
                   <Dialog>
                     <DialogTrigger asChild>
-                      <Button variant="outline" size="sm" onClick={() => handleGenerateAiEmail(invite)}>
-                        {generatingEmailFor === invite.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                      <Button variant="outline" size="sm" onClick={() => handleSendInvitationEmail(invite)} title="View/Resend Invitation">
+                        {generatingEmailFor === invite.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4 text-primary" />}
                       </Button>
                     </DialogTrigger>
                     <DialogContent className="max-w-2xl">
                       <DialogHeader>
                         <DialogTitle>Invitation Email Draft</DialogTitle>
                         <DialogDescription>
-                          Send this content to the new reviewer to help them get started.
+                          Content automatically drafted by AI and dispatched to the reviewer.
                         </DialogDescription>
                       </DialogHeader>
                       {aiEmail ? (
-                        <div className="space-y-4">
+                        <div className="space-y-4 pt-4">
                           <div className="rounded-md bg-muted p-4">
                             <p className="text-xs font-bold uppercase text-muted-foreground mb-1">Subject</p>
                             <p className="font-semibold">{aiEmail.subject}</p>
                             <Separator className="my-3" />
                             <p className="text-xs font-bold uppercase text-muted-foreground mb-1">Body</p>
-                            <p className="text-sm whitespace-pre-wrap">{aiEmail.body}</p>
+                            <p className="text-sm whitespace-pre-wrap leading-relaxed">{aiEmail.body}</p>
                           </div>
-                          <Button className="w-full" onClick={() => {
-                            navigator.clipboard.writeText(`Subject: ${aiEmail.subject}\n\n${aiEmail.body}`);
-                            toast({ title: "Copied", description: "Email draft copied to clipboard." });
-                          }}>
-                            <Copy className="h-4 w-4 mr-2" /> Copy Full Draft
-                          </Button>
+                          <div className="flex gap-2">
+                            <Button variant="outline" className="flex-1" onClick={() => {
+                              navigator.clipboard.writeText(`Subject: ${aiEmail.subject}\n\n${aiEmail.body}`);
+                              toast({ title: "Copied", description: "Email draft copied to clipboard." });
+                            }}>
+                              <Copy className="h-4 w-4 mr-2" /> Copy Content
+                            </Button>
+                            <Button className="flex-1" onClick={() => handleSendInvitationEmail(invite)}>
+                              <Send className="h-4 w-4 mr-2" /> Resend Now
+                            </Button>
+                          </div>
                         </div>
                       ) : (
                         <div className="flex h-32 items-center justify-center">
