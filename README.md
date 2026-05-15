@@ -32,7 +32,12 @@ This project uses **Firebase App Hosting** for the Next.js application.
 
 ### 1. AI Flows (Genkit)
 - Run `npm run genkit:dev` in your terminal.
-- Open the Genkit Developer UI at [http://localhost:4000](http://localhost:4000).
+- Open the Genkit Developer UI at [http://localhost:4000](http://localhost:4000) to test prompts and see AI traces.
 
-### 2. Database & Auth (Firebase)
-- Use the [Firebase Console](https://console.firebase.google.com/) to monitor users and data.
+### 2. Database & Auth (Firebase Console)
+To see your live data, users, and files:
+- Go to the [Firebase Console](https://console.firebase.google.com/).
+- Select your project: **scholarship-hib4j**.
+- **Firestore Database**: View and edit collections like `users`, `programs`, and `reviewers`.
+- **Authentication**: Manage user accounts and reset passwords.
+- **Storage**: Browse uploaded transcripts and resumes.
