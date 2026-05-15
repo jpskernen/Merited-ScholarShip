@@ -1,7 +1,6 @@
-
 'use client';
 
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, Suspense } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Table,
@@ -21,12 +20,16 @@ import {
   Loader2
 } from 'lucide-react';
 import Link from 'next/link';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useCollection, useFirebase, useMemoFirebase, useDoc } from '@/firebase';
 import { collection, collectionGroup, doc } from 'firebase/firestore';
 
-export default function ReviewerDashboardPage() {
+function ReviewerDashboardContent() {
   const { firestore, user } = useFirebase();
-  const [filter, setFilter] = useState<'all' | 'pending' | 'completed' | 'discussion'>('all');
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  
+  const filter = searchParams.get('status') || 'all';
   const [sortByRandom, setSortByRandom] = useState(false);
   const [mounted, setMounted] = useState(false);
 
@@ -78,12 +81,12 @@ export default function ReviewerDashboardPage() {
     return keys;
   }, [applicants, mounted]);
 
-  const processedData = useMemo(() => {
+  const assignments = useMemo(() => {
     if (!applicants || !allReviews || !user || !mounted || !isAuthorizedToReview) return [];
 
     const myReviews = allReviews.filter(r => r.reviewerId === user.uid);
 
-    let data = applicants.filter(u => u.role === 'Applicant').map(app => {
+    return applicants.filter(u => u.role === 'Applicant').map(app => {
       const review = myReviews.find(r => r.applicationId === app.id);
       return {
         ...app,
@@ -93,6 +96,10 @@ export default function ReviewerDashboardPage() {
         randomSortKey: randomSortKeys[app.id] || 0,
       };
     });
+  }, [applicants, allReviews, user, mounted, randomSortKeys, isAuthorizedToReview]);
+
+  const processedData = useMemo(() => {
+    let data = [...assignments];
 
     if (sortByRandom) {
       data.sort((a, b) => a.randomSortKey - b.randomSortKey);
@@ -103,15 +110,23 @@ export default function ReviewerDashboardPage() {
     if (filter === 'discussion') data = data.filter(d => d.needsDiscussion);
 
     return data;
-  }, [applicants, allReviews, user, filter, sortByRandom, mounted, randomSortKeys, isAuthorizedToReview]);
+  }, [assignments, filter, sortByRandom]);
 
   const stats = useMemo(() => {
-    const total = processedData.length;
-    const completed = processedData.filter(d => d.reviewStatus === 'Submitted').length;
+    const total = assignments.length;
+    const completed = assignments.filter(d => d.reviewStatus === 'Submitted').length;
     const pending = total - completed;
     const progress = total > 0 ? (completed / total) * 100 : 0;
     return { total, completed, pending, progress };
-  }, [processedData]);
+  }, [assignments]);
+
+  const navigateFilter = (newFilter: string) => {
+    if (newFilter === 'all') {
+      router.push('/review');
+    } else {
+      router.push(`/review?status=${newFilter}`);
+    }
+  };
 
   if (isReviewerRoleLoading || isAdminRoleLoading || isAppsLoading || isReviewsLoading || !mounted) {
     return (
@@ -133,7 +148,7 @@ export default function ReviewerDashboardPage() {
           <Button variant={sortByRandom ? 'secondary' : 'outline'} onClick={() => setSortByRandom(!sortByRandom)} size="sm">
             <ArrowUpDown className="h-4 w-4 mr-2" /> Randomize Order
           </Button>
-          <Button variant={filter === 'discussion' ? 'secondary' : 'outline'} onClick={() => setFilter('discussion')} size="sm">
+          <Button variant={filter === 'discussion' ? 'secondary' : 'outline'} onClick={() => navigateFilter('discussion')} size="sm">
             <MessageSquare className="h-4 w-4 mr-2" /> Panel Discussion
           </Button>
         </div>
@@ -178,9 +193,9 @@ export default function ReviewerDashboardPage() {
       </div>
 
       <div className="flex gap-2 border-b pb-4">
-        <Button variant={filter === 'all' ? 'secondary' : 'ghost'} onClick={() => setFilter('all')}>All Assignments</Button>
-        <Button variant={filter === 'pending' ? 'secondary' : 'ghost'} onClick={() => setFilter('pending')}>🆕 Not Started</Button>
-        <Button variant={filter === 'completed' ? 'secondary' : 'ghost'} onClick={() => setFilter('completed')}>✅ Submitted</Button>
+        <Button variant={filter === 'all' ? 'secondary' : 'ghost'} onClick={() => navigateFilter('all')}>All Assignments</Button>
+        <Button variant={filter === 'pending' ? 'secondary' : 'ghost'} onClick={() => navigateFilter('pending')}>🆕 Not Started</Button>
+        <Button variant={filter === 'completed' ? 'secondary' : 'ghost'} onClick={() => navigateFilter('completed')}>✅ Submitted</Button>
       </div>
 
       <div className="overflow-hidden rounded-xl border bg-card">
@@ -229,6 +244,19 @@ export default function ReviewerDashboardPage() {
           </TableBody>
         </Table>
       </div>
+      {processedData.length === 0 && (
+        <div className="text-center py-12 text-muted-foreground italic">
+          No assignments found matching this filter.
+        </div>
+      )}
     </div>
+  );
+}
+
+export default function ReviewerDashboardPage() {
+  return (
+    <Suspense fallback={<div className="flex h-64 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}>
+      <ReviewerDashboardContent />
+    </Suspense>
   );
 }

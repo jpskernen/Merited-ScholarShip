@@ -1,4 +1,3 @@
-
 'use client';
 
 import {
@@ -27,7 +26,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useUser, useDoc, useMemoFirebase, useFirestore } from '@/firebase';
 import { doc } from 'firebase/firestore';
 import { useEffect, useState, useMemo } from 'react';
@@ -57,6 +56,7 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const { user, isUserLoading } = useUser();
   const firestore = useFirestore();
@@ -129,8 +129,18 @@ export default function DashboardLayout({
   }, [mounted, user, isMetadataLoading, userMetadata, pathname, router]);
 
   const isActive = (href: string) => {
-    const cleanPath = pathname.split('?')[0];
-    return cleanPath === href || (href !== '/dashboard' && cleanPath.startsWith(href));
+    const searchParamsString = searchParams.toString();
+    const currentFull = pathname + (searchParamsString ? `?${searchParamsString}` : '');
+    
+    if (currentFull === href) return true;
+    if (!searchParamsString && pathname === href) return true;
+
+    const cleanHref = href.split('?')[0];
+    if (href !== '/dashboard' && href !== '/admin' && href !== '/review' && pathname.startsWith(cleanHref)) {
+      return true;
+    }
+    
+    return false;
   };
   
   const getNavItems = () => {
