@@ -17,7 +17,8 @@ import {
   ArrowRight, 
   ArrowUpDown,
   MessageSquare,
-  Loader2
+  Loader2,
+  Lock
 } from 'lucide-react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
@@ -142,7 +143,9 @@ function ReviewerDashboardContent() {
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-2">
           <h1 className="text-3xl font-bold tracking-tight text-foreground">Reviewer Command Center</h1>
-          <p className="text-muted-foreground italic">Mitigating bias through randomized evaluation.</p>
+          <p className="text-muted-foreground italic flex items-center gap-2">
+            <Lock className="h-4 w-4" /> Anonymous blind review protocol active.
+          </p>
         </div>
         <div className="flex gap-2">
           <Button variant={sortByRandom ? 'secondary' : 'outline'} onClick={() => setSortByRandom(!sortByRandom)} size="sm">
@@ -202,9 +205,9 @@ function ReviewerDashboardContent() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Candidate</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Current Score</TableHead>
+              <TableHead>Candidate Identifier</TableHead>
+              <TableHead>Evaluation Status</TableHead>
+              <TableHead>Review Score</TableHead>
               <TableHead className="text-right">Action</TableHead>
             </TableRow>
           </TableHeader>
@@ -214,10 +217,10 @@ function ReviewerDashboardContent() {
                 <TableCell>
                   <div className="flex flex-col">
                     <span className="font-bold flex items-center gap-2">
-                      {app.isBlind ? `Applicant ${app.id.substring(0, 6)}` : app.name}
+                      Applicant {app.id.substring(0, 6).toUpperCase()}
                       {app.needsDiscussion && <MessageSquare className="h-3 w-3 text-amber-600" />}
                     </span>
-                    <span className="text-[10px] text-muted-foreground uppercase">{app.school}</span>
+                    <span className="text-[10px] text-muted-foreground uppercase">Blind Evaluation Mode</span>
                   </div>
                 </TableCell>
                 <TableCell>

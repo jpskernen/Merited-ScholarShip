@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useMemo, useEffect, use } from 'react';
@@ -24,7 +23,8 @@ import {
   History,
   MessageSquare,
   ThumbsUp,
-  ThumbsDown
+  ThumbsDown,
+  ShieldAlert
 } from 'lucide-react';
 import { notFound, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -180,7 +180,8 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
     { key: 'other', label: 'Overall Impression', weight: '20%', desc: 'Essay & X-factor.' },
   ];
 
-  const displayName = application.isBlind ? `Applicant ${applicationId.substring(0, 6)}` : application.name;
+  // Enforce blind review anonymity
+  const anonymousIdentifier = `Applicant ${applicationId.substring(0, 6).toUpperCase()}`;
 
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)]">
@@ -191,8 +192,10 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
           </Button>
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
-              {displayName}
-              {application.isBlind && <Badge variant="outline">Blind Review</Badge>}
+              {anonymousIdentifier}
+              <Badge variant="secondary" className="bg-primary/10 text-primary">
+                <ShieldAlert className="h-3 w-3 mr-1" /> Blind Review Enabled
+              </Badge>
               {isReadOnly && <Badge className="bg-green-600">Finalized</Badge>}
             </h1>
           </div>
@@ -221,7 +224,7 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div><Label className="text-muted-foreground">GPA</Label><p className="font-bold">{application.gpa.toFixed(2)}</p></div>
                   <div><Label className="text-muted-foreground">Intended Major</Label><p className="font-bold">{application.major}</p></div>
-                  {!application.isBlind && <div><Label className="text-muted-foreground">School</Label><p className="font-bold">{application.school}</p></div>}
+                  <div><Label className="text-muted-foreground">Institution</Label><p className="font-bold text-muted-foreground italic">Hidden for Anonymity</p></div>
                 </div>
               </section>
               <Separator />
@@ -239,8 +242,8 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
               <section>
                 <h3 className="text-lg font-semibold mb-4">Uploaded Documents</h3>
                 <div className="grid grid-cols-2 gap-2">
-                  {application.transcripts && <Button variant="outline" className="justify-start" asChild><Link href={application.transcripts as string} target="_blank"><FileText className="h-4 w-4 mr-2" /> Transcript</Link></Button>}
-                  {application.resume && <Button variant="outline" className="justify-start" asChild><Link href={application.resume as string} target="_blank"><FileText className="h-4 w-4 mr-2" /> Resume</Link></Button>}
+                  {application.transcripts && <Button variant="outline" className="justify-start" asChild><Link href={application.transcripts as string} target="_blank"><FileText className="h-4 w-4 mr-2" /> View Transcript</Link></Button>}
+                  {application.resume && <Button variant="outline" className="justify-start" asChild><Link href={application.resume as string} target="_blank"><FileText className="h-4 w-4 mr-2" /> View Resume</Link></Button>}
                 </div>
               </section>
             </div>
