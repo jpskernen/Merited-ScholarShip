@@ -1,3 +1,4 @@
+
 'use client';
 
 import {
@@ -18,6 +19,7 @@ import {
   LayoutDashboard,
   Users,
   Award,
+  UserPlus
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -25,6 +27,7 @@ import { usePathname } from 'next/navigation';
 const adminNav = [
   { href: '/admin', label: 'Admin Dashboard', icon: LayoutDashboard },
   { href: '/admin/applicants', label: 'All Applicants', icon: Users },
+  { href: '/admin/reviewers', label: 'Manage Reviewers', icon: UserPlus },
   { href: '/admin/scholarships', label: 'Scholarships', icon: Award },
 ];
 

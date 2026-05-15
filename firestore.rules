@@ -1,10 +1,7 @@
+
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    /**
-     * SCHOLARSHIP PORTAL SECURITY RULES
-     */
 
     function isSignedIn() {
       return request.auth != null;
@@ -23,15 +20,15 @@ service cloud.firestore {
       );
     }
 
-    // Roles and Admin Configuration
+    // Role Admin Collection
     match /roles_admin/{userId} {
-      allow read: if request.auth != null && request.auth.uid == userId;
+      allow read: if isSignedIn() && request.auth.uid == userId;
       allow write: if false; 
     }
 
-    // Reviewer Registry
-    match /reviewers/{userId} {
-      allow read: if isSignedIn() && (request.auth.uid == userId || isSponsor());
+    // Reviewer Invites
+    match /invites/{inviteId} {
+      allow read: if true; // Needed for verify invite link
       allow write: if isSponsor();
     }
 
@@ -41,7 +38,13 @@ service cloud.firestore {
       allow write: if isSignedIn() && request.auth.uid == userId;
     }
 
-    // Applications - Applicants own theirs, Sponsors/Reviewers can evaluate
+    // Reviewers Registry
+    match /reviewers/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isSponsor());
+      allow write: if isSponsor() || (isSignedIn() && request.auth.uid == userId);
+    }
+
+    // Applications & Reviews
     match /applications/{appId} {
       allow read: if isSignedIn() && (
         (resource != null && request.auth.uid == resource.data.applicantId) || 
@@ -54,25 +57,18 @@ service cloud.firestore {
         isSponsor() || 
         isReviewer()
       );
-      allow delete: if isSignedIn() && (
-        (resource != null && request.auth.uid == resource.data.applicantId) || 
-        isSponsor()
-      );
 
-      // Nested reviews for committee evaluations
       match /reviews/{reviewId} {
-        allow read: if isSignedIn() && (isSponsor() || isReviewer() || request.auth.uid == resource.data.reviewerId);
+        allow read: if isSignedIn() && (isSponsor() || isReviewer() || (resource != null && request.auth.uid == resource.data.reviewerId));
         allow write: if isSignedIn() && (isSponsor() || isReviewer());
       }
     }
 
-    // Programs (Scholarships) - Anyone signed in can read, only sponsors can manage
     match /programs/{programId} {
       allow read: if isSignedIn();
       allow write: if isSponsor();
     }
 
-    // Fallback for subcollections used by collectionGroup queries
     match /{path=**}/reviews/{reviewDoc} {
       allow read, list: if isSignedIn() && (isSponsor() || isReviewer());
     }

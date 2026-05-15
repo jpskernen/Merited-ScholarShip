@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Progress } from '@/components/ui/progress';
 import { Switch } from '@/components/ui/switch';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { 
   FileText, 
   UserCircle, 
@@ -21,7 +22,9 @@ import {
   Calculator, 
   Lock, 
   History,
-  MessageSquare
+  MessageSquare,
+  ThumbsUp,
+  ThumbsDown
 } from 'lucide-react';
 import { notFound, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -73,6 +76,7 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
   });
   
   const [comment, setComment] = useState('');
+  const [recommendation, setRecommendation] = useState<'Accept' | 'Deny' | null>(null);
   const [markForDiscussion, setMarkForDiscussion] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -86,6 +90,7 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
       if (existingReview.comment) setComment(existingReview.comment);
       if (existingReview.aiAnalysis) setAiAnalysis(existingReview.aiAnalysis);
       if (existingReview.markForDiscussion) setMarkForDiscussion(existingReview.markForDiscussion);
+      if (existingReview.recommendation) setRecommendation(existingReview.recommendation);
     }
   }, [existingReview]);
 
@@ -104,6 +109,12 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
 
   const handleSubmitReview = async (isDraft: boolean = false) => {
     if (!firestore || !reviewer || !applicationId || (isReadOnly && !isDraft)) return;
+    
+    if (!isDraft && !recommendation) {
+      toast({ title: "Incomplete", description: "Please provide a recommendation (Accept/Deny).", variant: "destructive" });
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -115,6 +126,7 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
         scores,
         totalWeightedScore,
         comment,
+        recommendation,
         markForDiscussion,
         aiAnalysis,
         status: isDraft ? 'In Progress' : 'Submitted',
@@ -239,10 +251,10 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
           <Card className={`flex flex-col min-h-0 shadow-lg ${isReadOnly ? 'border-green-200' : 'border-primary/20'}`}>
             <CardHeader className="bg-primary/5 border-b py-4">
               <div className="flex justify-between items-center">
-                <CardTitle className="text-lg flex items-center gap-2"><Calculator className="h-5 w-5" /> Scoring Rubric</CardTitle>
+                <CardTitle className="text-lg flex items-center gap-2"><Calculator className="h-5 w-5" /> Evaluation</CardTitle>
                 <div className="flex items-center gap-2">
                   <History className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Persistence Enabled</span>
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Committee Workspace</span>
                 </div>
               </div>
               <Progress value={scorePercentage} className="h-1.5 mt-2" />
@@ -264,7 +276,6 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
                   <div className="flex justify-between items-baseline">
                     <div>
                       <Label className="text-sm font-bold">{item.label}</Label>
-                      <span className="text-[10px] font-bold text-primary ml-2 bg-primary/10 px-1 rounded">Weight: {item.weight}</span>
                     </div>
                     <Badge variant="outline" className="font-mono">{(scores as any)[item.key]} / 5</Badge>
                   </div>
@@ -273,19 +284,41 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
                     onValueChange={(val) => !isReadOnly && setScores({ ...scores, [item.key]: val[0] })}
                     disabled={isReadOnly}
                   />
-                  <p className="text-[10px] text-muted-foreground">{item.desc}</p>
                 </div>
               ))}
               
               <Separator />
 
               <div className="space-y-4">
+                <Label className="text-sm font-bold block">Committee Recommendation</Label>
+                <RadioGroup 
+                  value={recommendation || ''} 
+                  onValueChange={(val) => !isReadOnly && setRecommendation(val as any)}
+                  className="flex gap-4"
+                  disabled={isReadOnly}
+                >
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="Accept" id="accept" />
+                    <Label htmlFor="accept" className="flex items-center gap-1.5 cursor-pointer">
+                      <ThumbsUp className="h-4 w-4 text-green-600" /> Accept
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="Deny" id="deny" />
+                    <Label htmlFor="deny" className="flex items-center gap-1.5 cursor-pointer">
+                      <ThumbsDown className="h-4 w-4 text-red-600" /> Deny
+                    </Label>
+                  </div>
+                </RadioGroup>
+              </div>
+
+              <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label className="flex items-center gap-2"><MessageSquare className="h-4 w-4" /> Discuss with Committee</Label>
+                  <Label className="flex items-center gap-2"><MessageSquare className="h-4 w-4" /> Discussion Notes</Label>
                   <Switch checked={markForDiscussion} onCheckedChange={setMarkForDiscussion} disabled={isReadOnly} />
                 </div>
                 <Textarea 
-                  placeholder="Reviewer rationale and notes..." 
+                  placeholder="Reviewer rationale and committee notes..." 
                   className="min-h-[100px] text-sm" 
                   value={comment} 
                   onChange={(e) => setComment(e.target.value)} 
@@ -297,7 +330,7 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
             <CardFooter className="bg-muted/10 border-t p-6 gap-3">
               {!isReadOnly ? (
                 <>
-                  <Button variant="outline" className="flex-1" onClick={() => handleSubmitReview(true)} disabled={isSubmitting}>Save Progress</Button>
+                  <Button variant="outline" className="flex-1" onClick={() => handleSubmitReview(true)} disabled={isSubmitting}>Save Draft</Button>
                   <Button className="flex-1 font-bold" onClick={() => handleSubmitReview(false)} disabled={isSubmitting}>Submit Evaluation</Button>
                 </>
               ) : (
