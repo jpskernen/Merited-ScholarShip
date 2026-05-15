@@ -46,7 +46,7 @@ export default function SignupPage() {
       });
       
     } catch (error: any) {
-      console.error(error);
+      // Do not use console.error here as it triggers the dev overlay for common user errors
       let message = 'An unexpected error occurred during signup.';
       if (error.code === 'auth/email-already-in-use') {
         message = 'This email is already registered. Please try logging in instead.';
@@ -103,7 +103,7 @@ export default function SignupPage() {
           });
           router.push(isSuperAdmin ? '/admin' : '/dashboard/profile');
         } catch (err: any) {
-          console.error("Error finalizing signup:", err);
+          // Internal system error - can be logged but handle gracefully for UI
           setIsSigningUp(false);
         }
       }

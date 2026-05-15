@@ -39,9 +39,14 @@ export default function LoginPage() {
       });
       router.push('/dashboard');
     } catch (error: any) {
-      console.error(error);
+      // Do not use console.error here as it triggers the dev overlay for common user errors
       let message = 'Please check your credentials and try again.';
-      if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+      if (
+        error.code === 'auth/user-not-found' || 
+        error.code === 'auth/wrong-password' || 
+        error.code === 'auth/invalid-credential' ||
+        error.code === 'auth/invalid-email'
+      ) {
         message = 'Invalid email or password.';
       } else if (error.code === 'auth/too-many-requests') {
         message = 'Too many failed login attempts. Please try again later.';
