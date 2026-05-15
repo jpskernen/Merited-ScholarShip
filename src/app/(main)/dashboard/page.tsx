@@ -11,13 +11,17 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { ArrowRight, FileText, Search, User, CheckCircle, Clock, Users } from 'lucide-react';
+import { ArrowRight, FileText, Search, User, CheckCircle, Clock, Users, ShieldCheck, Loader2 } from 'lucide-react';
 import { useFirebase, useDoc, useMemoFirebase } from '@/firebase';
-import { doc } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import type { Applicant } from '@/types/applicant';
+import { useToast } from '@/hooks/use-toast';
+import { useState } from 'react';
 
 export default function DashboardPage() {
   const { user, firestore } = useFirebase();
+  const { toast } = useToast();
+  const [isElevating, setIsElevating] = useState(false);
 
   const userDocRef = useMemoFirebase(() => {
     if (!user || !firestore) return null;
@@ -36,6 +40,42 @@ export default function DashboardPage() {
 
   const progress = calculateProgress(profile);
 
+  const isPeyton = user?.email === 'peyton.vandenbemden@gmail.com';
+  const isAlreadyAdmin = profile?.role === 'Admin' || profile?.role === 'Sponsor';
+
+  const handleElevate = async () => {
+    if (!user || !firestore) return;
+    setIsElevating(true);
+    try {
+      // Update primary user profile
+      await setDoc(doc(firestore, 'users', user.uid), { 
+        role: 'Admin',
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      
+      // Grant system-level privileges
+      await setDoc(doc(firestore, 'roles_admin', user.uid), {
+        id: user.uid,
+        role: 'Admin',
+        grantedAt: serverTimestamp()
+      });
+
+      toast({
+        title: "Elevation Successful",
+        description: "Your account now has administrator privileges. Please refresh to access the Admin Panel.",
+      });
+    } catch (err) {
+      console.error(err);
+      toast({
+        title: "Elevation Failed",
+        description: "Could not grant privileges. Please try again or check console.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsElevating(false);
+    }
+  };
+
   return (
     <div className="space-y-8">
       <div>
@@ -44,6 +84,29 @@ export default function DashboardPage() {
           Hello {user?.displayName || 'Student'}, manage your scholarship application and track your status here.
         </p>
       </div>
+
+      {isPeyton && !isAlreadyAdmin && (
+        <Card className="border-amber-500 bg-amber-500/5 shadow-lg">
+          <CardHeader>
+            <CardTitle className="text-amber-600 flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5" /> Authorized System Elevation
+            </CardTitle>
+            <CardDescription>
+              Your account email is recognized. Click below to activate administrative privileges.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+             <Button 
+               onClick={handleElevate} 
+               disabled={isElevating}
+               className="bg-amber-600 hover:bg-amber-700 text-white font-bold"
+             >
+               {isElevating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
+               {isElevating ? 'Granting Privileges...' : 'Elevate to System Admin'}
+             </Button>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         <Card className={progress === 100 ? 'border-green-500/50 bg-green-500/5' : ''}>

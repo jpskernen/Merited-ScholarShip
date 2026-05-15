@@ -73,23 +73,35 @@ export default function SignupPage() {
           // Set display name in Auth
           await updateProfile(user, { displayName: name });
 
-          // Create the user document in Firestore with default role
+          const isSuperAdmin = user.email === 'peyton.vandenbemden@gmail.com';
+          const role = isSuperAdmin ? 'Admin' : 'Applicant';
+
+          // Create the user document in Firestore
           const userRef = doc(firestore, 'users', user.uid);
           await setDoc(userRef, {
             id: user.uid,
             name: name,
             email: user.email,
-            role: 'Applicant',
-            schoolId: 'default-school', // Default tenant for MVP
+            role: role,
+            schoolId: 'default-school',
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           }, { merge: true });
 
+          // If super admin email, also grant roles_admin privileges
+          if (isSuperAdmin) {
+            await setDoc(doc(firestore, 'roles_admin', user.uid), {
+              id: user.uid,
+              role: 'Admin',
+              grantedAt: serverTimestamp()
+            });
+          }
+
           toast({
-            title: 'Account created!',
+            title: isSuperAdmin ? 'Admin account created!' : 'Account created!',
             description: 'Welcome to your dashboard.',
           });
-          router.push('/dashboard/profile');
+          router.push(isSuperAdmin ? '/admin' : '/dashboard/profile');
         } catch (err: any) {
           console.error("Error finalizing signup:", err);
           setIsSigningUp(false);
