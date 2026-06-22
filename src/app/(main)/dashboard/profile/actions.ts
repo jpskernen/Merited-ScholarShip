@@ -2,7 +2,7 @@
 'use server';
 
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { getFirestore, doc, setDoc, getDoc } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, getDoc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { Applicant, ApplicantSchema } from '@/types/applicant';
 import { firebaseConfig } from '@/firebase/config';
@@ -18,7 +18,7 @@ async function uploadFile(file: File, path: string): Promise<string> {
     return getDownloadURL(snapshot.ref);
 }
 
-export async function saveApplicantData(userId: string, formData: FormData) {
+export async function saveApplicantData(userId: string, formData: FormData, isSubmit: boolean = false) {
   try {
     const rawData = Object.fromEntries(formData.entries());
     const docRef = doc(db, 'users', userId);
@@ -65,6 +65,13 @@ export async function saveApplicantData(userId: string, formData: FormData) {
         }
     }
 
+    if (isSubmit) {
+      dataToSave.status = 'Submitted';
+      dataToSave.submissionDate = new Date().toISOString();
+    } else if (!dataToSave.status) {
+      dataToSave.status = 'Draft';
+    }
+
     const finalDataForValidation = { ...dataToSave };
     for (const field of fileFields) {
         if (finalDataForValidation[field] === '') {
@@ -84,6 +91,17 @@ export async function saveApplicantData(userId: string, formData: FormData) {
     }
 
     await setDoc(docRef, validatedFields.data, { merge: true });
+
+    // If submitted, create an entry in the applications subcollection for history
+    if (isSubmit) {
+      const appHistoryRef = collection(db, 'users', userId, 'applications');
+      await addDoc(appHistoryRef, {
+        scholarshipName: 'General Scholarship Portfolio',
+        status: 'Submitted',
+        submissionDate: new Date().toISOString(),
+        updatedAt: serverTimestamp()
+      });
+    }
     
     return { success: true, id: userId };
 

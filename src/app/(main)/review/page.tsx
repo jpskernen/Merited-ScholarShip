@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useMemo, useState, useEffect, Suspense } from 'react';
@@ -18,12 +19,13 @@ import {
   ArrowUpDown,
   MessageSquare,
   Loader2,
-  Lock
+  Lock,
+  Clock
 } from 'lucide-react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useCollection, useFirebase, useMemoFirebase, useDoc } from '@/firebase';
-import { collection, collectionGroup, doc } from 'firebase/firestore';
+import { collection, collectionGroup, doc, query, where } from 'firebase/firestore';
 
 function ReviewerDashboardContent() {
   const { firestore, user } = useFirebase();
@@ -61,7 +63,8 @@ function ReviewerDashboardContent() {
 
   const applicantsQuery = useMemoFirebase(() => {
     if (!firestore || !isAuthorizedToReview) return null;
-    return collection(firestore, 'users');
+    // Only show applicants who have officially submitted
+    return query(collection(firestore, 'users'), where('role', '==', 'Applicant'), where('status', '==', 'Submitted'));
   }, [firestore, isAuthorizedToReview]);
   
   const { data: applicants, isLoading: isAppsLoading } = useCollection(applicantsQuery);
@@ -87,7 +90,7 @@ function ReviewerDashboardContent() {
 
     const myReviews = allReviews.filter(r => r.reviewerId === user.uid);
 
-    return applicants.filter(u => u.role === 'Applicant').map(app => {
+    return applicants.map(app => {
       const review = myReviews.find(r => r.applicationId === app.id);
       return {
         ...app,
@@ -144,7 +147,7 @@ function ReviewerDashboardContent() {
         <div className="space-y-2">
           <h1 className="text-3xl font-bold tracking-tight text-foreground">Reviewer Command Center</h1>
           <p className="text-muted-foreground italic flex items-center gap-2">
-            <Lock className="h-4 w-4" /> Anonymous blind review protocol active.
+            <Lock className="h-4 w-4" /> Anonymous blind review protocol active. Only submitted portfolios shown.
           </p>
         </div>
         <div className="flex gap-2">
@@ -206,8 +209,8 @@ function ReviewerDashboardContent() {
           <TableHeader>
             <TableRow>
               <TableHead>Candidate Identifier</TableHead>
-              <TableHead>Evaluation Status</TableHead>
-              <TableHead>Review Score</TableHead>
+              <TableHead>Eval Status</TableHead>
+              <TableHead>Score</TableHead>
               <TableHead className="text-right">Action</TableHead>
             </TableRow>
           </TableHeader>
@@ -220,7 +223,9 @@ function ReviewerDashboardContent() {
                       Applicant {app.id.substring(0, 6).toUpperCase()}
                       {app.needsDiscussion && <MessageSquare className="h-3 w-3 text-amber-600" />}
                     </span>
-                    <span className="text-[10px] text-muted-foreground uppercase">Blind Evaluation Mode</span>
+                    <span className="text-[10px] text-muted-foreground uppercase flex items-center gap-1">
+                      <Clock className="h-2 w-2" /> Submitted: {app.submissionDate ? new Date(app.submissionDate).toLocaleDateString() : 'N/A'}
+                    </span>
                   </div>
                 </TableCell>
                 <TableCell>

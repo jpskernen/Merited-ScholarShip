@@ -40,6 +40,8 @@ export const ApplicantSchema = z.object({
   recommendationLetter1: fileSchema,
   recommendationLetter2: fileSchema,
   isBlind: z.boolean().optional(),
+  status: z.enum(['Draft', 'Submitted', 'In Review', 'Awarded', 'Not Awarded']).optional(),
+  submissionDate: z.string().optional(),
   firstChoiceSchool: z.string().optional(),
   firstChoiceAccepted: z.boolean().optional(),
   secondChoiceSchool: z.string().optional(),

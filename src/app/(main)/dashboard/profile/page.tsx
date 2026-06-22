@@ -1,3 +1,4 @@
+
 'use client';
 
 import { Button } from '@/components/ui/button';
@@ -21,11 +22,13 @@ import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { useDoc, useFirebase, useMemoFirebase } from '@/firebase';
 import { doc } from 'firebase/firestore';
+import { CheckCircle, Send, Save } from 'lucide-react';
 
 export default function ProfilePage() {
   const { toast } = useToast();
   const { user, isUserLoading, firestore } = useFirebase();
   const [isSaving, setIsSaving] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
   const userDocRef = useMemoFirebase(() => {
@@ -72,29 +75,33 @@ export default function ProfilePage() {
   }, [user, applicantData, isUserLoading, setValue, reset]);
 
 
-  const onSubmit = async () => {
+  const onSave = async (submit: boolean = false) => {
     if (!user) {
         toast({ title: 'Error', description: 'You must be logged in to save your profile.', variant: 'destructive' });
         return;
     }
     if (!formRef.current) return;
 
-    setIsSaving(true);
+    if (submit) setIsSubmitting(true);
+    else setIsSaving(true);
+    
     const formData = new FormData(formRef.current);
 
     try {
-      const result = await saveApplicantData(user.uid, formData);
+      const result = await saveApplicantData(user.uid, formData, submit);
       if (result.success) {
         toast({
-            title: 'Success!',
-            description: 'Your scholarship application has been saved.',
+            title: submit ? 'Application Submitted!' : 'Draft Saved',
+            description: submit 
+              ? 'Your scholarship portfolio has been sent to the committee.' 
+              : 'Your progress has been saved securely.',
         });
       } else {
-        throw new Error(result.error || 'Failed to save application.');
+        throw new Error(result.error || 'Failed to process application.');
       }
     } catch (error) {
       console.error(error);
-      const message = error instanceof Error ? error.message : 'There was an error saving your application.';
+      const message = error instanceof Error ? error.message : 'There was an error processing your application.';
       toast({
         title: 'Error',
         description: message,
@@ -102,6 +109,7 @@ export default function ProfilePage() {
       });
     } finally {
       setIsSaving(false);
+      setIsSubmitting(false);
     }
   };
   
@@ -113,13 +121,24 @@ export default function ProfilePage() {
     );
   }
 
+  const isAlreadySubmitted = applicantData?.status === 'Submitted' || applicantData?.status === 'In Review';
+
   return (
-    <form ref={formRef} onSubmit={handleSubmit(onSubmit)} className="space-y-8" noValidate>
-      <div className="flex flex-col gap-2">
-        <h1 className="text-3xl font-bold">Scholarship Application</h1>
-        <p className="text-muted-foreground">
-          Complete your profile to apply for active scholarship opportunities.
-        </p>
+    <form ref={formRef} className="space-y-8" noValidate>
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Scholarship Application</h1>
+          <p className="text-muted-foreground">
+            {isAlreadySubmitted 
+              ? 'Your application is finalized and under review.' 
+              : 'Complete your profile to apply for active scholarship opportunities.'}
+          </p>
+        </div>
+        {isAlreadySubmitted && (
+          <div className="flex items-center gap-2 px-4 py-2 bg-green-500/10 text-green-500 rounded-full text-sm font-bold border border-green-500/20">
+            <CheckCircle className="h-4 w-4" /> Finalized & Submitted
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
@@ -134,7 +153,7 @@ export default function ProfilePage() {
             <CardContent className="space-y-6">
               <div className="space-y-2">
                 <Label htmlFor="name">Full Name</Label>
-                <Input id="name" {...register('name')} />
+                <Input id="name" {...register('name')} disabled={isAlreadySubmitted} />
                 {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
               </div>
 
@@ -156,6 +175,7 @@ export default function ProfilePage() {
                     type="email"
                     {...register('secondaryEmail')}
                     placeholder="Personal or parent email"
+                    disabled={isAlreadySubmitted}
                   />
                    {errors.secondaryEmail && <p className="text-xs text-destructive">{errors.secondaryEmail.message}</p>}
                 </div>
@@ -168,6 +188,7 @@ export default function ProfilePage() {
                   {...register('address')} 
                   placeholder="Street Address, City, State, ZIP"
                   className="min-h-[80px]"
+                  disabled={isAlreadySubmitted}
                 />
                 {errors.address && <p className="text-xs text-destructive">{errors.address.message}</p>}
               </div>
@@ -190,23 +211,24 @@ export default function ProfilePage() {
                     type="number"
                     step="0.01"
                     {...register('gpa')}
+                    disabled={isAlreadySubmitted}
                   />
                    {errors.gpa && <p className="text-xs text-destructive">{errors.gpa.message}</p>}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="major">Intended Major</Label>
-                  <Input id="major" {...register('major')} />
+                  <Input id="major" {...register('major')} disabled={isAlreadySubmitted} />
                   {errors.major && <p className="text-xs text-destructive">{errors.major.message}</p>}
                 </div>
               </div>
                <div className="space-y-2">
                 <Label htmlFor="school">Current High School</Label>
-                <Input id="school" {...register('school')} />
+                <Input id="school" {...register('school')} disabled={isAlreadySubmitted} />
                 {errors.school && <p className="text-xs text-destructive">{errors.school.message}</p>}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="activities">Activities & Leadership</Label>
-                <Textarea id="activities" {...register('activities')} placeholder="Clubs, sports, volunteering..." />
+                <Textarea id="activities" {...register('activities')} placeholder="Clubs, sports, volunteering..." disabled={isAlreadySubmitted} />
                 {errors.activities && <p className="text-xs text-destructive">{errors.activities.message}</p>}
               </div>
             </CardContent>
@@ -227,6 +249,7 @@ export default function ProfilePage() {
                   {...register('qualificationStatement')}
                   rows={6}
                   placeholder="Explain how you meet specific criteria and why the committee should select you..."
+                  disabled={isAlreadySubmitted}
                 />
                  {errors.qualificationStatement && <p className="text-xs text-destructive">{errors.qualificationStatement.message}</p>}
               </div>
@@ -238,38 +261,23 @@ export default function ProfilePage() {
                   {...register('essay')}
                   rows={10}
                   placeholder="Tell us about your background, achievements, and future goals..."
+                  disabled={isAlreadySubmitted}
                 />
                  {errors.essay && <p className="text-xs text-destructive">{errors.essay.message}</p>}
               </div>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-                <CardTitle>College Plans</CardTitle>
-                <CardDescription>
-                    Where do you plan to attend next fall?
-                </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-                <div className="space-y-4">
-                    <div className="space-y-2">
-                        <Label htmlFor="firstChoiceSchool">Top School Choice</Label>
-                        <Input id="firstChoiceSchool" {...register('firstChoiceSchool')} />
-                    </div>
-                    <div className="flex items-center space-x-2">
-                        <Switch id="firstChoiceAccepted" checked={watch('firstChoiceAccepted')} onCheckedChange={(checked) => setValue('firstChoiceAccepted', checked)} />
-                        <Label htmlFor="firstChoiceAccepted">I have already been accepted</Label>
-                    </div>
-                </div>
-            </CardContent>
-          </Card>
-
-           <div className="flex justify-end">
-                <Button type="submit" size="lg" className="w-full sm:w-auto" disabled={isSaving}>
-                  {isSaving ? 'Saving Application...' : 'Save & Submit Application'}
-                </Button>
-              </div>
+          {!isAlreadySubmitted && (
+            <div className="flex flex-col sm:flex-row gap-4 justify-end">
+              <Button type="button" variant="outline" size="lg" onClick={() => onSave(false)} disabled={isSaving || isSubmitting}>
+                <Save className="mr-2 h-4 w-4" /> {isSaving ? 'Saving...' : 'Save Draft'}
+              </Button>
+              <Button type="button" size="lg" className="bg-primary hover:bg-primary/90 font-bold" onClick={() => onSave(true)} disabled={isSaving || isSubmitting}>
+                <Send className="mr-2 h-4 w-4" /> {isSubmitting ? 'Submitting...' : 'Finalize & Submit Application'}
+              </Button>
+            </div>
+          )}
         </div>
 
         <div className="space-y-8">
@@ -283,13 +291,13 @@ export default function ProfilePage() {
             <CardContent className="space-y-6">
               <div className="space-y-2">
                 <Label htmlFor="transcripts">Official Transcripts</Label>
-                <Input id="transcripts" type="file" accept=".pdf,.doc,.docx" {...register('transcripts')} />
+                <Input id="transcripts" type="file" accept=".pdf,.doc,.docx" {...register('transcripts')} disabled={isAlreadySubmitted} />
                 {applicantData?.transcripts && <p className="text-[10px] text-muted-foreground">Current: <a href={applicantData.transcripts as string} target="_blank" className="underline">View Transcript</a></p>}
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="resume">Resume / CV</Label>
-                <Input id="resume" type="file" accept=".pdf,.doc,.docx" {...register('resume')} />
+                <Input id="resume" type="file" accept=".pdf,.doc,.docx" {...register('resume')} disabled={isAlreadySubmitted} />
                 {applicantData?.resume && <p className="text-[10px] text-muted-foreground">Current: <a href={applicantData.resume as string} target="_blank" className="underline">View Resume</a></p>}
               </div>
 
@@ -297,19 +305,14 @@ export default function ProfilePage() {
 
               <div className="space-y-2">
                 <Label htmlFor="recommendationLetter1">Letter of Recommendation #1</Label>
-                <Input id="recommendationLetter1" type="file" accept=".pdf,.doc,.docx" {...register('recommendationLetter1')} />
+                <Input id="recommendationLetter1" type="file" accept=".pdf,.doc,.docx" {...register('recommendationLetter1')} disabled={isAlreadySubmitted} />
                 {applicantData?.recommendationLetter1 && <p className="text-[10px] text-muted-foreground">Current: <a href={applicantData.recommendationLetter1 as string} target="_blank" className="underline">View Letter 1</a></p>}
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="recommendationLetter2">Letter of Recommendation #2</Label>
-                <Input id="recommendationLetter2" type="file" accept=".pdf,.doc,.docx" {...register('recommendationLetter2')} />
+                <Input id="recommendationLetter2" type="file" accept=".pdf,.doc,.docx" {...register('recommendationLetter2')} disabled={isAlreadySubmitted} />
                 {applicantData?.recommendationLetter2 && <p className="text-[10px] text-muted-foreground">Current: <a href={applicantData.recommendationLetter2 as string} target="_blank" className="underline">View Letter 2</a></p>}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="acceptanceLetter">Acceptance Letter (Optional)</Label>
-                 <Input id="acceptanceLetter" type="file" accept=".pdf,.doc,.docx" {...register('acceptanceLetter')} />
               </div>
             </CardContent>
           </Card>
