@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useMemo, useEffect, use } from 'react';
@@ -11,39 +12,29 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Progress } from '@/components/ui/progress';
 import { Switch } from '@/components/ui/switch';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { 
   FileText, 
   UserCircle, 
   Sparkles, 
   Loader2, 
   ChevronLeft, 
+  ChevronRight,
   Calculator, 
   Lock, 
   History,
   MessageSquare,
-  ThumbsUp,
-  ThumbsDown,
-  ShieldAlert
+  ShieldAlert,
+  GraduationCap
 } from 'lucide-react';
 import { notFound, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useDoc, useFirebase, useMemoFirebase } from '@/firebase';
-import { doc, setDoc } from 'firebase/firestore';
+import { useDoc, useFirebase, useMemoFirebase, useCollection } from '@/firebase';
+import { doc, setDoc, collection, query, where } from 'firebase/firestore';
 import type { Applicant } from '@/types/applicant';
+import type { Scholarship } from '@/types/scholarship';
 import { useToast } from '@/hooks/use-toast';
 import { analyzeScholarshipFit, type AnalyzeFitOutput } from '@/ai/flows/analyze-scholarship-fit';
-import scholarshipsData from '@/data/scholarships.json';
-
-// Rubric Weights (Total = 1.0)
-const RUBRIC_WEIGHTS = {
-  gpa: 0.25,
-  extracurriculars: 0.15,
-  volunteerism: 0.15,
-  leadership: 0.15,
-  major: 0.10,
-  other: 0.20
-};
 
 export default function ApplicationReviewPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -59,6 +50,16 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
 
   const { data: application, isLoading } = useDoc<Applicant>(applicantRef);
 
+  // Fetch all assigned programs for this reviewer to find the relevant scholarship
+  const programsQuery = useMemoFirebase(() => {
+    if (!firestore || !reviewer || !application) return null;
+    return query(collection(firestore, 'programs'), where('reviewerIds', 'array-contains', reviewer.uid));
+  }, [firestore, reviewer, application]);
+
+  const { data: programs, isLoading: isProgramsLoading } = useCollection<Scholarship>(programsQuery);
+
+  const activeScholarship = programs?.[0]; // In MVP, assume first assigned program
+
   const reviewRef = useMemoFirebase(() => {
     if (!firestore || !reviewer || !applicationId) return null;
     return doc(firestore, 'applications', applicationId, 'reviews', reviewer.uid);
@@ -66,17 +67,9 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
 
   const { data: existingReview, isLoading: isReviewLoading } = useDoc(reviewRef);
 
-  const [scores, setScores] = useState({
-    gpa: 3,
-    extracurriculars: 3,
-    volunteerism: 3,
-    leadership: 3,
-    major: 3,
-    other: 3
-  });
-  
+  const [scores, setScores] = useState<Record<string, number>>({});
   const [comment, setComment] = useState('');
-  const [recommendation, setRecommendation] = useState<'Accept' | 'Deny' | null>(null);
+  const [recommendation, setRecommendation] = useState<string>('');
   const [markForDiscussion, setMarkForDiscussion] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -94,24 +87,34 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
     }
   }, [existingReview]);
 
-  const totalWeightedScore = useMemo(() => {
-    return (
-      (scores.gpa * RUBRIC_WEIGHTS.gpa) +
-      (scores.extracurriculars * RUBRIC_WEIGHTS.extracurriculars) +
-      (scores.volunteerism * RUBRIC_WEIGHTS.volunteerism) +
-      (scores.leadership * RUBRIC_WEIGHTS.leadership) +
-      (scores.major * RUBRIC_WEIGHTS.major) +
-      (scores.other * RUBRIC_WEIGHTS.other)
-    );
-  }, [scores]);
+  // Handle dynamic rubric loading
+  useEffect(() => {
+    if (activeScholarship?.rubric && Object.keys(scores).length === 0 && !existingReview) {
+      const initialScores: Record<string, number> = {};
+      activeScholarship.rubric.forEach(r => {
+        initialScores[r.criterion] = 5; // Default middle
+      });
+      setScores(initialScores);
+    }
+  }, [activeScholarship, scores, existingReview]);
 
-  const scorePercentage = (totalWeightedScore / 5) * 100;
+  const totalWeightedScore = useMemo(() => {
+    if (!activeScholarship?.rubric) return 0;
+    let total = 0;
+    activeScholarship.rubric.forEach(r => {
+      const score = scores[r.criterion] || 0;
+      total += (score * (r.weight / 100));
+    });
+    return total;
+  }, [scores, activeScholarship]);
+
+  const scorePercentage = (totalWeightedScore / 10) * 100;
 
   const handleSubmitReview = async (isDraft: boolean = false) => {
     if (!firestore || !reviewer || !applicationId || (isReadOnly && !isDraft)) return;
     
     if (!isDraft && !recommendation) {
-      toast({ title: "Incomplete", description: "Please provide a recommendation (Accept/Deny).", variant: "destructive" });
+      toast({ title: "Incomplete", description: "Please provide a recommendation.", variant: "destructive" });
       return;
     }
 
@@ -123,6 +126,7 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
         applicationId: applicationId,
         reviewerId: reviewer.uid,
         reviewerName: reviewer.displayName || 'Reviewer',
+        scholarshipId: activeScholarship?.id || 'unknown',
         scores,
         totalWeightedScore,
         comment,
@@ -145,19 +149,18 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
   };
 
   const runAiAnalysis = async () => {
-    if (!application) return;
+    if (!application || !activeScholarship) return;
     setIsAnalyzing(true);
     try {
-      const defaultCriteria = scholarshipsData[0]?.description || "General excellence.";
       const result = await analyzeScholarshipFit({
         applicantData: {
           gpa: application.gpa,
           major: application.major,
-          essay: application.essay,
+          essay: application.essay || '',
           activities: application.activities,
           interests: application.interests,
         },
-        scholarshipCriteria: defaultCriteria,
+        scholarshipCriteria: activeScholarship.description,
       });
       setAiAnalysis(result);
     } catch (error) {
@@ -165,22 +168,12 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
     } finally { setIsAnalyzing(false); }
   };
 
-  if (isLoading || isReviewLoading) {
-    return <div className="flex h-[80vh] items-center justify-center animate-pulse text-muted-foreground">Loading Application...</div>;
+  if (isLoading || isReviewLoading || isProgramsLoading) {
+    return <div className="flex h-[80vh] items-center justify-center animate-pulse text-muted-foreground">Syncing evaluation workspace...</div>;
   }
 
   if (!application) notFound();
 
-  const criteria = [
-    { key: 'gpa', label: 'Academic Excellence', weight: '25%', desc: 'Transcripts & GPA quality.' },
-    { key: 'extracurriculars', label: 'Involvement', weight: '15%', desc: 'Participation depth.' },
-    { key: 'volunteerism', label: 'Community Service', weight: '15%', desc: 'Consistency & impact.' },
-    { key: 'leadership', label: 'Leadership', weight: '15%', desc: 'Roles & initiative.' },
-    { key: 'major', label: 'Major Alignment', weight: '10%', desc: 'Fit for field of study.' },
-    { key: 'other', label: 'Overall Impression', weight: '20%', desc: 'Essay & X-factor.' },
-  ];
-
-  // Enforce blind review anonymity
   const anonymousIdentifier = `Applicant ${applicationId.substring(0, 6).toUpperCase()}`;
 
   return (
@@ -194,7 +187,7 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
             <h1 className="text-2xl font-bold flex items-center gap-2">
               {anonymousIdentifier}
               <Badge variant="secondary" className="bg-primary/10 text-primary">
-                <ShieldAlert className="h-3 w-3 mr-1" /> Blind Review Enabled
+                <ShieldAlert className="h-3 w-3 mr-1" /> Blind Review
               </Badge>
               {isReadOnly && <Badge className="bg-green-600">Finalized</Badge>}
             </h1>
@@ -206,8 +199,8 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
             AI Fit Assessment
           </Button>
           <div className="text-right">
-            <p className="text-[10px] font-bold text-muted-foreground uppercase">Weighted Total</p>
-            <p className="text-2xl font-black text-primary">{totalWeightedScore.toFixed(2)}<span className="text-sm font-normal text-muted-foreground">/5</span></p>
+            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Weighted Score</p>
+            <p className="text-2xl font-black text-primary">{totalWeightedScore.toFixed(2)}<span className="text-sm font-normal text-muted-foreground">/10</span></p>
           </div>
         </div>
       </div>
@@ -224,26 +217,32 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div><Label className="text-muted-foreground">GPA</Label><p className="font-bold">{application.gpa.toFixed(2)}</p></div>
                   <div><Label className="text-muted-foreground">Intended Major</Label><p className="font-bold">{application.major}</p></div>
-                  <div><Label className="text-muted-foreground">Institution</Label><p className="font-bold text-muted-foreground italic">Hidden for Anonymity</p></div>
+                  <div className="col-span-2">
+                     <Label className="text-muted-foreground flex items-center gap-1.5"><GraduationCap className="h-3.5 w-3.5" /> Program</Label>
+                     <p className="font-medium text-primary">{activeScholarship?.name || 'Assigned Program'}</p>
+                  </div>
                 </div>
               </section>
               <Separator />
               <section>
-                <h4 className="font-semibold text-sm mb-2">Activities & Leadership</h4>
+                <h4 className="font-semibold text-sm mb-2 uppercase tracking-tight">Activities & Leadership</h4>
                 <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{application.activities}</p>
               </section>
               <section>
-                <h4 className="font-semibold text-sm mb-2">Personal Statement</h4>
+                <h4 className="font-semibold text-sm mb-2 uppercase tracking-tight">Personal Statement</h4>
                 <div className="p-4 rounded-lg bg-muted/20 border text-sm leading-relaxed whitespace-pre-wrap">
-                  {application.essay}
+                  {application.essay || "No text essay provided."}
                 </div>
               </section>
               <Separator />
               <section>
-                <h3 className="text-lg font-semibold mb-4">Uploaded Documents</h3>
+                <h3 className="text-lg font-semibold mb-4">Supporting Evidence</h3>
                 <div className="grid grid-cols-2 gap-2">
-                  {application.transcripts && <Button variant="outline" className="justify-start" asChild><Link href={application.transcripts as string} target="_blank"><FileText className="h-4 w-4 mr-2" /> View Transcript</Link></Button>}
-                  {application.resume && <Button variant="outline" className="justify-start" asChild><Link href={application.resume as string} target="_blank"><FileText className="h-4 w-4 mr-2" /> View Resume</Link></Button>}
+                  {application.transcripts && <Button variant="outline" className="justify-start" asChild><Link href={application.transcripts as string} target="_blank"><FileText className="h-4 w-4 mr-2" /> Academic Transcript</Link></Button>}
+                  {application.resume && <Button variant="outline" className="justify-start" asChild><Link href={application.resume as string} target="_blank"><FileText className="h-4 w-4 mr-2" /> Student Resume</Link></Button>}
+                  {application.essays?.map((essay, i) => (
+                    <Button key={i} variant="outline" className="justify-start" asChild><Link href={essay.fileUrl} target="_blank"><FileText className="h-4 w-4 mr-2" /> Essay: {essay.fileName}</Link></Button>
+                  ))}
                 </div>
               </section>
             </div>
@@ -254,10 +253,10 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
           <Card className={`flex flex-col min-h-0 shadow-lg ${isReadOnly ? 'border-green-200' : 'border-primary/20'}`}>
             <CardHeader className="bg-primary/5 border-b py-4">
               <div className="flex justify-between items-center">
-                <CardTitle className="text-lg flex items-center gap-2"><Calculator className="h-5 w-5" /> Evaluation</CardTitle>
+                <CardTitle className="text-lg flex items-center gap-2"><Calculator className="h-5 w-5" /> Score Rubric</CardTitle>
                 <div className="flex items-center gap-2">
                   <History className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Committee Workspace</span>
+                  <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Committee Panel</span>
                 </div>
               </div>
               <Progress value={scorePercentage} className="h-1.5 mt-2" />
@@ -267,24 +266,25 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
               {aiAnalysis && (
                 <div className="p-4 rounded-xl bg-primary/5 border border-primary/20">
                   <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-[10px] font-bold uppercase text-primary flex items-center gap-1.5">AI Fit Analysis</h4>
+                    <h4 className="text-[10px] font-black uppercase text-primary flex items-center gap-1.5">AI Merit Analysis</h4>
                     <Badge variant="secondary" className="font-mono">{aiAnalysis.fitScore}% Match</Badge>
                   </div>
                   <p className="text-xs text-muted-foreground italic leading-relaxed mb-2">"{aiAnalysis.justification}"</p>
                 </div>
               )}
 
-              {criteria.map((item) => (
-                <div key={item.key} className="space-y-2">
+              {activeScholarship?.rubric?.map((item) => (
+                <div key={item.criterion} className="space-y-2">
                   <div className="flex justify-between items-baseline">
-                    <div>
-                      <Label className="text-sm font-bold">{item.label}</Label>
+                    <div className="flex flex-col">
+                      <Label className="text-sm font-bold">{item.criterion}</Label>
+                      <span className="text-[9px] text-muted-foreground uppercase font-black tracking-widest">Weight: {item.weight}%</span>
                     </div>
-                    <Badge variant="outline" className="font-mono">{(scores as any)[item.key]} / 5</Badge>
+                    <Badge variant="outline" className="font-mono text-primary border-primary/30">{scores[item.criterion] || 0} / 10</Badge>
                   </div>
                   <Slider 
-                    value={[(scores as any)[item.key]]} max={5} min={1} step={1} 
-                    onValueChange={(val) => !isReadOnly && setScores({ ...scores, [item.key]: val[0] })}
+                    value={[scores[item.criterion] || 5]} max={10} min={1} step={1} 
+                    onValueChange={(val) => !isReadOnly && setScores({ ...scores, [item.criterion]: val[0] })}
                     disabled={isReadOnly}
                   />
                 </div>
@@ -292,36 +292,27 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
               
               <Separator />
 
-              <div className="space-y-4">
-                <Label className="text-sm font-bold block">Committee Recommendation</Label>
-                <RadioGroup 
-                  value={recommendation || ''} 
-                  onValueChange={(val) => !isReadOnly && setRecommendation(val as any)}
-                  className="flex gap-4"
-                  disabled={isReadOnly}
-                >
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="Accept" id="accept" />
-                    <Label htmlFor="accept" className="flex items-center gap-1.5 cursor-pointer">
-                      <ThumbsUp className="h-4 w-4 text-green-600" /> Accept
-                    </Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="Deny" id="deny" />
-                    <Label htmlFor="deny" className="flex items-center gap-1.5 cursor-pointer">
-                      <ThumbsDown className="h-4 w-4 text-red-600" /> Deny
-                    </Label>
-                  </div>
-                </RadioGroup>
+              <div className="space-y-3">
+                <Label className="text-sm font-black uppercase tracking-tight block">Final Recommendation</Label>
+                <Select value={recommendation} onValueChange={(val) => !isReadOnly && setRecommendation(val)} disabled={isReadOnly}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select outcome..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Recommend">Highly Recommend</SelectItem>
+                    <SelectItem value="Do Not Recommend">Do Not Recommend</SelectItem>
+                    <SelectItem value="Undecided">Undecided / Needs Discussion</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label className="flex items-center gap-2"><MessageSquare className="h-4 w-4" /> Discussion Notes</Label>
+                  <Label className="flex items-center gap-2"><MessageSquare className="h-4 w-4" /> Committee Notes</Label>
                   <Switch checked={markForDiscussion} onCheckedChange={setMarkForDiscussion} disabled={isReadOnly} />
                 </div>
                 <Textarea 
-                  placeholder="Reviewer rationale and committee notes..." 
+                  placeholder="Rationale for scores and recommendation..." 
                   className="min-h-[100px] text-sm" 
                   value={comment} 
                   onChange={(e) => setComment(e.target.value)} 
@@ -334,11 +325,16 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
               {!isReadOnly ? (
                 <>
                   <Button variant="outline" className="flex-1" onClick={() => handleSubmitReview(true)} disabled={isSubmitting}>Save Draft</Button>
-                  <Button className="flex-1 font-bold" onClick={() => handleSubmitReview(false)} disabled={isSubmitting}>Submit Evaluation</Button>
+                  <Button className="flex-1 font-bold" onClick={() => handleSubmitReview(false)} disabled={isSubmitting}>Submit Review</Button>
                 </>
               ) : (
-                <div className="w-full flex items-center justify-center py-2 text-xs text-muted-foreground italic gap-2 bg-muted/50 rounded-md">
-                   <Lock className="h-3 w-3" /> Evaluation Finalized
+                <div className="w-full flex flex-col gap-3">
+                  <div className="flex items-center justify-center py-2 text-xs text-muted-foreground italic gap-2 bg-muted/50 rounded-md">
+                     <Lock className="h-3 w-3" /> Assessment Finalized
+                  </div>
+                  <Button variant="secondary" className="w-full" onClick={() => router.push('/review')}>
+                    Next in Queue <ChevronRight className="ml-2 h-4 w-4" />
+                  </Button>
                 </div>
               )}
             </CardFooter>
