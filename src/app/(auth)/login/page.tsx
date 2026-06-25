@@ -32,31 +32,20 @@ export default function LoginPage() {
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Synchronized Redirection Logic
+  // Redirection Logic after authentication
   useEffect(() => {
     if (!auth || !firestore) return;
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user && isSigningIn) {
         try {
-          const [adminDoc, userDoc, reviewerDoc] = await Promise.all([
-            getDoc(doc(firestore, 'roles_admin', user.uid)),
-            getDoc(doc(firestore, 'users', user.uid)),
-            getDoc(doc(firestore, 'reviewers', user.uid))
-          ]);
-          
-          const isAdmin = adminDoc.exists() || user.email === 'peyton.vandenbemden@gmail.com';
+          const userDoc = await getDoc(doc(firestore, 'users', user.uid));
           const userData = userDoc.exists() ? userDoc.data() : null;
-          const isReviewer = 
-            userData?.role === 'Reviewer' || 
-            reviewerDoc.exists() || 
-            user.email === 'hello@merited.com' || 
-            user.email === 'hellow@meritedapp.com' ||
-            user.email === 'kernenpm@gmail.com';
+          const role = userData?.role?.toLowerCase();
 
-          if (isAdmin) {
+          if (role === 'admin') {
             router.push('/admin');
-          } else if (isReviewer) {
-            router.push('/review');
+          } else if (role === 'reviewer') {
+            router.push('/reviewer/dashboard');
           } else {
             router.push('/dashboard');
           }

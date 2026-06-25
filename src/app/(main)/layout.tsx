@@ -39,9 +39,8 @@ const applicantNav = [
 ];
 
 const reviewerNav = [
-  { href: '/review', label: 'Review Center', icon: LayoutDashboard },
-  { href: '/review?status=pending', label: 'New Assignments', icon: FileSearch },
-  { href: '/review?status=completed', label: 'Finalized Scores', icon: Award },
+  { href: '/reviewer/dashboard', label: 'Review Center', icon: LayoutDashboard },
+  { href: '/reviewer/dashboard?status=pending', label: 'New Assignments', icon: FileSearch },
 ];
 
 const adminNav = [
@@ -68,22 +67,25 @@ function DashboardLayoutContent({
   useEffect(() => {
     if (mounted && !isUserLoading) {
       if (!user) {
-        if (pathname.startsWith('/dashboard') || pathname.startsWith('/admin') || pathname.startsWith('/review')) {
+        if (pathname.startsWith('/dashboard') || pathname.startsWith('/admin') || pathname.startsWith('/reviewer')) {
           router.push('/login');
         }
         return;
       }
 
-      const isAdmin = role === 'Admin' || role === 'Sponsor';
-      const isReviewer = role === 'Reviewer' || isAdmin;
+      const userRole = role?.toLowerCase();
+      const isAdmin = userRole === 'admin';
+      const isReviewer = userRole === 'reviewer' || isAdmin;
+      const isStudent = userRole === 'student' || userRole === 'applicant' || !userRole;
 
       // Access Control Redirection
       if (pathname.startsWith('/admin') && !isAdmin) {
         router.push('/unauthorized');
-      } else if (pathname.startsWith('/review') && !isReviewer) {
+      } else if (pathname.startsWith('/reviewer') && !isReviewer) {
         router.push('/unauthorized');
-      } else if (pathname.startsWith('/dashboard') && isReviewer) {
-        router.push(isAdmin ? '/admin' : '/review');
+      } else if (pathname.startsWith('/dashboard') && !isStudent && !isAdmin) {
+        // Redirect non-students away from the student dashboard unless admin
+        router.push(isReviewer ? '/reviewer/dashboard' : '/login');
       }
     }
   }, [mounted, user, role, isUserLoading, pathname, router]);
@@ -94,20 +96,21 @@ function DashboardLayoutContent({
     if (currentFull === href) return true;
     if (!searchParamsString && pathname === href) return true;
     const cleanHref = href.split('?')[0];
-    if (href !== '/dashboard' && href !== '/admin' && href !== '/review' && pathname.startsWith(cleanHref)) {
+    if (href !== '/dashboard' && href !== '/admin' && href !== '/reviewer/dashboard' && pathname.startsWith(cleanHref)) {
       return true;
     }
     return false;
   };
   
   const getNavItems = () => {
-    if (role === 'Admin' || role === 'Sponsor') return adminNav;
-    if (role === 'Reviewer') return reviewerNav;
+    const userRole = role?.toLowerCase();
+    if (userRole === 'admin') return adminNav;
+    if (userRole === 'reviewer') return reviewerNav;
     return applicantNav;
   };
 
   const currentNav = getNavItems();
-  const shouldShowLayout = pathname.startsWith('/dashboard') || pathname.startsWith('/admin') || pathname.startsWith('/review');
+  const shouldShowLayout = pathname.startsWith('/dashboard') || pathname.startsWith('/admin') || pathname.startsWith('/reviewer');
 
   if (!mounted || isUserLoading) {
     return (
@@ -122,13 +125,13 @@ function DashboardLayoutContent({
   
   if (!user && shouldShowLayout) return null;
 
-  // Render guard for unauthorized paths
-  const isAdmin = role === 'Admin' || role === 'Sponsor';
-  const isReviewer = role === 'Reviewer' || isAdmin;
+  // Final check before rendering
+  const userRole = role?.toLowerCase();
+  const isAdmin = userRole === 'admin';
+  const isReviewer = userRole === 'reviewer' || isAdmin;
   
   if (pathname.startsWith('/admin') && !isAdmin) return null;
-  if (pathname.startsWith('/review') && !isReviewer) return null;
-  if (pathname.startsWith('/dashboard') && isReviewer) return null;
+  if (pathname.startsWith('/reviewer') && !isReviewer) return null;
 
   if (!shouldShowLayout) return <>{children}</>;
 
