@@ -131,10 +131,10 @@ export default function RecommendUploadPage({ params }: { params: Promise<{ toke
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4 md:p-6">
         <div className="flex flex-col items-center gap-4">
           <Loader2 className="h-10 w-10 animate-spin text-primary" />
-          <p className="animate-pulse text-muted-foreground font-medium">Loading portal...</p>
+          <p className="animate-pulse text-muted-foreground font-medium text-sm">Loading portal...</p>
         </div>
       </div>
     );
@@ -142,30 +142,30 @@ export default function RecommendUploadPage({ params }: { params: Promise<{ toke
 
   if (error || isSuccess) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
-        <Card className="max-w-md w-full shadow-xl">
-          <CardHeader className="text-center">
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4 md:p-6">
+        <Card className="max-w-md w-full shadow-xl border-primary/5">
+          <CardHeader className="text-center p-6">
             <div className="flex justify-center mb-4">
               {isSuccess ? (
                 <div className="bg-green-100 p-3 rounded-full">
-                  <CheckCircle className="h-10 w-10 text-green-600" />
+                  <CheckCircle className="h-8 w-8 md:h-10 md:w-10 text-green-600" />
                 </div>
               ) : (
                 <div className="bg-destructive/10 p-3 rounded-full">
-                  <AlertCircle className="h-10 w-10 text-destructive" />
+                  <AlertCircle className="h-8 w-8 md:h-10 md:w-10 text-destructive" />
                 </div>
               )}
             </div>
-            <CardTitle>{isSuccess ? 'Submission Complete' : 'Access Restricted'}</CardTitle>
-            <CardDescription>
+            <CardTitle className="text-xl md:text-2xl">{isSuccess ? 'Submission Complete' : 'Access Restricted'}</CardTitle>
+            <CardDescription className="text-xs md:text-sm mt-2">
               {isSuccess 
                 ? 'Your recommendation letter has been securely received by the scholarship committee.' 
                 : error}
             </CardDescription>
           </CardHeader>
-          <CardFooter className="flex justify-center border-t pt-6">
-            <Button variant="outline" asChild>
-              <Link href="/">Return to Merited</Link>
+          <CardFooter className="flex justify-center border-t p-6">
+            <Button variant="outline" asChild className="w-full md:w-auto">
+              <Link href="/">Return to ScholarShip</Link>
             </Button>
           </CardFooter>
         </Card>
@@ -174,38 +174,38 @@ export default function RecommendUploadPage({ params }: { params: Promise<{ toke
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 p-4">
-      <div className="mb-8 flex flex-col items-center gap-2">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 p-4 md:p-6">
+      <div className="mb-6 md:mb-8 flex flex-col items-center gap-2">
         <div className="flex items-center gap-2">
-          <GraduationCap className="h-8 w-8 text-primary" />
-          <span className="text-2xl font-bold">Merited</span>
+          <GraduationCap className="h-7 w-7 md:h-8 md:w-8 text-primary" />
+          <span className="text-xl md:text-2xl font-bold">ScholarShip</span>
         </div>
-        <Badge variant="outline" className="bg-primary/5 text-[10px] font-black uppercase tracking-widest px-2">
+        <Badge variant="outline" className="bg-primary/5 text-[9px] md:text-[10px] font-black uppercase tracking-widest px-2 py-0.5">
           Secure Recommender Portal
         </Badge>
       </div>
 
-      <Card className="max-w-lg w-full shadow-2xl border-primary/10">
-        <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl">Upload Recommendation</CardTitle>
-          <CardDescription>
-            You have been requested to provide a recommendation for <strong>{tokenData.studentName}</strong>.
+      <Card className="max-w-lg w-full shadow-2xl border-primary/10 overflow-hidden">
+        <CardHeader className="space-y-1 p-5 md:p-6 bg-card">
+          <CardTitle className="text-xl md:text-2xl">Upload Recommendation</CardTitle>
+          <CardDescription className="text-xs md:text-sm">
+            Providing a recommendation for <strong>{tokenData.studentName}</strong>.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="rounded-lg bg-muted/30 p-4 border space-y-3">
-            <div className="flex justify-between items-center text-sm">
+        <CardContent className="space-y-6 p-5 md:p-6 pt-0 md:pt-0">
+          <div className="rounded-lg bg-muted/30 p-4 border space-y-2 md:space-y-3">
+            <div className="flex justify-between items-center text-xs md:text-sm">
               <span className="text-muted-foreground">Scholarship:</span>
-              <span className="font-bold">{tokenData.scholarshipTitle}</span>
+              <span className="font-bold text-right ml-2">{tokenData.scholarshipTitle}</span>
             </div>
-            <div className="flex justify-between items-center text-sm">
+            <div className="flex justify-between items-center text-xs md:text-sm">
               <span className="text-muted-foreground">Recommender:</span>
               <span className="font-bold">{tokenData.recommenderName}</span>
             </div>
           </div>
 
           <div className="space-y-4">
-            <Label htmlFor="pdf-upload" className="text-sm font-bold flex items-center gap-2">
+            <Label htmlFor="pdf-upload" className="text-xs md:text-sm font-bold flex items-center gap-2">
               <FileText className="h-4 w-4 text-primary" /> Select Letter (PDF Only)
             </Label>
             <div className="relative">
@@ -213,36 +213,36 @@ export default function RecommendUploadPage({ params }: { params: Promise<{ toke
                 id="pdf-upload" 
                 type="file" 
                 accept=".pdf" 
-                className="cursor-pointer"
+                className="cursor-pointer h-10 md:h-11 text-xs md:text-sm"
                 onChange={handleFileUpload}
                 disabled={isUploading}
               />
               {isUploading && (
                 <div className="absolute inset-0 flex items-center justify-center bg-background/80 rounded-md">
-                  <div className="w-full px-6 space-y-2">
-                    <div className="flex justify-between text-xs font-bold text-primary">
+                  <div className="w-full px-4 md:px-6 space-y-2">
+                    <div className="flex justify-between text-[10px] md:text-xs font-bold text-primary">
                       <span>Uploading...</span>
                       <span>{Math.round(uploadProgress)}%</span>
                     </div>
-                    <Progress value={uploadProgress} className="h-2" />
+                    <Progress value={uploadProgress} className="h-1.5 md:h-2" />
                   </div>
                 </div>
               )}
             </div>
             {uploadError && (
-              <Alert variant="destructive" className="py-2">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription className="text-xs">{uploadError}</AlertDescription>
+              <Alert variant="destructive" className="py-2 px-3">
+                <AlertCircle className="h-3 w-3" />
+                <AlertDescription className="text-[10px] md:text-xs">{uploadError}</AlertDescription>
               </Alert>
             )}
-            <p className="text-[10px] text-muted-foreground">
-              Max file size: 10MB. Once uploaded, the student and selection committee will be notified.
+            <p className="text-[9px] md:text-[10px] text-muted-foreground leading-tight">
+              Max file size: 10MB. Once uploaded, the student and selection committee will be notified automatically.
             </p>
           </div>
         </CardContent>
-        <CardFooter className="bg-muted/10 border-t flex flex-col items-center p-6 gap-2">
-          <p className="text-[10px] text-muted-foreground text-center">
-            By uploading, you agree that this document is an authentic evaluation of the candidate.
+        <CardFooter className="bg-muted/10 border-t flex flex-col items-center p-5 md:p-6 gap-2">
+          <p className="text-[9px] md:text-[10px] text-muted-foreground text-center italic">
+            By uploading, you verify that this document is an authentic evaluation of the candidate.
           </p>
         </CardFooter>
       </Card>

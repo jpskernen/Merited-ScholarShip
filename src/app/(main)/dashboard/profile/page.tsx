@@ -41,6 +41,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { cn } from '@/lib/utils';
 
 export default function ProfilePage() {
   const { toast } = useToast();
@@ -285,31 +286,59 @@ export default function ProfilePage() {
 
   const isAlreadySubmitted = applicantData?.status === 'Submitted' || applicantData?.status === 'In Review';
 
+  // Step Indicators for visual progress
+  const steps = [
+    { id: 1, label: 'Academic' },
+    { id: 2, label: 'Essays' },
+    { id: 3, label: 'Recommendations' },
+  ];
+
   return (
-    <form ref={formRef} className="space-y-8" noValidate>
-      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-        <div className="flex items-center gap-4">
-          <div>
-            <h1 className="text-3xl font-bold">Scholarship Application</h1>
-            <p className="text-muted-foreground">
-              {isAlreadySubmitted ? 'Application finalized and under review.' : 'Complete your portfolio to apply.'}
-            </p>
-          </div>
+    <form ref={formRef} className="space-y-6 md:space-y-8" noValidate>
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-2xl md:text-3xl font-bold">Scholarship Application</h1>
+          <p className="text-xs md:text-sm text-muted-foreground">
+            {isAlreadySubmitted ? 'Application finalized and under review.' : 'Complete your portfolio to apply.'}
+          </p>
           {!isAlreadySubmitted && (
-            <div className="flex items-center">
-              {saveStatus === 'saving' && <Badge variant="outline" className="animate-pulse text-primary border-primary/20"><CloudUpload className="h-3 w-3 mr-1" /> Saving...</Badge>}
-              {saveStatus === 'saved' && <Badge variant="outline" className="text-green-500 border-green-500/20"><CloudCheck className="h-3 w-3 mr-1" /> Saved</Badge>}
-              {saveStatus === 'error' && <Badge variant="destructive"><AlertCircle className="h-3 w-3 mr-1" /> Error</Badge>}
+            <div className="flex items-center pt-1">
+              {saveStatus === 'saving' && <Badge variant="outline" className="animate-pulse text-primary border-primary/20 text-[10px]"><CloudUpload className="h-3 w-3 mr-1" /> Saving...</Badge>}
+              {saveStatus === 'saved' && <Badge variant="outline" className="text-green-500 border-green-500/20 text-[10px]"><CloudCheck className="h-3 w-3 mr-1" /> Saved</Badge>}
+              {saveStatus === 'error' && <Badge variant="destructive" className="text-[10px]"><AlertCircle className="h-3 w-3 mr-1" /> Error</Badge>}
             </div>
           )}
         </div>
         {isAlreadySubmitted && (
-          <Badge className="bg-green-500/10 text-green-500 border-green-500/20 py-1 px-4"><CheckCircle className="h-4 w-4 mr-2" /> Submitted</Badge>
+          <Badge className="bg-green-500/10 text-green-500 border-green-500/20 py-1 px-4 self-start md:self-center">
+            <CheckCircle className="h-4 w-4 mr-2" /> Submitted
+          </Badge>
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-        <div className="lg:col-span-2 space-y-8">
+      {/* Responsive Step Indicator */}
+      <div className="flex items-center justify-between px-2 mb-4">
+        {steps.map((step, idx) => (
+          <div key={step.id} className="flex items-center flex-1 last:flex-none">
+            <div className="flex flex-col items-center gap-1.5">
+              <div className={cn(
+                "flex h-8 w-8 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors",
+                step.id === 1 ? "bg-primary border-primary text-primary-foreground" : "border-muted-foreground/30 text-muted-foreground"
+              )}>
+                {step.id}
+              </div>
+              <span className="text-[10px] font-medium hidden md:block">{step.label}</span>
+              <span className="text-[10px] font-medium md:hidden">{step.id}</span>
+            </div>
+            {idx < steps.length - 1 && (
+              <div className="mx-2 h-[2px] flex-1 bg-muted-foreground/20" />
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 md:gap-8 lg:grid-cols-3">
+        <div className="lg:col-span-2 space-y-6 md:space-y-8">
           {formError && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
@@ -318,41 +347,42 @@ export default function ProfilePage() {
           )}
 
           <Card>
-            <CardHeader>
-              <CardTitle>Step 1: Academic Profile</CardTitle>
-              <CardDescription>Basic details and transcript upload.</CardDescription>
+            <CardHeader className="p-4 md:p-6">
+              <CardTitle className="text-lg md:text-xl">Step 1: Academic Profile</CardTitle>
+              <CardDescription className="text-xs md:text-sm">Basic details and transcript upload.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
+            <CardContent className="space-y-4 md:space-y-6 p-4 md:p-6 pt-0 md:pt-0">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="name">Full Name</Label>
-                  <Input id="name" {...register('name')} disabled={isAlreadySubmitted} onBlur={performAutoSave} />
-                  {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
+                  <Label htmlFor="name" className="text-sm">Full Name</Label>
+                  <Input id="name" {...register('name')} disabled={isAlreadySubmitted} onBlur={performAutoSave} className="h-9" />
+                  {errors.name && <p className="text-[10px] text-destructive">{errors.name.message}</p>}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="gpa">GPA</Label>
-                  <Input id="gpa" type="number" step="0.01" {...register('gpa')} disabled={isAlreadySubmitted} onBlur={performAutoSave} />
-                  {errors.gpa && <p className="text-xs text-destructive">{errors.gpa.message}</p>}
+                  <Label htmlFor="gpa" className="text-sm">GPA</Label>
+                  <Input id="gpa" type="number" step="0.01" {...register('gpa')} disabled={isAlreadySubmitted} onBlur={performAutoSave} className="h-9" />
+                  {errors.gpa && <p className="text-[10px] text-destructive">{errors.gpa.message}</p>}
                 </div>
               </div>
 
               <div className="space-y-4">
-                <Label>Official Transcript (PDF only)</Label>
+                <Label className="text-sm">Official Transcript (PDF only)</Label>
                 <div className="flex flex-col gap-2">
                   <Input 
                     type="file" 
                     accept=".pdf" 
                     onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], 'transcripts')}
                     disabled={isAlreadySubmitted || !!uploadProgress.transcripts}
+                    className="h-9 text-xs"
                   />
-                  {uploadErrors.transcripts && <p className="text-xs text-destructive flex items-center gap-1"><AlertCircle className="h-3 w-3" /> {uploadErrors.transcripts}</p>}
+                  {uploadErrors.transcripts && <p className="text-[10px] text-destructive flex items-center gap-1"><AlertCircle className="h-3 w-3" /> {uploadErrors.transcripts}</p>}
                   {uploadProgress.transcripts !== undefined && (
                     <div className="space-y-1">
                       <Progress value={uploadProgress.transcripts} className="h-1" />
                     </div>
                   )}
                   {applicantData?.transcripts && (
-                    <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <p className="text-[10px] text-muted-foreground flex items-center gap-1.5">
                       <Paperclip className="h-3 w-3" /> Current: <a href={applicantData.transcripts as string} target="_blank" className="underline text-primary">View Transcript</a>
                     </p>
                   )}
@@ -362,26 +392,26 @@ export default function ProfilePage() {
           </Card>
 
           <Card>
-            <CardHeader>
-              <CardTitle>Step 2: Essay Submission</CardTitle>
-              <CardDescription>Type your response or upload a PDF.</CardDescription>
+            <CardHeader className="p-4 md:p-6">
+              <CardTitle className="text-lg md:text-xl">Step 2: Essay Submission</CardTitle>
+              <CardDescription className="text-xs md:text-sm">Type your response or upload a PDF.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-8">
+            <CardContent className="space-y-6 md:space-y-8 p-4 md:p-6 pt-0 md:pt-0">
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <Label className="text-base font-bold">Qualification Statement</Label>
-                  <div className="flex bg-muted rounded-md p-0.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <Label className="text-sm md:text-base font-bold">Qualification Statement</Label>
+                  <div className="flex bg-muted rounded-md p-0.5 w-fit">
                     <Button type="button" size="sm" variant={essayInputMethod.qual[0] === 'text' ? 'secondary' : 'ghost'} className="h-7 text-[10px]" onClick={() => essayInputMethod.qual[1]('text')}><Type className="h-3 w-3 mr-1" /> Type</Button>
                     <Button type="button" size="sm" variant={essayInputMethod.qual[0] === 'file' ? 'secondary' : 'ghost'} className="h-7 text-[10px]" onClick={() => essayInputMethod.qual[1]('file')}><Upload className="h-3 w-3 mr-1" /> Upload</Button>
                   </div>
                 </div>
                 
                 {essayInputMethod.qual[0] === 'text' ? (
-                  <Textarea {...register('qualificationStatement')} rows={6} placeholder="Why are you qualified?" disabled={isAlreadySubmitted} onBlur={performAutoSave} />
+                  <Textarea {...register('qualificationStatement')} rows={5} placeholder="Why are you qualified?" disabled={isAlreadySubmitted} onBlur={performAutoSave} className="text-sm" />
                 ) : (
                   <div className="p-4 border-2 border-dashed rounded-lg space-y-4">
-                    <Input type="file" accept=".pdf" onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], 'essays', 'qualification')} disabled={isAlreadySubmitted} />
-                    {uploadErrors.essays && <p className="text-xs text-destructive flex items-center gap-1"><AlertCircle className="h-3 w-3" /> {uploadErrors.essays}</p>}
+                    <Input type="file" accept=".pdf" onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], 'essays', 'qualification')} disabled={isAlreadySubmitted} className="text-xs h-9" />
+                    {uploadErrors.essays && <p className="text-[10px] text-destructive flex items-center gap-1"><AlertCircle className="h-3 w-3" /> {uploadErrors.essays}</p>}
                   </div>
                 )}
               </div>
@@ -389,19 +419,19 @@ export default function ProfilePage() {
               <Separator />
 
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <Label className="text-base font-bold">Personal Statement</Label>
-                  <div className="flex bg-muted rounded-md p-0.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <Label className="text-sm md:text-base font-bold">Personal Statement</Label>
+                  <div className="flex bg-muted rounded-md p-0.5 w-fit">
                     <Button type="button" size="sm" variant={essayInputMethod.general[0] === 'text' ? 'secondary' : 'ghost'} className="h-7 text-[10px]" onClick={() => essayInputMethod.general[1]('text')}><Type className="h-3 w-3 mr-1" /> Type</Button>
                     <Button type="button" size="sm" variant={essayInputMethod.general[0] === 'file' ? 'secondary' : 'ghost'} className="h-7 text-[10px]" onClick={() => essayInputMethod.general[1]('file')}><Upload className="h-3 w-3 mr-1" /> Upload</Button>
                   </div>
                 </div>
                 
                 {essayInputMethod.general[0] === 'text' ? (
-                  <Textarea {...register('essay')} rows={8} placeholder="Tell us your story..." disabled={isAlreadySubmitted} onBlur={performAutoSave} />
+                  <Textarea {...register('essay')} rows={6} placeholder="Tell us your story..." disabled={isAlreadySubmitted} onBlur={performAutoSave} className="text-sm" />
                 ) : (
                   <div className="p-4 border-2 border-dashed rounded-lg space-y-4">
-                    <Input type="file" accept=".pdf" onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], 'essays', 'personal-statement')} disabled={isAlreadySubmitted} />
+                    <Input type="file" accept=".pdf" onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], 'essays', 'personal-statement')} disabled={isAlreadySubmitted} className="text-xs h-9" />
                   </div>
                 )}
               </div>
@@ -409,44 +439,47 @@ export default function ProfilePage() {
           </Card>
 
           <Card>
-            <CardHeader>
-              <CardTitle>Step 3: Recommendation Letters</CardTitle>
-              <CardDescription>Request official endorsements from teachers or mentors.</CardDescription>
+            <CardHeader className="p-4 md:p-6">
+              <CardTitle className="text-lg md:text-xl">Step 3: Recommendation Letters</CardTitle>
+              <CardDescription className="text-xs md:text-sm">Request official endorsements.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
+            <CardContent className="space-y-4 p-4 md:p-6 pt-0 md:pt-0">
               {[1, 2].map((i) => {
                 const status = (applicantData as any)?.[`recommendationStatus${i}`] || 'Not Requested';
                 return (
                   <div key={i} className="rounded-lg border p-4 space-y-4 bg-muted/20">
-                    <div className="flex items-center justify-between">
-                      <h4 className="font-bold flex items-center gap-2">
-                        <UserPlus className="h-4 w-4 text-primary" /> Recommendation Request #{i}
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="text-xs md:text-sm font-bold flex items-center gap-2">
+                        <UserPlus className="h-3 w-3 md:h-4 md:w-4 text-primary" /> Request #{i}
                       </h4>
-                      <Badge variant={status === 'Received' ? 'default' : 'secondary'} className={status === 'Pending' ? 'bg-amber-500/10 text-amber-600 border-amber-200' : ''}>
-                        {status === 'Pending' && <Clock className="h-3 w-3 mr-1 animate-pulse" />}
+                      <Badge variant={status === 'Received' ? 'default' : 'secondary'} className={cn(
+                        "text-[9px] px-2 py-0.5",
+                        status === 'Pending' ? 'bg-amber-500/10 text-amber-600 border-amber-200' : ''
+                      )}>
+                        {status === 'Pending' && <Clock className="h-2 w-2 mr-1 animate-pulse" />}
                         {status}
                       </Badge>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                      <div className="space-y-2">
-                        <Label>Recommender Name</Label>
-                        <Input {...register(`recommenderName${i}` as any)} placeholder="Dr. Smith" disabled={isAlreadySubmitted || status !== 'Not Requested'} />
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <div className="space-y-1">
+                        <Label className="text-[10px] md:text-xs">Name</Label>
+                        <Input {...register(`recommenderName${i}` as any)} placeholder="Dr. Smith" disabled={isAlreadySubmitted || status !== 'Not Requested'} className="h-8 text-xs" />
                       </div>
-                      <div className="space-y-2">
-                        <Label>Recommender Email</Label>
-                        <Input type="email" {...register(`recommenderEmail${i}` as any)} placeholder="smith@school.edu" disabled={isAlreadySubmitted || status !== 'Not Requested'} />
+                      <div className="space-y-1">
+                        <Label className="text-[10px] md:text-xs">Email</Label>
+                        <Input type="email" {...register(`recommenderEmail${i}` as any)} placeholder="smith@school.edu" disabled={isAlreadySubmitted || status !== 'Not Requested'} className="h-8 text-xs" />
                       </div>
-                      <div className="space-y-2">
-                        <Label>Title/Relationship</Label>
-                        <Input {...register(`recommenderTitle${i}` as any)} placeholder="Math Teacher" disabled={isAlreadySubmitted || status !== 'Not Requested'} />
+                      <div className="space-y-1">
+                        <Label className="text-[10px] md:text-xs">Relationship</Label>
+                        <Input {...register(`recommenderTitle${i}` as any)} placeholder="Teacher" disabled={isAlreadySubmitted || status !== 'Not Requested'} className="h-8 text-xs" />
                       </div>
                     </div>
 
                     {recErrors[i] && (
-                      <Alert variant="destructive" className="py-2">
-                        <AlertCircle className="h-4 w-4" />
-                        <AlertDescription className="text-xs">{recErrors[i]}</AlertDescription>
+                      <Alert variant="destructive" className="py-1 px-3">
+                        <AlertCircle className="h-3 w-3" />
+                        <AlertDescription className="text-[10px]">{recErrors[i]}</AlertDescription>
                       </Alert>
                     )}
 
@@ -454,11 +487,11 @@ export default function ProfilePage() {
                       <Button 
                         type="button" 
                         size="sm" 
-                        className="w-full sm:w-auto" 
+                        className="w-full h-8 text-xs" 
                         onClick={() => handleSendRecommendationRequest(i)}
                         disabled={isRequestingRec[i]}
                       >
-                        {isRequestingRec[i] ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Mail className="h-4 w-4 mr-2" />}
+                        {isRequestingRec[i] ? <Loader2 className="h-3 w-3 mr-2 animate-spin" /> : <Mail className="h-3 w-3 mr-2" />}
                         Send Request
                       </Button>
                     )}
@@ -469,12 +502,12 @@ export default function ProfilePage() {
           </Card>
 
           {!isAlreadySubmitted && (
-            <div className="flex gap-4 justify-end">
-              <Button type="button" variant="outline" onClick={() => onSave(false)} disabled={isSaving || isSubmitting}>
+            <div className="flex flex-col sm:flex-row gap-3 justify-end">
+              <Button type="button" variant="outline" onClick={() => onSave(false)} disabled={isSaving || isSubmitting} className="w-full sm:w-auto h-10">
                 {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                 Save Draft
               </Button>
-              <Button type="button" className="font-bold" onClick={() => onSave(true)} disabled={isSaving || isSubmitting}>
+              <Button type="button" className="font-bold w-full sm:w-auto h-10" onClick={() => onSave(true)} disabled={isSaving || isSubmitting}>
                 {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
                 Submit Application
               </Button>
@@ -483,25 +516,25 @@ export default function ProfilePage() {
         </div>
 
         <div className="space-y-6">
-          <Card className="sticky top-24">
-            <CardHeader><CardTitle>Submission Checklist</CardTitle></CardHeader>
-            <CardContent className="space-y-4 text-sm">
+          <Card className="lg:sticky lg:top-24">
+            <CardHeader className="p-4 md:p-6"><CardTitle className="text-base md:text-lg">Checklist</CardTitle></CardHeader>
+            <CardContent className="space-y-3 md:space-y-4 text-xs md:text-sm p-4 md:p-6 pt-0 md:pt-0">
               <div className="flex items-center gap-2">
-                <Badge variant={getValues('name') ? 'default' : 'outline'}>{getValues('name') ? '✓' : '!'}</Badge>
+                <Badge variant={getValues('name') ? 'default' : 'outline'} className="h-5 w-5 p-0 justify-center">{getValues('name') ? '✓' : '!'}</Badge>
                 <span>Profile Details</span>
               </div>
               <div className="flex items-center gap-2">
-                <Badge variant={applicantData?.transcripts ? 'default' : 'outline'}>{applicantData?.transcripts ? '✓' : '!'}</Badge>
+                <Badge variant={applicantData?.transcripts ? 'default' : 'outline'} className="h-5 w-5 p-0 justify-center">{applicantData?.transcripts ? '✓' : '!'}</Badge>
                 <span>Academic Transcript</span>
               </div>
               <div className="flex items-center gap-2">
-                <Badge variant={(watch('essay') || applicantData?.essays?.some(e => e.promptId === 'personal-statement')) ? 'default' : 'outline'}>
+                <Badge variant={(watch('essay') || applicantData?.essays?.some(e => e.promptId === 'personal-statement')) ? 'default' : 'outline'} className="h-5 w-5 p-0 justify-center">
                   {(watch('essay') || applicantData?.essays?.some(e => e.promptId === 'personal-statement')) ? '✓' : '!'}
                 </Badge>
                 <span>Personal Statement</span>
               </div>
               <div className="flex items-center gap-2">
-                <Badge variant={((applicantData as any)?.recommendationStatus1 === 'Pending' || (applicantData as any)?.recommendationStatus1 === 'Received') ? 'default' : 'outline'}>
+                <Badge variant={((applicantData as any)?.recommendationStatus1 === 'Pending' || (applicantData as any)?.recommendationStatus1 === 'Received') ? 'default' : 'outline'} className="h-5 w-5 p-0 justify-center">
                   {((applicantData as any)?.recommendationStatus1 === 'Pending' || (applicantData as any)?.recommendationStatus1 === 'Received') ? '✓' : '!'}
                 </Badge>
                 <span>Rec Letter #1 Request</span>
