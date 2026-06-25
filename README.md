@@ -23,14 +23,19 @@ Empowering students through academic opportunities and streamlined committee rev
    firebase emulators:start
    ```
 
-### 2. Deployment
-This project is optimized for **Firebase App Hosting**.
-1. **Build Check**: Our build process automatically validates that all environment variables are set.
-2. **Deploy**:
-   ```bash
-   npm run build
-   && firebase deploy
-   ```
+### 2. Deployment (Firebase App Hosting)
+This project is built with Next.js 15 and requires dynamic server-side capabilities. We use **Firebase App Hosting** (not static Firebase Hosting).
+
+**Important:** You use the **same** Firebase project for Hosting as you do for Firestore and Auth.
+
+1. **Initialize App Hosting**:
+   Go to the [Firebase Console](https://console.firebase.google.com/), select your project, and navigate to **Build > App Hosting**.
+2. **Connect Repository**:
+   Connect your GitHub/GitLab repository. Firebase will detect the Next.js app and automatically configure the build pipeline.
+3. **Set Environment Variables**:
+   In the App Hosting dashboard for your backend, go to the **Settings** tab and add the environment variables from your `.env.local` (e.g., `NEXT_PUBLIC_FIREBASE_API_KEY`).
+4. **Deploy**:
+   Any push to your main branch will now automatically trigger a build and deployment.
 
 ## 🛠 Administrative Tasks
 
