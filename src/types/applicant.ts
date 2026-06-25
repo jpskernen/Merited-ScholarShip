@@ -2,22 +2,20 @@
 // src/types/applicant.ts
 import { z } from 'zod';
 
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
-const ACCEPTED_FILE_TYPES = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB per user request
+const ACCEPTED_FILE_TYPES = ['application/pdf'];
 
 const fileSchema = z.union([
     z.string().url().optional().nullable(),
     z.instanceof(File).optional()
-      .refine(file => file ? file.size <= MAX_FILE_SIZE : true, `Max file size is 5MB.`)
+      .refine(file => file ? file.size <= MAX_FILE_SIZE : true, `Max file size is 10MB.`)
       .refine(
-        file => file ? file.type === '' || ACCEPTED_FILE_TYPES.includes(file.type) : true,
-        ".pdf, .doc, and .docx files are accepted."
+        file => file ? ACCEPTED_FILE_TYPES.includes(file.type) : true,
+        "Only PDF files are accepted."
       ),
     z.literal(null),
     z.literal(undefined),
-    z.any().refine(val => val === null || val === undefined || (typeof val === 'object' && val.length === 0), "File is required").optional(),
 ]).optional();
-
 
 export const ApplicantSchema = z.object({
   id: z.string().optional(),
@@ -33,34 +31,21 @@ export const ApplicantSchema = z.object({
   school: z.string().min(1, "School is required."),
   interests: z.string().min(1, 'Please list at least one interest.'),
   activities: z.string().min(1, 'Please list at least one activity.'),
-  essay: z.string().min(50, 'Essay must be at least 50 characters long.'),
-  qualificationStatement: z.string().min(50, 'Qualification statement must be at least 50 characters long.'),
-  transcripts: fileSchema,
-  resume: fileSchema,
-  recommendationLetter1: fileSchema,
-  recommendationLetter2: fileSchema,
-  isBlind: z.boolean().optional(),
+  essay: z.string().optional().nullable(),
+  qualificationStatement: z.string().optional().nullable(),
+  essays: z.array(z.object({
+    promptId: z.string(),
+    fileUrl: z.string().url(),
+    fileName: z.string(),
+    uploadedAt: z.any().optional()
+  })).optional().default([]),
+  documents: z.array(z.string().url()).optional().default([]),
+  transcripts: z.string().url().optional().nullable(),
+  resume: z.string().url().optional().nullable(),
   status: z.enum(['Draft', 'Submitted', 'In Review', 'Awarded', 'Not Awarded']).optional(),
   submissionDate: z.string().optional(),
-  firstChoiceSchool: z.string().optional(),
-  firstChoiceAccepted: z.boolean().optional(),
-  secondChoiceSchool: z.string().optional(),
-  secondChoiceAccepted: z.boolean().optional(),
-  thirdChoiceSchool: z.string().optional(),
-  thirdChoiceAccepted: z.boolean().optional(),
-  fourthChoiceSchool: z.string().optional(),
-  fifthChoiceSchool: z.string().optional(),
-  acceptanceLetter: fileSchema,
-  satActScore: z.string().optional(),
-}).transform(data => {
-    return {
-        ...data,
-        transcripts: data.transcripts || null,
-        resume: data.resume || null,
-        acceptanceLetter: data.acceptanceLetter || null,
-        recommendationLetter1: data.recommendationLetter1 || null,
-        recommendationLetter2: data.recommendationLetter2 || null,
-    }
+  updatedAt: z.any().optional(),
+  schoolId: z.string().optional(),
 });
 
 export type Applicant = z.infer<typeof ApplicantSchema>;

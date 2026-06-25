@@ -20,16 +20,23 @@ import { saveApplicantData } from './actions';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { Separator } from '@/components/ui/separator';
 import { useDoc, useFirebase, useMemoFirebase } from '@/firebase';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { CheckCircle, Send, Save, Loader2, CloudCheck, CloudUpload, AlertCircle } from 'lucide-react';
+import { doc, setDoc, serverTimestamp, updateDoc, arrayUnion } from 'firebase/firestore';
+import { ref, uploadBytesResumable, getDownloadURL, getStorage } from 'firebase/storage';
+import { CheckCircle, Send, Save, Loader2, CloudCheck, CloudUpload, AlertCircle, FileText, Upload, Type, Paperclip } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export default function ProfilePage() {
   const { toast } = useToast();
   const { user, isUserLoading, firestore } = useFirebase();
+  const storage = getStorage();
+  
   const [isSaving, setIsSaving] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+  
   const formRef = useRef<HTMLFormElement>(null);
 
   const userDocRef = useMemoFirebase(() => {
@@ -46,6 +53,7 @@ export default function ProfilePage() {
     setValue,
     reset,
     getValues,
+    watch
   } = useForm<Applicant>({
     resolver: zodResolver(ApplicantSchema),
     defaultValues: {
@@ -60,12 +68,16 @@ export default function ProfilePage() {
       activities: '',
       essay: '',
       qualificationStatement: '',
-      firstChoiceSchool: '',
-      firstChoiceAccepted: false,
+      essays: [],
+      documents: []
     }
   });
-  
-  // Load initial data
+
+  const essayInputMethod = {
+    qual: useState<'text' | 'file'>('text'),
+    general: useState<'text' | 'file'>('text'),
+  };
+
   useEffect(() => {
     if (user && !isUserLoading) {
       if (!applicantData?.email) setValue('email', user.email || '');
@@ -76,7 +88,72 @@ export default function ProfilePage() {
     }
   }, [user, applicantData, isUserLoading, setValue, reset]);
 
-  // Auto-save logic
+  const handleFileUpload = async (file: File, field: string, promptId?: string) => {
+    if (!user || !file) return;
+
+    // Validation
+    if (file.type !== 'application/pdf') {
+      toast({ title: "Invalid File Type", description: "Please upload a PDF file.", variant: "destructive" });
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) { // 10MB
+      toast({ title: "File Too Large", description: "Maximum file size is 10MB.", variant: "destructive" });
+      return;
+    }
+
+    const path = promptId 
+      ? `applications/${user.uid}/essays/${promptId}.pdf`
+      : `applications/${user.uid}/${field}.pdf`;
+    
+    const storageRef = ref(storage, path);
+    const uploadTask = uploadBytesResumable(storageRef, file);
+
+    uploadTask.on('state_changed', 
+      (snapshot) => {
+        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+        setUploadProgress(prev => ({ ...prev, [field]: progress }));
+      }, 
+      (error) => {
+        toast({ title: "Upload Failed", description: error.message, variant: "destructive" });
+        setUploadProgress(prev => {
+          const next = { ...prev };
+          delete next[field];
+          return next;
+        });
+      }, 
+      async () => {
+        const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+        
+        if (promptId) {
+          // Update Essays Array
+          await updateDoc(userDocRef!, {
+            essays: arrayUnion({
+              promptId,
+              fileUrl: downloadURL,
+              fileName: file.name,
+              uploadedAt: serverTimestamp()
+            }),
+            updatedAt: serverTimestamp()
+          });
+        } else {
+          // Update specific document field or general docs array
+          const updateObj: any = { [field]: downloadURL, updatedAt: serverTimestamp() };
+          if (field === 'transcripts') {
+            updateObj.documents = arrayUnion(downloadURL);
+          }
+          await updateDoc(userDocRef!, updateObj);
+        }
+
+        toast({ title: "Upload Successful", description: `${file.name} has been saved.` });
+        setUploadProgress(prev => {
+          const next = { ...prev };
+          delete next[field];
+          return next;
+        });
+      }
+    );
+  };
+
   const performAutoSave = useCallback(async () => {
     if (!user || !firestore || !isDirty || applicantData?.status === 'Submitted' || applicantData?.status === 'In Review') {
       return;
@@ -87,7 +164,6 @@ export default function ProfilePage() {
       const currentValues = getValues();
       const docRef = doc(firestore, 'users', user.uid);
       
-      // We only auto-save text fields to avoid unnecessary heavy file processing in the background
       await setDoc(docRef, {
         ...currentValues,
         status: 'Draft',
@@ -97,25 +173,17 @@ export default function ProfilePage() {
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 3000);
     } catch (error) {
-      console.error('Auto-save failed:', error);
       setSaveStatus('error');
     }
   }, [user, firestore, isDirty, applicantData?.status, getValues]);
 
-  // Trigger: 30 second interval
   useEffect(() => {
-    const interval = setInterval(() => {
-      performAutoSave();
-    }, 30000);
+    const interval = setInterval(() => performAutoSave(), 30000);
     return () => clearInterval(interval);
   }, [performAutoSave]);
 
   const onSave = async (submit: boolean = false) => {
-    if (!user) {
-        toast({ title: 'Error', description: 'You must be logged in to save your profile.', variant: 'destructive' });
-        return;
-    }
-    if (!formRef.current) return;
+    if (!user || !formRef.current) return;
 
     if (submit) setIsSubmitting(true);
     else setIsSaving(true);
@@ -127,22 +195,14 @@ export default function ProfilePage() {
       if (result.success) {
         toast({
             title: submit ? 'Application Submitted!' : 'Draft Saved',
-            description: submit 
-              ? 'Your scholarship portfolio has been sent to the committee.' 
-              : 'Your progress has been saved securely.',
+            description: submit ? 'Your scholarship portfolio has been sent.' : 'Progress saved securely.',
         });
         setSaveStatus('saved');
       } else {
-        throw new Error(result.error || 'Failed to process application.');
+        throw new Error(result.error);
       }
-    } catch (error) {
-      console.error(error);
-      const message = error instanceof Error ? error.message : 'There was an error processing your application.';
-      toast({
-        title: 'Error',
-        description: message,
-        variant: 'destructive',
-      });
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
       setSaveStatus('error');
     } finally {
       setIsSaving(false);
@@ -151,11 +211,7 @@ export default function ProfilePage() {
   };
   
   if (isUserLoading || isApplicantDataLoading) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <div className="animate-pulse text-muted-foreground font-medium">Loading Application Profile...</div>
-      </div>
-    );
+    return <div className="flex h-64 items-center justify-center animate-pulse">Loading Application Profile...</div>;
   }
 
   const isAlreadySubmitted = applicantData?.status === 'Submitted' || applicantData?.status === 'In Review';
@@ -167,241 +223,152 @@ export default function ProfilePage() {
           <div>
             <h1 className="text-3xl font-bold">Scholarship Application</h1>
             <p className="text-muted-foreground">
-              {isAlreadySubmitted 
-                ? 'Your application is finalized and under review.' 
-                : 'Complete your profile to apply for active scholarship opportunities.'}
+              {isAlreadySubmitted ? 'Application finalized and under review.' : 'Complete your portfolio to apply.'}
             </p>
           </div>
-          
-          {/* Auto-save Status Indicator */}
           {!isAlreadySubmitted && (
-            <div className="flex items-center transition-all duration-300">
-              {saveStatus === 'saving' && (
-                <Badge variant="outline" className="animate-pulse flex gap-1.5 items-center text-primary border-primary/20">
-                  <CloudUpload className="h-3.5 w-3.5" /> Saving...
-                </Badge>
-              )}
-              {saveStatus === 'saved' && (
-                <Badge variant="outline" className="flex gap-1.5 items-center text-green-500 border-green-500/20 bg-green-500/5">
-                  <CloudCheck className="h-3.5 w-3.5" /> Saved
-                </Badge>
-              )}
-              {saveStatus === 'error' && (
-                <Badge variant="destructive" className="flex gap-1.5 items-center">
-                  <AlertCircle className="h-3.5 w-3.5" /> Save Error
-                </Badge>
-              )}
+            <div className="flex items-center">
+              {saveStatus === 'saving' && <Badge variant="outline" className="animate-pulse text-primary border-primary/20"><CloudUpload className="h-3 w-3 mr-1" /> Saving...</Badge>}
+              {saveStatus === 'saved' && <Badge variant="outline" className="text-green-500 border-green-500/20"><CloudCheck className="h-3 w-3 mr-1" /> Saved</Badge>}
+              {saveStatus === 'error' && <Badge variant="destructive"><AlertCircle className="h-3 w-3 mr-1" /> Error</Badge>}
             </div>
           )}
         </div>
-        
         {isAlreadySubmitted && (
-          <div className="flex items-center gap-2 px-4 py-2 bg-green-500/10 text-green-500 rounded-full text-sm font-bold border border-green-500/20">
-            <CheckCircle className="h-4 w-4" /> Finalized & Submitted
-          </div>
+          <Badge className="bg-green-500/10 text-green-500 border-green-500/20 py-1 px-4"><CheckCircle className="h-4 w-4 mr-2" /> Submitted</Badge>
         )}
       </div>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-8">
+          {/* Step 1: Profile & Academic */}
           <Card>
             <CardHeader>
-              <CardTitle>Contact & Personal Details</CardTitle>
-              <CardDescription>
-                Basic information required for all scholarship programs.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="space-y-2">
-                <Label htmlFor="name">Full Name</Label>
-                <Input 
-                  id="name" 
-                  {...register('name')} 
-                  disabled={isAlreadySubmitted}
-                  onBlur={performAutoSave}
-                />
-                {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="email">Primary Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    {...register('email')}
-                    readOnly
-                  />
-                   {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="secondaryEmail">Secondary Email (Optional)</Label>
-                  <Input
-                    id="secondaryEmail"
-                    type="email"
-                    {...register('secondaryEmail')}
-                    placeholder="Personal or parent email"
-                    disabled={isAlreadySubmitted}
-                    onBlur={performAutoSave}
-                  />
-                   {errors.secondaryEmail && <p className="text-xs text-destructive">{errors.secondaryEmail.message}</p>}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="address">Physical Address</Label>
-                <Textarea 
-                  id="address" 
-                  {...register('address')} 
-                  placeholder="Street Address, City, State, ZIP"
-                  className="min-h-[80px]"
-                  disabled={isAlreadySubmitted}
-                  onBlur={performAutoSave}
-                />
-                {errors.address && <p className="text-xs text-destructive">{errors.address.message}</p>}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Academic Profile</CardTitle>
-              <CardDescription>
-                Your school record and extracurricular achievements.
-              </CardDescription>
+              <CardTitle>Step 1: Academic Profile</CardTitle>
+              <CardDescription>Basic details and transcript upload (Optional).</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="name">Full Name</Label>
+                  <Input id="name" {...register('name')} disabled={isAlreadySubmitted} onBlur={performAutoSave} />
+                </div>
                 <div className="space-y-2">
                   <Label htmlFor="gpa">GPA</Label>
-                  <Input
-                    id="gpa"
-                    type="number"
-                    step="0.01"
-                    {...register('gpa')}
-                    disabled={isAlreadySubmitted}
-                    onBlur={performAutoSave}
-                  />
-                   {errors.gpa && <p className="text-xs text-destructive">{errors.gpa.message}</p>}
+                  <Input id="gpa" type="number" step="0.01" {...register('gpa')} disabled={isAlreadySubmitted} onBlur={performAutoSave} />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="major">Intended Major</Label>
+              </div>
+
+              <div className="space-y-4">
+                <Label>Official Transcript (PDF only)</Label>
+                <div className="flex flex-col gap-2">
                   <Input 
-                    id="major" 
-                    {...register('major')} 
-                    disabled={isAlreadySubmitted}
-                    onBlur={performAutoSave}
+                    type="file" 
+                    accept=".pdf" 
+                    onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], 'transcripts')}
+                    disabled={isAlreadySubmitted || !!uploadProgress.transcripts}
                   />
-                  {errors.major && <p className="text-xs text-destructive">{errors.major.message}</p>}
+                  {uploadProgress.transcripts !== undefined && (
+                    <div className="space-y-1">
+                      <Progress value={uploadProgress.transcripts} className="h-1" />
+                      <p className="text-[10px] text-muted-foreground">Uploading: {Math.round(uploadProgress.transcripts)}%</p>
+                    </div>
+                  )}
+                  {applicantData?.transcripts && (
+                    <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                      <Paperclip className="h-3 w-3" /> Current: <a href={applicantData.transcripts as string} target="_blank" className="underline text-primary">View Transcript</a>
+                    </p>
+                  )}
                 </div>
-              </div>
-               <div className="space-y-2">
-                <Label htmlFor="school">Current High School</Label>
-                <Input 
-                  id="school" 
-                  {...register('school')} 
-                  disabled={isAlreadySubmitted}
-                  onBlur={performAutoSave}
-                />
-                {errors.school && <p className="text-xs text-destructive">{errors.school.message}</p>}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="activities">Activities & Leadership</Label>
-                <Textarea 
-                  id="activities" 
-                  {...register('activities')} 
-                  placeholder="Clubs, sports, volunteering..." 
-                  disabled={isAlreadySubmitted} 
-                  onBlur={performAutoSave}
-                />
-                {errors.activities && <p className="text-xs text-destructive">{errors.activities.message}</p>}
               </div>
             </CardContent>
           </Card>
 
+          {/* Step 2: Essays */}
           <Card>
             <CardHeader>
-              <CardTitle>Application Essays</CardTitle>
-              <CardDescription>
-                Demonstrate your qualifications and shared values.
-              </CardDescription>
+              <CardTitle>Step 2: Essay Submission</CardTitle>
+              <CardDescription>Choose to type your response or upload a PDF.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="space-y-2">
-                <Label htmlFor="qualificationStatement">Why are you qualified for this scholarship?</Label>
-                <Textarea
-                  id="qualificationStatement"
-                  {...register('qualificationStatement')}
-                  rows={6}
-                  placeholder="Explain how you meet specific criteria and why the committee should select you..."
-                  disabled={isAlreadySubmitted}
-                  onBlur={performAutoSave}
-                />
-                 {errors.qualificationStatement && <p className="text-xs text-destructive">{errors.qualificationStatement.message}</p>}
+            <CardContent className="space-y-8">
+              {/* Essay 1 */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Label className="text-base font-bold">Qualification Statement</Label>
+                  <div className="flex bg-muted rounded-md p-0.5">
+                    <Button type="button" size="sm" variant={essayInputMethod.qual[0] === 'text' ? 'secondary' : 'ghost'} className="h-7 text-[10px]" onClick={() => essayInputMethod.qual[1]('text')}><Type className="h-3 w-3 mr-1" /> Type</Button>
+                    <Button type="button" size="sm" variant={essayInputMethod.qual[0] === 'file' ? 'secondary' : 'ghost'} className="h-7 text-[10px]" onClick={() => essayInputMethod.qual[1]('file')}><Upload className="h-3 w-3 mr-1" /> Upload</Button>
+                  </div>
+                </div>
+                
+                {essayInputMethod.qual[0] === 'text' ? (
+                  <Textarea {...register('qualificationStatement')} rows={6} placeholder="Why are you qualified?" disabled={isAlreadySubmitted} onBlur={performAutoSave} />
+                ) : (
+                  <div className="p-4 border-2 border-dashed rounded-lg space-y-4">
+                    <Input type="file" accept=".pdf" onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], 'essays', 'qualification')} disabled={isAlreadySubmitted} />
+                    {uploadProgress.essays !== undefined && <Progress value={uploadProgress.essays} className="h-1" />}
+                    {applicantData?.essays?.find(e => e.promptId === 'qualification') && (
+                       <Badge variant="secondary" className="gap-2"><FileText className="h-3 w-3" /> PDF Uploaded</Badge>
+                    )}
+                  </div>
+                )}
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="essay">Personal Statement / General Essay</Label>
-                <Textarea
-                  id="essay"
-                  {...register('essay')}
-                  rows={10}
-                  placeholder="Tell us about your background, achievements, and future goals..."
-                  disabled={isAlreadySubmitted}
-                  onBlur={performAutoSave}
-                />
-                 {errors.essay && <p className="text-xs text-destructive">{errors.essay.message}</p>}
+              <Separator />
+
+              {/* Essay 2 */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Label className="text-base font-bold">Personal Statement</Label>
+                  <div className="flex bg-muted rounded-md p-0.5">
+                    <Button type="button" size="sm" variant={essayInputMethod.general[0] === 'text' ? 'secondary' : 'ghost'} className="h-7 text-[10px]" onClick={() => essayInputMethod.general[1]('text')}><Type className="h-3 w-3 mr-1" /> Type</Button>
+                    <Button type="button" size="sm" variant={essayInputMethod.general[0] === 'file' ? 'secondary' : 'ghost'} className="h-7 text-[10px]" onClick={() => essayInputMethod.general[1]('file')}><Upload className="h-3 w-3 mr-1" /> Upload</Button>
+                  </div>
+                </div>
+                
+                {essayInputMethod.general[0] === 'text' ? (
+                  <Textarea {...register('essay')} rows={8} placeholder="Tell us your story..." disabled={isAlreadySubmitted} onBlur={performAutoSave} />
+                ) : (
+                  <div className="p-4 border-2 border-dashed rounded-lg space-y-4">
+                    <Input type="file" accept=".pdf" onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], 'essays', 'personal-statement')} disabled={isAlreadySubmitted} />
+                    {applicantData?.essays?.find(e => e.promptId === 'personal-statement') && (
+                       <Badge variant="secondary" className="gap-2"><FileText className="h-3 w-3" /> PDF Uploaded</Badge>
+                    )}
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
 
           {!isAlreadySubmitted && (
-            <div className="flex flex-col sm:flex-row gap-4 justify-end">
-              <Button type="button" variant="outline" size="lg" onClick={() => onSave(false)} disabled={isSaving || isSubmitting}>
-                {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                {isSaving ? 'Saving...' : 'Save Draft'}
+            <div className="flex gap-4 justify-end">
+              <Button type="button" variant="outline" onClick={() => onSave(false)} disabled={isSaving || isSubmitting}>
+                <Save className="mr-2 h-4 w-4" /> Save Draft
               </Button>
-              <Button type="button" size="lg" className="bg-primary hover:bg-primary/90 font-bold" onClick={() => onSave(true)} disabled={isSaving || isSubmitting}>
-                {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                {isSubmitting ? 'Submitting...' : 'Finalize & Submit Application'}
+              <Button type="button" className="font-bold" onClick={() => onSave(true)} disabled={isSaving || isSubmitting}>
+                <Send className="mr-2 h-4 w-4" /> Submit Application
               </Button>
             </div>
           )}
         </div>
 
-        <div className="space-y-8">
+        <div className="space-y-6">
           <Card className="sticky top-24">
-            <CardHeader>
-              <CardTitle>Supporting Documents</CardTitle>
-              <CardDescription>
-                Upload required PDF or Word documents.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="space-y-2">
-                <Label htmlFor="transcripts">Official Transcripts</Label>
-                <Input id="transcripts" type="file" accept=".pdf,.doc,.docx" {...register('transcripts')} disabled={isAlreadySubmitted} />
-                {applicantData?.transcripts && <p className="text-[10px] text-muted-foreground">Current: <a href={applicantData.transcripts as string} target="_blank" className="underline">View Transcript</a></p>}
+            <CardHeader><CardTitle>Submission Checklist</CardTitle></CardHeader>
+            <CardContent className="space-y-4 text-sm">
+              <div className="flex items-center gap-2">
+                <Badge variant={getValues('name') ? 'default' : 'outline'}>{getValues('name') ? '✓' : '!'}</Badge>
+                <span>Profile Details</span>
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="resume">Resume / CV</Label>
-                <Input id="resume" type="file" accept=".pdf,.doc,.docx" {...register('resume')} disabled={isAlreadySubmitted} />
-                {applicantData?.resume && <p className="text-[10px] text-muted-foreground">Current: <a href={applicantData.resume as string} target="_blank" className="underline">View Resume</a></p>}
+              <div className="flex items-center gap-2">
+                <Badge variant={applicantData?.transcripts ? 'default' : 'outline'}>{applicantData?.transcripts ? '✓' : '!'}</Badge>
+                <span>Academic Transcript</span>
               </div>
-
-              <Separator />
-
-              <div className="space-y-2">
-                <Label htmlFor="recommendationLetter1">Letter of Recommendation #1</Label>
-                <Input id="recommendationLetter1" type="file" accept=".pdf,.doc,.docx" {...register('recommendationLetter1')} disabled={isAlreadySubmitted} />
-                {applicantData?.recommendationLetter1 && <p className="text-[10px] text-muted-foreground">Current: <a href={applicantData.recommendationLetter1 as string} target="_blank" className="underline">View Letter 1</a></p>}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="recommendationLetter2">Letter of Recommendation #2</Label>
-                <Input id="recommendationLetter2" type="file" accept=".pdf,.doc,.docx" {...register('recommendationLetter2')} disabled={isAlreadySubmitted} />
-                {applicantData?.recommendationLetter2 && <p className="text-[10px] text-muted-foreground">Current: <a href={applicantData.recommendationLetter2 as string} target="_blank" className="underline">View Letter 2</a></p>}
+              <div className="flex items-center gap-2">
+                <Badge variant={(watch('essay') || applicantData?.essays?.some(e => e.promptId === 'personal-statement')) ? 'default' : 'outline'}>
+                  {(watch('essay') || applicantData?.essays?.some(e => e.promptId === 'personal-statement')) ? '✓' : '!'}
+                </Badge>
+                <span>Personal Statement</span>
               </div>
             </CardContent>
           </Card>
