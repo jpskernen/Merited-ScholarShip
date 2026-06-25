@@ -27,7 +27,6 @@ import {
   Send, 
   Save, 
   Loader2, 
-  CloudCheck, 
   CloudUpload, 
   AlertCircle, 
   FileText, 
@@ -304,7 +303,7 @@ export default function ProfilePage() {
           {!isAlreadySubmitted && (
             <div className="flex items-center pt-1">
               {saveStatus === 'saving' && <Badge variant="outline" className="animate-pulse text-primary border-primary/20 text-[10px]"><CloudUpload className="h-3 w-3 mr-1" /> Saving...</Badge>}
-              {saveStatus === 'saved' && <Badge variant="outline" className="text-green-500 border-green-500/20 text-[10px]"><CloudCheck className="h-3 w-3 mr-1" /> Saved</Badge>}
+              {saveStatus === 'saved' && <Badge variant="outline" className="text-green-500 border-green-500/20 text-[10px]"><CloudUpload className="h-3 w-3 mr-1" /> Saved</Badge>}
               {saveStatus === 'error' && <Badge variant="destructive" className="text-[10px]"><AlertCircle className="h-3 w-3 mr-1" /> Error</Badge>}
             </div>
           )}
