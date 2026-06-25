@@ -29,7 +29,7 @@ import {
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useUser } from '@/firebase';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 
 const applicantNav = [
   { href: '/dashboard', label: 'My Dashboard', icon: LayoutDashboard },
@@ -50,7 +50,7 @@ const adminNav = [
   { href: '/admin/scholarships', label: 'Programs', icon: Award },
 ];
 
-export default function DashboardLayout({
+function DashboardLayoutContent({
   children,
 }: {
   children: React.ReactNode;
@@ -188,5 +188,23 @@ export default function DashboardLayout({
         </main>
       </div>
     </SidebarProvider>
+  );
+}
+
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    }>
+      <DashboardLayoutContent>
+        {children}
+      </DashboardLayoutContent>
+    </Suspense>
   );
 }

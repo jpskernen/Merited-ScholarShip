@@ -12,7 +12,9 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useCollection, useFirebase, useMemoFirebase } from '@/firebase';
 import { collection, query } from 'firebase/firestore';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { Loader2 } from 'lucide-react';
 
 const getStatusVariant = (status: string): 'default' | 'secondary' | 'destructive' | 'outline' => {
   switch (status) {
@@ -28,25 +30,36 @@ const getStatusVariant = (status: string): 'default' | 'secondary' | 'destructiv
   }
 };
 
-export default function ApplicationsPage() {
+function ApplicationsPageContent() {
   const { firestore, user } = useFirebase();
+  const searchParams = useSearchParams();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
+  const filter = searchParams.get('status') || 'all';
+
   const applicationsQuery = useMemoFirebase(() => {
     if (!user || !firestore) return null;
     return query(collection(firestore, `users/${user.uid}/applications`));
   }, [user, firestore]);
 
-  const { data: applications, isLoading } = useCollection(applicationsQuery);
+  const { data: allApplications, isLoading } = useCollection(applicationsQuery);
+
+  const applications = (allApplications || []).filter(app => {
+    if (filter === 'all') return true;
+    return app.status?.toLowerCase() === filter.toLowerCase();
+  });
 
   if (isLoading || !mounted) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <div className="animate-pulse text-muted-foreground font-medium">Loading applications...</div>
+        <div className="flex flex-col items-center gap-2">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-muted-foreground font-medium">Loading applications...</p>
+        </div>
       </div>
     );
   }
@@ -71,7 +84,7 @@ export default function ApplicationsPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {applications && applications.map((app: any) => (
+            {applications.map((app: any) => (
               <TableRow key={app.id}>
                 <TableCell className="font-medium">{app.scholarshipName || 'N/A'}</TableCell>
                 <TableCell>
@@ -97,11 +110,25 @@ export default function ApplicationsPage() {
           </TableBody>
         </Table>
       </div>
-       {(!applications || applications.length === 0) && (
+       {applications.length === 0 && (
           <div className="text-center py-12 text-muted-foreground">
-            You haven&apos;t submitted any applications yet.
+            {filter === 'all' 
+              ? "You haven't submitted any applications yet." 
+              : `No applications found matching status "${filter}".`}
           </div>
         )}
     </div>
+  );
+}
+
+export default function ApplicationsPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    }>
+      <ApplicationsPageContent />
+    </Suspense>
   );
 }
