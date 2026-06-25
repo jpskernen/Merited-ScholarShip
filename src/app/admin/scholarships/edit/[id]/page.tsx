@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useEffect, useState, use } from 'react';
@@ -170,7 +169,7 @@ export default function EditScholarshipPage({ params }: { params: Promise<{ id: 
         </Card>
 
         {/* Evaluation Rubric */}
-        <Card border-primary/20 bg-muted/30>
+        <Card className="border-primary/20 bg-muted/30">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Calculator className="h-5 w-5 text-primary" />
