@@ -9,6 +9,7 @@ export const ScholarshipSchema = z.object({
   tags: z.string().transform(val => val.split(',').map(s => s.trim()).filter(s => s !== '')).or(z.array(z.string())),
   description: z.string().min(10, 'Description must be at least 10 characters.'),
   schoolId: z.string().optional(),
+  reviewerIds: z.array(z.string()).optional().default([]),
 });
 
 export type Scholarship = z.infer<typeof ScholarshipSchema>;
