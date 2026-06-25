@@ -1,43 +1,64 @@
-# Scholarship App - Developer Guide
+# ScholarShip - Management Platform
 
-This is a Next.js application built with Firebase and Genkit.
-
-## 🌐 Multi-Site Hosting
-
-The project is configured for multiple Firebase Hosting sites:
-- **Marketing Site:** Located in `/marketing`. Deployment target: `marketing`.
-- **Full Web App:** The Next.js application in `/src`. Deployment target: `app`.
-
-### Deployment
-Before deploying for the first time, you must link your targets to your Firebase site IDs:
-1. `firebase target:apply hosting marketing <your-marketing-site-id>`
-2. `firebase target:apply hosting app <your-app-site-id>`
-
-To deploy specific sites:
-- `firebase deploy --only hosting:marketing`
-- `firebase deploy --only hosting:app`
+Empowering students through academic opportunities and streamlined committee review.
 
 ## 🚀 Getting Started
 
-1. **Install dependencies:** `npm install`
-2. **Run the development server:** `npm run dev`
-3. **Open the app:** [http://localhost:9002](http://localhost:9002)
+### 1. Local Development
+1. **Clone & Install**:
+   ```bash
+   npm install
+   ```
+2. **Environment Setup**:
+   Copy `.env.example` to `.env.local` and populate it with your Firebase configuration.
+   ```bash
+   cp .env.example .env.local
+   ```
+3. **Run Dev Server**:
+   ```bash
+   npm run dev
+   ```
+4. **Local Emulators** (Optional for testing backend rules):
+   ```bash
+   firebase emulators:start
+   ```
 
-## 🌐 Deployment & Domains (App Hosting)
+### 2. Deployment
+This project is optimized for **Firebase App Hosting**.
+1. **Build Check**: Our build process automatically validates that all environment variables are set.
+2. **Deploy**:
+   ```bash
+   npm run build
+   && firebase deploy
+   ```
 
-This project uses **Firebase App Hosting** for the Next.js application.
-- Run `firebase deploy --only apphosting`
+## 🛠 Administrative Tasks
 
-## 🛠 Debugging Tools
+### Adding a New Scholarship
+1. Access the **Admin Panel** at `/admin/scholarships`.
+2. Click **"Add New Scholarship"**.
+3. Define the **Scoring Rubric**: Set criteria (e.g., GPA, Leadership) and ensure total weight equals 100%.
+4. **Assign Reviewers**: Select authorized committee members who should have access to these applications.
 
-### 1. AI Flows (Genkit)
-- Run `npm run genkit:dev` in your terminal.
-- Open the Genkit Developer UI at [http://localhost:4000](http://localhost:4000) to test prompts and see AI traces.
+### Testing Deadline Reminders
+To manually trigger the `deadlineReminder` Cloud Function for testing:
+1. Open the Firebase Functions shell:
+   ```bash
+   firebase functions:shell
+   ```
+2. Invoke the function:
+   ```javascript
+   deadlineReminder()
+   ```
 
-### 2. Database & Auth (Firebase Console)
-To see your live data, users, and files:
-- Go to the [Firebase Console](https://console.firebase.google.com/).
-- Select your project: **scholarship-hib4j**.
-- **Firestore Database**: View and edit collections like `users`, `programs`, and `reviewers`.
-- **Authentication**: Manage user accounts and reset passwords.
-- **Storage**: Browse uploaded transcripts and resumes.
+## 🤖 Generative AI (Genkit)
+- Start the Genkit Developer UI: `npm run genkit:dev`
+- Current flows:
+  - `analyzeScholarshipFit`: Evaluation fit score generation.
+  - `generateInvitationEmail`: Secure recruiter/admin onboarding.
+  - `summarizeApplication`: Fast briefings for long essays.
+
+## 👥 User Roles
+- **Applicant**: Student portal for profile building.
+- **Reviewer**: Committee workspace for scoring assigned portfolios.
+- **Admin**: System-wide control over programs, audits, and permissions.
