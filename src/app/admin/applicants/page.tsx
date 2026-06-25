@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
@@ -31,12 +30,14 @@ import {
   Loader2,
   Filter,
   CheckCircle2,
-  ChevronRight
+  ChevronRight,
+  Download
 } from 'lucide-react';
 import { useFirebase, useUser } from '@/firebase';
 import { collection, doc, updateDoc, collectionGroup, query, where, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
+import Papa from 'papaparse';
 
 const RUBRIC_WEIGHTS = {
   gpa: 0.25,
@@ -146,6 +147,37 @@ export default function AdminApplicantsPage() {
     return data;
   }, [applications, allReviews, statusFilter]);
 
+  const handleExportCSV = () => {
+    if (!tableData.length) {
+      toast({ title: "No Data", description: "There are no applications to export.", variant: "destructive" });
+      return;
+    }
+
+    const exportData = tableData.map(row => ({
+      'Student Name': row.name || `Applicant ${row.id.substring(0, 6).toUpperCase()}`,
+      'Email': row.email,
+      'Scholarship': 'General Scholarship Portfolio',
+      'Status': row.status,
+      'GPA': row.gpa?.toFixed(2) || 'N/A',
+      'Average Score': row.averageScore.toFixed(2),
+      'Submitted Date': row.submissionDate ? new Date(row.submissionDate).toLocaleDateString() : 'N/A',
+      'Rec Letters': `${[row.recommendationStatus1, row.recommendationStatus2].filter(s => s === 'Received').length}/2`
+    }));
+
+    const csv = Papa.unparse(exportData);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `merited-applications-${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast({ title: "Export Complete", description: "Your CSV file has been generated." });
+  };
+
   const handleToggleShortlist = async (id: string, current: boolean) => {
     if (!firestore) return;
     const docRef = doc(firestore, 'users', id);
@@ -213,6 +245,10 @@ export default function AdminApplicantsPage() {
           </p>
         </div>
         <div className="flex items-center gap-4">
+          <Button variant="outline" size="sm" onClick={handleExportCSV} className="hidden sm:flex">
+            <Download className="h-4 w-4 mr-2" />
+            Export CSV
+          </Button>
           <div className="flex items-center gap-2">
             <Filter className="h-4 w-4 text-muted-foreground" />
             <Select value={statusFilter} onValueChange={setStatusFilter}>
