@@ -17,18 +17,19 @@ import { Applicant, ApplicantSchema } from '@/types/applicant';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { saveApplicantData } from './actions';
-import { useEffect, useState, useRef } from 'react';
-import { Switch } from '@/components/ui/switch';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { Separator } from '@/components/ui/separator';
 import { useDoc, useFirebase, useMemoFirebase } from '@/firebase';
-import { doc } from 'firebase/firestore';
-import { CheckCircle, Send, Save } from 'lucide-react';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { CheckCircle, Send, Save, Loader2, CloudCheck, CloudUpload, AlertCircle } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 
 export default function ProfilePage() {
   const { toast } = useToast();
   const { user, isUserLoading, firestore } = useFirebase();
   const [isSaving, setIsSaving] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const formRef = useRef<HTMLFormElement>(null);
 
   const userDocRef = useMemoFirebase(() => {
@@ -41,10 +42,10 @@ export default function ProfilePage() {
   const {
     register,
     handleSubmit,
-    formState: { errors },
+    formState: { errors, isDirty },
     setValue,
     reset,
-    watch,
+    getValues,
   } = useForm<Applicant>({
     resolver: zodResolver(ApplicantSchema),
     defaultValues: {
@@ -64,6 +65,7 @@ export default function ProfilePage() {
     }
   });
   
+  // Load initial data
   useEffect(() => {
     if (user && !isUserLoading) {
       if (!applicantData?.email) setValue('email', user.email || '');
@@ -74,6 +76,39 @@ export default function ProfilePage() {
     }
   }, [user, applicantData, isUserLoading, setValue, reset]);
 
+  // Auto-save logic
+  const performAutoSave = useCallback(async () => {
+    if (!user || !firestore || !isDirty || applicantData?.status === 'Submitted' || applicantData?.status === 'In Review') {
+      return;
+    }
+
+    setSaveStatus('saving');
+    try {
+      const currentValues = getValues();
+      const docRef = doc(firestore, 'users', user.uid);
+      
+      // We only auto-save text fields to avoid unnecessary heavy file processing in the background
+      await setDoc(docRef, {
+        ...currentValues,
+        status: 'Draft',
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 3000);
+    } catch (error) {
+      console.error('Auto-save failed:', error);
+      setSaveStatus('error');
+    }
+  }, [user, firestore, isDirty, applicantData?.status, getValues]);
+
+  // Trigger: 30 second interval
+  useEffect(() => {
+    const interval = setInterval(() => {
+      performAutoSave();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [performAutoSave]);
 
   const onSave = async (submit: boolean = false) => {
     if (!user) {
@@ -96,6 +131,7 @@ export default function ProfilePage() {
               ? 'Your scholarship portfolio has been sent to the committee.' 
               : 'Your progress has been saved securely.',
         });
+        setSaveStatus('saved');
       } else {
         throw new Error(result.error || 'Failed to process application.');
       }
@@ -107,6 +143,7 @@ export default function ProfilePage() {
         description: message,
         variant: 'destructive',
       });
+      setSaveStatus('error');
     } finally {
       setIsSaving(false);
       setIsSubmitting(false);
@@ -126,14 +163,38 @@ export default function ProfilePage() {
   return (
     <form ref={formRef} className="space-y-8" noValidate>
       <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Scholarship Application</h1>
-          <p className="text-muted-foreground">
-            {isAlreadySubmitted 
-              ? 'Your application is finalized and under review.' 
-              : 'Complete your profile to apply for active scholarship opportunities.'}
-          </p>
+        <div className="flex items-center gap-4">
+          <div>
+            <h1 className="text-3xl font-bold">Scholarship Application</h1>
+            <p className="text-muted-foreground">
+              {isAlreadySubmitted 
+                ? 'Your application is finalized and under review.' 
+                : 'Complete your profile to apply for active scholarship opportunities.'}
+            </p>
+          </div>
+          
+          {/* Auto-save Status Indicator */}
+          {!isAlreadySubmitted && (
+            <div className="flex items-center transition-all duration-300">
+              {saveStatus === 'saving' && (
+                <Badge variant="outline" className="animate-pulse flex gap-1.5 items-center text-primary border-primary/20">
+                  <CloudUpload className="h-3.5 w-3.5" /> Saving...
+                </Badge>
+              )}
+              {saveStatus === 'saved' && (
+                <Badge variant="outline" className="flex gap-1.5 items-center text-green-500 border-green-500/20 bg-green-500/5">
+                  <CloudCheck className="h-3.5 w-3.5" /> Saved
+                </Badge>
+              )}
+              {saveStatus === 'error' && (
+                <Badge variant="destructive" className="flex gap-1.5 items-center">
+                  <AlertCircle className="h-3.5 w-3.5" /> Save Error
+                </Badge>
+              )}
+            </div>
+          )}
         </div>
+        
         {isAlreadySubmitted && (
           <div className="flex items-center gap-2 px-4 py-2 bg-green-500/10 text-green-500 rounded-full text-sm font-bold border border-green-500/20">
             <CheckCircle className="h-4 w-4" /> Finalized & Submitted
@@ -153,7 +214,12 @@ export default function ProfilePage() {
             <CardContent className="space-y-6">
               <div className="space-y-2">
                 <Label htmlFor="name">Full Name</Label>
-                <Input id="name" {...register('name')} disabled={isAlreadySubmitted} />
+                <Input 
+                  id="name" 
+                  {...register('name')} 
+                  disabled={isAlreadySubmitted}
+                  onBlur={performAutoSave}
+                />
                 {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
               </div>
 
@@ -176,6 +242,7 @@ export default function ProfilePage() {
                     {...register('secondaryEmail')}
                     placeholder="Personal or parent email"
                     disabled={isAlreadySubmitted}
+                    onBlur={performAutoSave}
                   />
                    {errors.secondaryEmail && <p className="text-xs text-destructive">{errors.secondaryEmail.message}</p>}
                 </div>
@@ -189,6 +256,7 @@ export default function ProfilePage() {
                   placeholder="Street Address, City, State, ZIP"
                   className="min-h-[80px]"
                   disabled={isAlreadySubmitted}
+                  onBlur={performAutoSave}
                 />
                 {errors.address && <p className="text-xs text-destructive">{errors.address.message}</p>}
               </div>
@@ -212,23 +280,40 @@ export default function ProfilePage() {
                     step="0.01"
                     {...register('gpa')}
                     disabled={isAlreadySubmitted}
+                    onBlur={performAutoSave}
                   />
                    {errors.gpa && <p className="text-xs text-destructive">{errors.gpa.message}</p>}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="major">Intended Major</Label>
-                  <Input id="major" {...register('major')} disabled={isAlreadySubmitted} />
+                  <Input 
+                    id="major" 
+                    {...register('major')} 
+                    disabled={isAlreadySubmitted}
+                    onBlur={performAutoSave}
+                  />
                   {errors.major && <p className="text-xs text-destructive">{errors.major.message}</p>}
                 </div>
               </div>
                <div className="space-y-2">
                 <Label htmlFor="school">Current High School</Label>
-                <Input id="school" {...register('school')} disabled={isAlreadySubmitted} />
+                <Input 
+                  id="school" 
+                  {...register('school')} 
+                  disabled={isAlreadySubmitted}
+                  onBlur={performAutoSave}
+                />
                 {errors.school && <p className="text-xs text-destructive">{errors.school.message}</p>}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="activities">Activities & Leadership</Label>
-                <Textarea id="activities" {...register('activities')} placeholder="Clubs, sports, volunteering..." disabled={isAlreadySubmitted} />
+                <Textarea 
+                  id="activities" 
+                  {...register('activities')} 
+                  placeholder="Clubs, sports, volunteering..." 
+                  disabled={isAlreadySubmitted} 
+                  onBlur={performAutoSave}
+                />
                 {errors.activities && <p className="text-xs text-destructive">{errors.activities.message}</p>}
               </div>
             </CardContent>
@@ -250,6 +335,7 @@ export default function ProfilePage() {
                   rows={6}
                   placeholder="Explain how you meet specific criteria and why the committee should select you..."
                   disabled={isAlreadySubmitted}
+                  onBlur={performAutoSave}
                 />
                  {errors.qualificationStatement && <p className="text-xs text-destructive">{errors.qualificationStatement.message}</p>}
               </div>
@@ -262,6 +348,7 @@ export default function ProfilePage() {
                   rows={10}
                   placeholder="Tell us about your background, achievements, and future goals..."
                   disabled={isAlreadySubmitted}
+                  onBlur={performAutoSave}
                 />
                  {errors.essay && <p className="text-xs text-destructive">{errors.essay.message}</p>}
               </div>
@@ -271,10 +358,12 @@ export default function ProfilePage() {
           {!isAlreadySubmitted && (
             <div className="flex flex-col sm:flex-row gap-4 justify-end">
               <Button type="button" variant="outline" size="lg" onClick={() => onSave(false)} disabled={isSaving || isSubmitting}>
-                <Save className="mr-2 h-4 w-4" /> {isSaving ? 'Saving...' : 'Save Draft'}
+                {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                {isSaving ? 'Saving...' : 'Save Draft'}
               </Button>
               <Button type="button" size="lg" className="bg-primary hover:bg-primary/90 font-bold" onClick={() => onSave(true)} disabled={isSaving || isSubmitting}>
-                <Send className="mr-2 h-4 w-4" /> {isSubmitting ? 'Submitting...' : 'Finalize & Submit Application'}
+                {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                {isSubmitting ? 'Submitting...' : 'Finalize & Submit Application'}
               </Button>
             </div>
           )}
