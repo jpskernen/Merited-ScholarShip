@@ -1,4 +1,3 @@
-
 'use client';
 
 import {
@@ -25,12 +24,12 @@ import {
   Award,
   FileSearch,
   ShieldCheck,
+  Loader2
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useUser, useDoc, useMemoFirebase, useFirestore } from '@/firebase';
-import { doc } from 'firebase/firestore';
-import { useEffect, useState, useMemo } from 'react';
+import { useUser } from '@/firebase';
+import { useEffect, useState } from 'react';
 
 const applicantNav = [
   { href: '/dashboard', label: 'My Dashboard', icon: LayoutDashboard },
@@ -59,59 +58,15 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { user, isUserLoading } = useUser();
-  const firestore = useFirestore();
+  const { user, role, isUserLoading } = useUser();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  const adminRoleRef = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
-    return doc(firestore, 'roles_admin', user.uid);
-  }, [firestore, user]);
-  
-  const reviewerProfileRef = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
-    return doc(firestore, 'reviewers', user.uid);
-  }, [firestore, user]);
-
-  const userDocRef = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
-    return doc(firestore, 'users', user.uid);
-  }, [firestore, user]);
-
-  const { data: adminRole, isLoading: isAdminRoleLoading } = useDoc(adminRoleRef);
-  const { data: reviewerProfile, isLoading: isReviewerRoleLoading } = useDoc(reviewerProfileRef);
-  const { data: userDoc, isLoading: isUserDocLoading } = useDoc(userDocRef);
-  
-  const userMetadata = useMemo(() => {
-    // Bootstrap Admin check
-    const isBootstrapAdmin = user?.email === 'peyton.vandenbemden@gmail.com';
-    // Bootstrap Reviewer check
-    const isBootstrapReviewer = 
-      user?.email === 'hello@merited.com' || 
-      user?.email === 'hellow@meritedapp.com' ||
-      user?.email === 'hello@meritedapp.com' ||
-      user?.email === 'kernenpm@gmail.com';
-    
-    // Determine role based on which document was found
-    const role = userDoc?.role || adminRole?.role || (reviewerProfile ? 'Reviewer' : null);
-    
-    // Check flags
-    const isAdmin = isBootstrapAdmin || role === 'Admin' || role === 'Sponsor' || !!adminRole;
-    const isReviewer = isBootstrapReviewer || role === 'Reviewer' || !!reviewerProfile || isAdmin;
-    // Default to applicant if no other role is explicitly verified yet
-    const isApplicant = role === 'Applicant' || (!isAdmin && !isReviewer);
-    
-    return { role, isAdmin, isReviewer, isApplicant };
-  }, [userDoc, adminRole, reviewerProfile, user?.email]);
-
-  const isMetadataLoading = isUserLoading || isAdminRoleLoading || isReviewerRoleLoading || isUserDocLoading;
-
   useEffect(() => {
-    if (mounted && !isMetadataLoading) {
+    if (mounted && !isUserLoading) {
       if (!user) {
         if (pathname.startsWith('/dashboard') || pathname.startsWith('/admin') || pathname.startsWith('/review')) {
           router.push('/login');
@@ -119,46 +74,46 @@ export default function DashboardLayout({
         return;
       }
 
+      const isAdmin = role === 'Admin' || role === 'Sponsor';
+      const isReviewer = role === 'Reviewer' || isAdmin;
+
       // Access Control Redirection
-      if (pathname.startsWith('/admin') && !userMetadata.isAdmin) {
-        router.push(userMetadata.isReviewer ? '/review' : '/dashboard');
-      } else if (pathname.startsWith('/review') && !userMetadata.isReviewer && !userMetadata.isAdmin) {
-        router.push('/dashboard');
-      } else if (pathname.startsWith('/dashboard') && (userMetadata.isReviewer || userMetadata.isAdmin)) {
-        router.push(userMetadata.isAdmin ? '/admin' : '/review');
+      if (pathname.startsWith('/admin') && !isAdmin) {
+        router.push('/unauthorized');
+      } else if (pathname.startsWith('/review') && !isReviewer) {
+        router.push('/unauthorized');
+      } else if (pathname.startsWith('/dashboard') && isReviewer) {
+        router.push(isAdmin ? '/admin' : '/review');
       }
     }
-  }, [mounted, user, isMetadataLoading, userMetadata, pathname, router]);
+  }, [mounted, user, role, isUserLoading, pathname, router]);
 
   const isActive = (href: string) => {
     const searchParamsString = searchParams.toString();
     const currentFull = pathname + (searchParamsString ? `?${searchParamsString}` : '');
-    
     if (currentFull === href) return true;
     if (!searchParamsString && pathname === href) return true;
-
     const cleanHref = href.split('?')[0];
     if (href !== '/dashboard' && href !== '/admin' && href !== '/review' && pathname.startsWith(cleanHref)) {
       return true;
     }
-    
     return false;
   };
   
   const getNavItems = () => {
-    if (userMetadata.isAdmin) return adminNav;
-    if (userMetadata.isReviewer) return reviewerNav;
+    if (role === 'Admin' || role === 'Sponsor') return adminNav;
+    if (role === 'Reviewer') return reviewerNav;
     return applicantNav;
   };
 
   const currentNav = getNavItems();
   const shouldShowLayout = pathname.startsWith('/dashboard') || pathname.startsWith('/admin') || pathname.startsWith('/review');
 
-  if (!mounted || isMetadataLoading) {
+  if (!mounted || isUserLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
           <p className="animate-pulse text-sm font-medium text-muted-foreground">Syncing Secure Session...</p>
         </div>
       </div>
@@ -168,15 +123,18 @@ export default function DashboardLayout({
   if (!user && shouldShowLayout) return null;
 
   // Render guard for unauthorized paths
-  if (pathname.startsWith('/admin') && !userMetadata.isAdmin) return null;
-  if (pathname.startsWith('/review') && !userMetadata.isReviewer && !userMetadata.isAdmin) return null;
-  if (pathname.startsWith('/dashboard') && (userMetadata.isReviewer || userMetadata.isAdmin)) return null;
+  const isAdmin = role === 'Admin' || role === 'Sponsor';
+  const isReviewer = role === 'Reviewer' || isAdmin;
+  
+  if (pathname.startsWith('/admin') && !isAdmin) return null;
+  if (pathname.startsWith('/review') && !isReviewer) return null;
+  if (pathname.startsWith('/dashboard') && isReviewer) return null;
 
   if (!shouldShowLayout) return <>{children}</>;
 
   const getPortalLabel = () => {
-    if (userMetadata.isAdmin) return 'Sponsor/Admin';
-    if (userMetadata.isReviewer) return 'Committee';
+    if (isAdmin) return 'Sponsor/Admin';
+    if (isReviewer) return 'Committee';
     return 'Applicant';
   };
 
@@ -209,7 +167,7 @@ export default function DashboardLayout({
             </SidebarGroup>
           </SidebarContent>
           <div className="mt-auto p-4">
-             {userMetadata.isAdmin && (
+             {isAdmin && (
                <Badge variant="outline" className="w-full justify-center gap-1.5 py-1 text-[10px] font-bold tracking-tight">
                  <ShieldCheck className="h-3 w-3" /> System Admin Verified
                </Badge>
