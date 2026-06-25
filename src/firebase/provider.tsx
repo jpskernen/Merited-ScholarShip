@@ -9,13 +9,12 @@ import { FirebaseErrorListener } from '@/components/FirebaseErrorListener';
 
 interface FirebaseProviderProps {
   children: ReactNode;
-  firebaseApp: FirebaseApp;
-  firestore: Firestore;
-  auth: Auth;
-  functions: Functions;
+  firebaseApp: FirebaseApp | null;
+  firestore: Firestore | null;
+  auth: Auth | null;
+  functions: Functions | null;
 }
 
-// Internal state for user authentication and role metadata
 interface UserAuthState {
   user: User | null;
   role: string | null;
@@ -24,7 +23,6 @@ interface UserAuthState {
   userError: Error | null;
 }
 
-// Combined state for the Firebase context
 export interface FirebaseContextState {
   areServicesAvailable: boolean;
   firebaseApp: FirebaseApp | null;
@@ -39,10 +37,10 @@ export interface FirebaseContextState {
 }
 
 export interface FirebaseServicesAndUser {
-  firebaseApp: FirebaseApp;
-  firestore: Firestore;
-  auth: Auth;
-  functions: Functions;
+  firebaseApp: FirebaseApp | null;
+  firestore: Firestore | null;
+  auth: Auth | null;
+  functions: Functions | null;
   user: User | null;
   role: string | null;
   userData: any | null;
@@ -96,7 +94,6 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
         }
 
         try {
-          // Fetch role and user data from Firestore
           const [userDoc, adminDoc, reviewerDoc] = await Promise.all([
             getDoc(doc(firestore, 'users', firebaseUser.uid)),
             getDoc(doc(firestore, 'roles_admin', firebaseUser.uid)),
@@ -104,8 +101,6 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
           ]);
 
           const dbUserData = userDoc.exists() ? userDoc.data() : null;
-          
-          // Bootstrap role checks
           const isBootstrapAdmin = firebaseUser.email === 'peyton.vandenbemden@gmail.com';
           const isBootstrapReviewer = [
             'hello@merited.com',
@@ -127,10 +122,9 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
             userError: null,
           });
         } catch (error: any) {
-          console.error("FirebaseProvider: Role fetch error:", error);
           setUserAuthState({
             user: firebaseUser,
-            role: 'Applicant', // Fallback
+            role: 'Applicant',
             userData: null,
             isUserLoading: false,
             userError: error,
@@ -145,13 +139,13 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
   }, [auth, firestore]);
 
   const contextValue = useMemo((): FirebaseContextState => {
-    const servicesAvailable = !!(firebaseApp && firestore && auth && functions);
+    const servicesAvailable = !!(firebaseApp && firestore && auth);
     return {
       areServicesAvailable: servicesAvailable,
-      firebaseApp: servicesAvailable ? firebaseApp : null,
-      firestore: servicesAvailable ? firestore : null,
-      auth: servicesAvailable ? auth : null,
-      functions: servicesAvailable ? functions : null,
+      firebaseApp,
+      firestore,
+      auth,
+      functions,
       user: userAuthState.user,
       role: userAuthState.role,
       userData: userAuthState.userData,
@@ -171,9 +165,6 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
 export const useFirebase = (): FirebaseServicesAndUser => {
   const context = useContext(FirebaseContext);
   if (context === undefined) throw new Error('useFirebase must be used within a FirebaseProvider.');
-  if (!context.areServicesAvailable || !context.firebaseApp || !context.firestore || !context.auth || !context.functions) {
-    throw new Error('Firebase core services not available.');
-  }
   return {
     firebaseApp: context.firebaseApp,
     firestore: context.firestore,

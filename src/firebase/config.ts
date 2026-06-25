@@ -1,7 +1,7 @@
+
 /**
  * Firebase Client Configuration
- * Uses environment variables for security.
- * Ensure these are set in your .env.local or production environment.
+ * Uses NEXT_PUBLIC_ environment variables for security and Next.js compatibility.
  */
 export const firebaseConfig = {
   projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,

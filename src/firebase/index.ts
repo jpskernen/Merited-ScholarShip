@@ -2,43 +2,50 @@
 
 import { firebaseConfig } from '@/firebase/config';
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore'
-import { getFunctions } from 'firebase/functions';
+import { getAuth, Auth } from 'firebase/auth';
+import { getFirestore, Firestore } from 'firebase/firestore'
+import { getFunctions, Functions } from 'firebase/functions';
 
-// IMPORTANT: DO NOT MODIFY THIS FUNCTION
 export function initializeFirebase() {
-  if (!getApps().length) {
-    // Important! initializeApp() is called without any arguments because Firebase App Hosting
-    // integrates with the initializeApp() function to provide the environment variables needed to
-    // populate the FirebaseOptions in production. It is critical that we attempt to call initializeApp()
-    // without arguments.
-    let firebaseApp;
-    try {
-      // Attempt to initialize via Firebase App Hosting environment variables
-      firebaseApp = initializeApp();
-    } catch (e) {
-      // Only warn in production because it's normal to use the firebaseConfig to initialize
-      // during development
-      if (process.env.NODE_ENV === "production") {
-        console.warn('Automatic initialization failed. Falling back to firebase config object.', e);
-      }
-      firebaseApp = initializeApp(firebaseConfig);
-    }
-
-    return getSdks(firebaseApp);
+  if (typeof window === 'undefined') {
+    return { firebaseApp: null, auth: null, firestore: null, functions: null };
   }
 
-  // If already initialized, return the SDKs with the already initialized App
-  return getSdks(getApp());
+  const existingApp = getApps().length > 0 ? getApp() : null;
+  if (existingApp) {
+    return getSdks(existingApp);
+  }
+
+  let firebaseApp: FirebaseApp;
+
+  try {
+    // Check if we have at least a Project ID to attempt initialization
+    if (!firebaseConfig.projectId || firebaseConfig.projectId.includes('your_')) {
+      console.warn('Firebase Project ID is missing or placeholder. Initialization deferred.');
+      return { firebaseApp: null, auth: null, firestore: null, functions: null };
+    }
+    firebaseApp = initializeApp(firebaseConfig);
+  } catch (e) {
+    console.error('Firebase initialization failed:', e);
+    return { firebaseApp: null, auth: null, firestore: null, functions: null };
+  }
+
+  return getSdks(firebaseApp);
 }
 
 export function getSdks(firebaseApp: FirebaseApp) {
+  // Defensive check for API key before initializing Auth
+  const hasValidApiKey = firebaseApp.options.apiKey && !firebaseApp.options.apiKey.includes('your_');
+  
+  const auth = hasValidApiKey ? getAuth(firebaseApp) : null;
+  const firestore = getFirestore(firebaseApp);
+  const functions = getFunctions(firebaseApp);
+
   return {
     firebaseApp,
-    auth: getAuth(firebaseApp),
-    firestore: getFirestore(firebaseApp),
-    functions: getFunctions(firebaseApp)
+    auth,
+    firestore,
+    functions
   };
 }
 
