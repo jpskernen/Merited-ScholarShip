@@ -59,7 +59,8 @@ function ReviewerDashboardContent() {
     user?.email === 'peyton.vandenbemden@gmail.com' || 
     user?.email === 'hello@merited.com' || 
     user?.email === 'hellow@meritedapp.com' ||
-    user?.email === 'hello@meritedapp.com';
+    user?.email === 'hello@meritedapp.com' ||
+    user?.email === 'kernenpm@gmail.com';
 
   const applicantsQuery = useMemoFirebase(() => {
     if (!firestore || !isAuthorizedToReview) return null;

@@ -51,7 +51,8 @@ export default function LoginPage() {
             reviewerDoc.exists() || 
             user.email === 'hello@merited.com' || 
             user.email === 'hellow@meritedapp.com' ||
-            user.email === 'hello@meritedapp.com';
+            user.email === 'hello@meritedapp.com' ||
+            user.email === 'kernenpm@gmail.com';
 
           if (isAdmin) {
             router.push('/admin');

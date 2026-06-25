@@ -22,7 +22,7 @@ service cloud.firestore {
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Reviewer') ||
         exists(/databases/$(database)/documents/reviewers/$(request.auth.uid)) ||
-        request.auth.token.email in ['hello@merited.com', 'hellow@meritedapp.com', 'hello@meritedapp.com'] ||
+        request.auth.token.email in ['hello@merited.com', 'hellow@meritedapp.com', 'hello@meritedapp.com', 'kernenpm@gmail.com'] ||
         isSponsor()
       );
     }

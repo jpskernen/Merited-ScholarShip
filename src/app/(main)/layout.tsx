@@ -1,3 +1,4 @@
+
 'use client';
 
 import {
@@ -92,7 +93,8 @@ export default function DashboardLayout({
     const isBootstrapReviewer = 
       user?.email === 'hello@merited.com' || 
       user?.email === 'hellow@meritedapp.com' ||
-      user?.email === 'hello@meritedapp.com';
+      user?.email === 'hello@meritedapp.com' ||
+      user?.email === 'kernenpm@gmail.com';
     
     // Determine role based on which document was found
     const role = userDoc?.role || adminRole?.role || (reviewerProfile ? 'Reviewer' : null);
