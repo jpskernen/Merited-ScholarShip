@@ -1,4 +1,3 @@
-
 'use client';
 
 import {
@@ -21,13 +20,14 @@ import {
   Award,
   UserPlus,
   ShieldCheck,
-  Loader2
+  Loader2,
+  History
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useUser, useDoc, useMemoFirebase, useFirestore } from '@/firebase';
 import { doc } from 'firebase/firestore';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 
 const adminNav = [
   { href: '/admin', label: 'Admin Dashboard', icon: LayoutDashboard },
@@ -35,6 +35,7 @@ const adminNav = [
   { href: '/admin/reviewers', label: 'Manage Reviewers', icon: UserPlus },
   { href: '/admin/admins', label: 'Administrators', icon: ShieldCheck },
   { href: '/admin/scholarships', label: 'Scholarships', icon: Award },
+  { href: '/admin/audit-log', label: 'Audit Log', icon: History },
 ];
 
 export default function AdminLayout({
