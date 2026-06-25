@@ -19,6 +19,12 @@ service firebase.storage {
       return exists(/databases/$(database)/documents/reviewers/$(request.auth.uid));
     }
 
+    // Public recommendations path
+    match /recommendations/{tokenId} {
+      allow read: if request.auth != null && (isReviewer() || isAdmin());
+      allow write: if true; // Allow public uploads from the recommendation portal
+    }
+
     // Match any file in a user's directory.
     // The {document=**} wildcard matches any path segment under the user's folder.
     match /{userId}/{document=**} {

@@ -1,0 +1,244 @@
+'use client';
+
+import { useState, useEffect, use } from 'react';
+import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { ref, uploadBytesResumable, getDownloadURL, getStorage } from 'firebase/storage';
+import { useFirestore, useFirebase } from '@/firebase';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Progress } from '@/components/ui/progress';
+import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/hooks/use-toast';
+import { FileText, CheckCircle, AlertCircle, Loader2, Upload, GraduationCap } from 'lucide-react';
+import Link from 'next/link';
+
+export default function RecommendUploadPage({ params }: { params: Promise<{ tokenId: string }> }) {
+  const { tokenId } = use(params);
+  const firestore = useFirestore();
+  const storage = getStorage();
+  const { toast } = useToast();
+
+  const [tokenData, setTokenData] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function fetchToken() {
+      if (!firestore || !tokenId) return;
+      
+      try {
+        const tokenRef = doc(firestore, 'recommendationTokens', tokenId);
+        const tokenSnap = await getDoc(tokenRef);
+        
+        if (!tokenSnap.exists()) {
+          setError('Invalid recommendation link. Please contact the student who requested this letter.');
+          setIsLoading(false);
+          return;
+        }
+
+        const data = tokenSnap.data();
+        
+        if (data.used) {
+          setError('This recommendation link has already been used.');
+          setIsLoading(false);
+          return;
+        }
+
+        if (data.expiresAt && data.expiresAt.toDate() < new Date()) {
+          setError('This recommendation link has expired.');
+          setIsLoading(false);
+          return;
+        }
+
+        setTokenData(data);
+      } catch (err: any) {
+        setError('Failed to load recommendation details.');
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    fetchToken();
+  }, [firestore, tokenId]);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !tokenData || !tokenId) return;
+
+    if (file.type !== 'application/pdf') {
+      toast({ title: "Invalid File Type", description: "Please upload a PDF file.", variant: "destructive" });
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      toast({ title: "File Too Large", description: "Maximum file size is 10MB.", variant: "destructive" });
+      return;
+    }
+
+    setIsUploading(true);
+    const storageRef = ref(storage, `recommendations/${tokenId}.pdf`);
+    const uploadTask = uploadBytesResumable(storageRef, file);
+
+    uploadTask.on('state_changed', 
+      (snapshot) => {
+        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+        setUploadProgress(progress);
+      }, 
+      (error) => {
+        toast({ title: "Upload Failed", description: error.message, variant: "destructive" });
+        setIsUploading(false);
+      }, 
+      async () => {
+        const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+        
+        try {
+          // Update Token
+          await updateDoc(doc(firestore, 'recommendationTokens', tokenId), {
+            used: true,
+            fileUrl: downloadURL,
+            uploadedAt: serverTimestamp()
+          });
+
+          // Update Student Application
+          const studentRef = doc(firestore, 'users', tokenData.applicationId);
+          const updateObj: any = {
+            updatedAt: serverTimestamp()
+          };
+          
+          // Map back to the correct recommendation index if provided, default to index 1
+          const index = tokenData.requestIndex || 1;
+          updateObj[`recommendationStatus${index}`] = 'Received';
+          updateObj[`recommendationLetter${index}`] = downloadURL;
+
+          await updateDoc(studentRef, updateObj);
+
+          setIsSuccess(true);
+          toast({ title: "Letter Submitted", description: "Your recommendation has been securely uploaded." });
+        } catch (err: any) {
+          toast({ title: "Update Failed", description: "The file was uploaded but we couldn't link it to the application. Our team has been notified.", variant: "destructive" });
+        } finally {
+          setIsUploading(false);
+        }
+      }
+    );
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-10 w-10 animate-spin text-primary" />
+          <p className="animate-pulse text-muted-foreground font-medium">Loading portal...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || isSuccess) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
+        <Card className="max-w-md w-full shadow-xl">
+          <CardHeader className="text-center">
+            <div className="flex justify-center mb-4">
+              {isSuccess ? (
+                <div className="bg-green-100 p-3 rounded-full">
+                  <CheckCircle className="h-10 w-10 text-green-600" />
+                </div>
+              ) : (
+                <div className="bg-destructive/10 p-3 rounded-full">
+                  <AlertCircle className="h-10 w-10 text-destructive" />
+                </div>
+              )}
+            </div>
+            <CardTitle>{isSuccess ? 'Submission Complete' : 'Access Restricted'}</CardTitle>
+            <CardDescription>
+              {isSuccess 
+                ? 'Your recommendation letter has been securely received by the scholarship committee.' 
+                : error}
+            </CardDescription>
+          </CardHeader>
+          <CardFooter className="flex justify-center border-t pt-6">
+            <Button variant="outline" asChild>
+              <Link href="/">Return to Merited</Link>
+            </Button>
+          </CardFooter>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 p-4">
+      <div className="mb-8 flex flex-col items-center gap-2">
+        <div className="flex items-center gap-2">
+          <GraduationCap className="h-8 w-8 text-primary" />
+          <span className="text-2xl font-bold">Merited</span>
+        </div>
+        <Badge variant="outline" className="bg-primary/5 text-[10px] font-black uppercase tracking-widest px-2">
+          Secure Recommender Portal
+        </Badge>
+      </div>
+
+      <Card className="max-w-lg w-full shadow-2xl border-primary/10">
+        <CardHeader className="space-y-1">
+          <CardTitle className="text-2xl">Upload Recommendation</CardTitle>
+          <CardDescription>
+            You have been requested to provide a recommendation for <strong>{tokenData.studentName}</strong>.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="rounded-lg bg-muted/30 p-4 border space-y-3">
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-muted-foreground">Scholarship:</span>
+              <span className="font-bold">{tokenData.scholarshipTitle}</span>
+            </div>
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-muted-foreground">Recommender:</span>
+              <span className="font-bold">{tokenData.recommenderName}</span>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <Label htmlFor="pdf-upload" className="text-sm font-bold flex items-center gap-2">
+              <FileText className="h-4 w-4 text-primary" /> Select Letter (PDF Only)
+            </Label>
+            <div className="relative">
+              <Input 
+                id="pdf-upload" 
+                type="file" 
+                accept=".pdf" 
+                className="cursor-pointer"
+                onChange={handleFileUpload}
+                disabled={isUploading}
+              />
+              {isUploading && (
+                <div className="absolute inset-0 flex items-center justify-center bg-background/80 rounded-md">
+                  <div className="w-full px-6 space-y-2">
+                    <div className="flex justify-between text-xs font-bold text-primary">
+                      <span>Uploading...</span>
+                      <span>{Math.round(uploadProgress)}%</span>
+                    </div>
+                    <Progress value={uploadProgress} className="h-2" />
+                  </div>
+                </div>
+              )}
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+              Max file size: 10MB. Once uploaded, the student and selection committee will be notified.
+            </p>
+          </div>
+        </CardContent>
+        <CardFooter className="bg-muted/10 border-t flex flex-col items-center p-6 gap-2">
+          <p className="text-[10px] text-muted-foreground text-center">
+            By uploading, you agree that this document is an authentic evaluation of the candidate.
+          </p>
+        </CardFooter>
+      </Card>
+    </div>
+  );
+}
