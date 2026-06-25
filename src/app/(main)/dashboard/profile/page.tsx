@@ -1,4 +1,3 @@
-
 'use client';
 
 import { Button } from '@/components/ui/button';
@@ -19,23 +18,40 @@ import { useForm } from 'react-hook-form';
 import { saveApplicantData } from './actions';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { Separator } from '@/components/ui/separator';
-import { useDoc, useFirebase, useMemoFirebase } from '@/firebase';
+import { useDoc, useFirebase, useMemoFirebase, useFunctions } from '@/firebase';
 import { doc, setDoc, serverTimestamp, updateDoc, arrayUnion } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL, getStorage } from 'firebase/storage';
-import { CheckCircle, Send, Save, Loader2, CloudCheck, CloudUpload, AlertCircle, FileText, Upload, Type, Paperclip } from 'lucide-react';
+import { httpsCallable } from 'firebase/functions';
+import { 
+  CheckCircle, 
+  Send, 
+  Save, 
+  Loader2, 
+  CloudCheck, 
+  CloudUpload, 
+  AlertCircle, 
+  FileText, 
+  Upload, 
+  Type, 
+  Paperclip,
+  UserPlus,
+  Mail,
+  Clock
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export default function ProfilePage() {
   const { toast } = useToast();
   const { user, isUserLoading, firestore } = useFirebase();
+  const functions = useFunctions();
   const storage = getStorage();
   
   const [isSaving, setIsSaving] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+  const [isRequestingRec, setIsRequestingRec] = useState<Record<number, boolean>>({});
   
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -91,12 +107,11 @@ export default function ProfilePage() {
   const handleFileUpload = async (file: File, field: string, promptId?: string) => {
     if (!user || !file) return;
 
-    // Validation
     if (file.type !== 'application/pdf') {
       toast({ title: "Invalid File Type", description: "Please upload a PDF file.", variant: "destructive" });
       return;
     }
-    if (file.size > 10 * 1024 * 1024) { // 10MB
+    if (file.size > 10 * 1024 * 1024) {
       toast({ title: "File Too Large", description: "Maximum file size is 10MB.", variant: "destructive" });
       return;
     }
@@ -125,7 +140,6 @@ export default function ProfilePage() {
         const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
         
         if (promptId) {
-          // Update Essays Array
           await updateDoc(userDocRef!, {
             essays: arrayUnion({
               promptId,
@@ -136,7 +150,6 @@ export default function ProfilePage() {
             updatedAt: serverTimestamp()
           });
         } else {
-          // Update specific document field or general docs array
           const updateObj: any = { [field]: downloadURL, updatedAt: serverTimestamp() };
           if (field === 'transcripts') {
             updateObj.documents = arrayUnion(downloadURL);
@@ -152,6 +165,48 @@ export default function ProfilePage() {
         });
       }
     );
+  };
+
+  const handleSendRecommendationRequest = async (index: number) => {
+    if (!user || !functions) return;
+    
+    const name = getValues(`recommenderName${index}` as any);
+    const email = getValues(`recommenderEmail${index}` as any);
+    const title = getValues(`recommenderTitle${index}` as any);
+
+    if (!name || !email || !title) {
+      toast({ title: "Missing Information", description: "Please fill out all recommender details.", variant: "destructive" });
+      return;
+    }
+
+    setIsRequestingRec(prev => ({ ...prev, [index]: true }));
+
+    try {
+      const sendReq = httpsCallable(functions, 'sendRecommendationRequest');
+      await sendReq({
+        applicationId: user.uid,
+        scholarshipId: 'general-portfolio',
+        organizationId: 'default-school',
+        studentName: user.displayName || 'A Student',
+        scholarshipTitle: 'General Scholarship Portfolio',
+        recommenderName: name,
+        recommenderEmail: email,
+        recommenderTitle: title,
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days default
+      });
+
+      // Update local status in Firestore
+      await updateDoc(userDocRef!, {
+        [`recommendationStatus${index}`]: 'Pending',
+        updatedAt: serverTimestamp(),
+      });
+
+      toast({ title: "Request Sent", description: `An invitation has been sent to ${name}.` });
+    } catch (error: any) {
+      toast({ title: "Request Failed", description: error.message || "Could not send request.", variant: "destructive" });
+    } finally {
+      setIsRequestingRec(prev => ({ ...prev, [index]: false }));
+    }
   };
 
   const performAutoSave = useCallback(async () => {
@@ -241,11 +296,11 @@ export default function ProfilePage() {
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-8">
-          {/* Step 1: Profile & Academic */}
+          {/* Step 1: Academic Profile */}
           <Card>
             <CardHeader>
               <CardTitle>Step 1: Academic Profile</CardTitle>
-              <CardDescription>Basic details and transcript upload (Optional).</CardDescription>
+              <CardDescription>Basic details and transcript upload.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -271,7 +326,6 @@ export default function ProfilePage() {
                   {uploadProgress.transcripts !== undefined && (
                     <div className="space-y-1">
                       <Progress value={uploadProgress.transcripts} className="h-1" />
-                      <p className="text-[10px] text-muted-foreground">Uploading: {Math.round(uploadProgress.transcripts)}%</p>
                     </div>
                   )}
                   {applicantData?.transcripts && (
@@ -288,10 +342,9 @@ export default function ProfilePage() {
           <Card>
             <CardHeader>
               <CardTitle>Step 2: Essay Submission</CardTitle>
-              <CardDescription>Choose to type your response or upload a PDF.</CardDescription>
+              <CardDescription>Type your response or upload a PDF.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-8">
-              {/* Essay 1 */}
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <Label className="text-base font-bold">Qualification Statement</Label>
@@ -306,17 +359,12 @@ export default function ProfilePage() {
                 ) : (
                   <div className="p-4 border-2 border-dashed rounded-lg space-y-4">
                     <Input type="file" accept=".pdf" onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], 'essays', 'qualification')} disabled={isAlreadySubmitted} />
-                    {uploadProgress.essays !== undefined && <Progress value={uploadProgress.essays} className="h-1" />}
-                    {applicantData?.essays?.find(e => e.promptId === 'qualification') && (
-                       <Badge variant="secondary" className="gap-2"><FileText className="h-3 w-3" /> PDF Uploaded</Badge>
-                    )}
                   </div>
                 )}
               </div>
 
               <Separator />
 
-              {/* Essay 2 */}
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <Label className="text-base font-bold">Personal Statement</Label>
@@ -331,12 +379,63 @@ export default function ProfilePage() {
                 ) : (
                   <div className="p-4 border-2 border-dashed rounded-lg space-y-4">
                     <Input type="file" accept=".pdf" onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], 'essays', 'personal-statement')} disabled={isAlreadySubmitted} />
-                    {applicantData?.essays?.find(e => e.promptId === 'personal-statement') && (
-                       <Badge variant="secondary" className="gap-2"><FileText className="h-3 w-3" /> PDF Uploaded</Badge>
-                    )}
                   </div>
                 )}
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Step 3: Recommendations */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Step 3: Recommendation Letters</CardTitle>
+              <CardDescription>Request official endorsements from teachers or mentors.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {[1, 2].map((i) => {
+                const status = (applicantData as any)?.[`recommendationStatus${i}`] || 'Not Requested';
+                return (
+                  <div key={i} className="rounded-lg border p-4 space-y-4 bg-muted/20">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-bold flex items-center gap-2">
+                        <UserPlus className="h-4 w-4 text-primary" /> Recommendation Request #{i}
+                      </h4>
+                      <Badge variant={status === 'Received' ? 'default' : 'secondary'} className={status === 'Pending' ? 'bg-amber-500/10 text-amber-600 border-amber-200' : ''}>
+                        {status === 'Pending' && <Clock className="h-3 w-3 mr-1 animate-pulse" />}
+                        {status}
+                      </Badge>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                      <div className="space-y-2">
+                        <Label>Recommender Name</Label>
+                        <Input {...register(`recommenderName${i}` as any)} placeholder="Dr. Smith" disabled={isAlreadySubmitted || status !== 'Not Requested'} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Recommender Email</Label>
+                        <Input type="email" {...register(`recommenderEmail${i}` as any)} placeholder="smith@school.edu" disabled={isAlreadySubmitted || status !== 'Not Requested'} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Title/Relationship</Label>
+                        <Input {...register(`recommenderTitle${i}` as any)} placeholder="Math Teacher" disabled={isAlreadySubmitted || status !== 'Not Requested'} />
+                      </div>
+                    </div>
+
+                    {status === 'Not Requested' && !isAlreadySubmitted && (
+                      <Button 
+                        type="button" 
+                        size="sm" 
+                        className="w-full sm:w-auto" 
+                        onClick={() => handleSendRecommendationRequest(i)}
+                        disabled={isRequestingRec[i]}
+                      >
+                        {isRequestingRec[i] ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Mail className="h-4 w-4 mr-2" />}
+                        Send Request
+                      </Button>
+                    )}
+                  </div>
+                );
+              })}
             </CardContent>
           </Card>
 
@@ -369,6 +468,12 @@ export default function ProfilePage() {
                   {(watch('essay') || applicantData?.essays?.some(e => e.promptId === 'personal-statement')) ? '✓' : '!'}
                 </Badge>
                 <span>Personal Statement</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge variant={((applicantData as any)?.recommendationStatus1 === 'Pending' || (applicantData as any)?.recommendationStatus1 === 'Received') ? 'default' : 'outline'}>
+                  {((applicantData as any)?.recommendationStatus1 === 'Pending' || (applicantData as any)?.recommendationStatus1 === 'Received') ? '✓' : '!'}
+                </Badge>
+                <span>Rec Letter #1 Request</span>
               </div>
             </CardContent>
           </Card>
