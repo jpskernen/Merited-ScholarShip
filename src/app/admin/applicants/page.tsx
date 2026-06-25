@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import { 
   EyeOff, 
   AlertTriangle, 
@@ -28,11 +29,14 @@ import {
   MessageSquare,
   Star,
   Loader2,
-  Filter
+  Filter,
+  CheckCircle2,
+  ChevronRight
 } from 'lucide-react';
-import { useFirebase, useUser, useMemoFirebase } from '@/firebase';
-import { collection, doc, updateDoc, collectionGroup, query, where, onSnapshot } from 'firebase/firestore';
+import { useFirebase, useUser } from '@/firebase';
+import { collection, doc, updateDoc, collectionGroup, query, where, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import Link from 'next/link';
+import { useToast } from '@/hooks/use-toast';
 
 const RUBRIC_WEIGHTS = {
   gpa: 0.25,
@@ -46,11 +50,17 @@ const RUBRIC_WEIGHTS = {
 export default function AdminApplicantsPage() {
   const { firestore } = useFirebase();
   const { userData, isUserLoading } = useUser();
+  const { toast } = useToast();
   
   const [applications, setApplications] = useState<any[]>([]);
   const [allReviews, setAllReviews] = useState<any[]>([]);
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  
+  // Bulk actions state
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkStatus, setBulkStatus] = useState<string>('');
+  const [isBulkUpdating, setIsBulkUpdating] = useState(false);
 
   const orgId = userData?.schoolId || 'default-school';
 
@@ -60,8 +70,6 @@ export default function AdminApplicantsPage() {
 
     setIsDataLoading(true);
     
-    // In our schema, applicants are in the 'users' collection with role 'Applicant'
-    // This matches the org-scoped requirement using schoolId
     const q = query(
       collection(firestore, 'users'),
       where('role', '==', 'Applicant'),
@@ -71,7 +79,6 @@ export default function AdminApplicantsPage() {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const docs = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() }))
-        // Exclude drafts as requested
         .filter((app: any) => app.status !== 'Draft' && app.status !== 'draft');
       
       setApplications(docs);
@@ -132,7 +139,6 @@ export default function AdminApplicantsPage() {
       };
     });
 
-    // Client-side status filtering
     if (statusFilter !== 'all') {
       data = data.filter(item => item.status?.toLowerCase() === statusFilter.toLowerCase());
     }
@@ -144,6 +150,48 @@ export default function AdminApplicantsPage() {
     if (!firestore) return;
     const docRef = doc(firestore, 'users', id);
     updateDoc(docRef, { isShortlisted: !current });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.length === tableData.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(tableData.map(app => app.id));
+    }
+  };
+
+  const toggleSelectOne = (id: string) => {
+    setSelectedIds(prev => 
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleBulkUpdate = async () => {
+    if (!firestore || !bulkStatus || selectedIds.length === 0) return;
+    setIsBulkUpdating(true);
+    try {
+      const promises = selectedIds.map(id => 
+        updateDoc(doc(firestore, 'users', id), {
+          status: bulkStatus,
+          updatedAt: serverTimestamp()
+        })
+      );
+      await Promise.all(promises);
+      toast({ 
+        title: "Status Updated", 
+        description: `Successfully updated ${selectedIds.length} candidate(s) to "${bulkStatus}".` 
+      });
+      setSelectedIds([]);
+      setBulkStatus('');
+    } catch (err: any) {
+      toast({ 
+        title: "Update Failed", 
+        description: err.message || "Could not complete bulk update.", 
+        variant: "destructive" 
+      });
+    } finally {
+      setIsBulkUpdating(false);
+    }
   };
 
   if (isUserLoading || isDataLoading) {
@@ -190,10 +238,53 @@ export default function AdminApplicantsPage() {
         </div>
       </div>
 
+      {selectedIds.length > 0 && (
+        <div className="flex items-center justify-between p-4 bg-primary/10 border border-primary/20 rounded-lg animate-in fade-in slide-in-from-top-4">
+          <div className="flex items-center gap-4">
+            <Badge variant="default" className="bg-primary px-3 py-1 font-bold">
+              {selectedIds.length} Selected
+            </Badge>
+            <div className="flex items-center gap-2">
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              <Select value={bulkStatus} onValueChange={setBulkStatus}>
+                <SelectTrigger className="w-[200px] h-9 bg-background">
+                  <SelectValue placeholder="Change status to..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Submitted">Submitted</SelectItem>
+                  <SelectItem value="In Review">Under Review</SelectItem>
+                  <SelectItem value="Awarded">Awarded</SelectItem>
+                  <SelectItem value="Not Awarded">Not Awarded</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setSelectedIds([])}>Cancel</Button>
+            <Button 
+              size="sm" 
+              onClick={handleBulkUpdate} 
+              disabled={!bulkStatus || isBulkUpdating}
+              className="font-bold"
+            >
+              {isBulkUpdating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
+              Apply Status
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className="overflow-hidden rounded-lg border bg-card shadow-sm">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-[40px]">
+                <Checkbox 
+                  checked={selectedIds.length === tableData.length && tableData.length > 0}
+                  onCheckedChange={toggleSelectAll}
+                  aria-label="Select all"
+                />
+              </TableHead>
               <TableHead className="w-[300px]">Candidate Identifier</TableHead>
               <TableHead>Evaluations</TableHead>
               <TableHead>Avg Weighted Score</TableHead>
@@ -203,7 +294,14 @@ export default function AdminApplicantsPage() {
           </TableHeader>
           <TableBody>
             {tableData.map((row) => (
-              <TableRow key={row.id}>
+              <TableRow key={row.id} className={selectedIds.includes(row.id) ? 'bg-primary/5' : ''}>
+                <TableCell>
+                  <Checkbox 
+                    checked={selectedIds.includes(row.id)}
+                    onCheckedChange={() => toggleSelectOne(row.id)}
+                    aria-label={`Select applicant ${row.id}`}
+                  />
+                </TableCell>
                 <TableCell>
                   <div className="flex flex-col">
                     <span className="font-semibold flex items-center gap-2">
