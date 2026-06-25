@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { FileText, CheckCircle, AlertCircle, Loader2, Upload, GraduationCap } from 'lucide-react';
 import Link from 'next/link';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export default function RecommendUploadPage({ params }: { params: Promise<{ tokenId: string }> }) {
   const { tokenId } = use(params);
@@ -26,6 +27,7 @@ export default function RecommendUploadPage({ params }: { params: Promise<{ toke
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isSuccess, setIsSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchToken() {
@@ -70,13 +72,15 @@ export default function RecommendUploadPage({ params }: { params: Promise<{ toke
     const file = e.target.files?.[0];
     if (!file || !tokenData || !tokenId) return;
 
+    setUploadError(null);
+
     if (file.type !== 'application/pdf') {
-      toast({ title: "Invalid File Type", description: "Please upload a PDF file.", variant: "destructive" });
+      setUploadError("Please upload a PDF file.");
       return;
     }
 
     if (file.size > 10 * 1024 * 1024) {
-      toast({ title: "File Too Large", description: "Maximum file size is 10MB.", variant: "destructive" });
+      setUploadError("Maximum file size is 10MB.");
       return;
     }
 
@@ -90,27 +94,24 @@ export default function RecommendUploadPage({ params }: { params: Promise<{ toke
         setUploadProgress(progress);
       }, 
       (error) => {
-        toast({ title: "Upload Failed", description: error.message, variant: "destructive" });
+        setUploadError(error.message);
         setIsUploading(false);
       }, 
       async () => {
         const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
         
         try {
-          // Update Token
           await updateDoc(doc(firestore, 'recommendationTokens', tokenId), {
             used: true,
             fileUrl: downloadURL,
             uploadedAt: serverTimestamp()
           });
 
-          // Update Student Application
           const studentRef = doc(firestore, 'users', tokenData.applicationId);
           const updateObj: any = {
             updatedAt: serverTimestamp()
           };
           
-          // Map back to the correct recommendation index if provided, default to index 1
           const index = tokenData.requestIndex || 1;
           updateObj[`recommendationStatus${index}`] = 'Received';
           updateObj[`recommendationLetter${index}`] = downloadURL;
@@ -120,7 +121,7 @@ export default function RecommendUploadPage({ params }: { params: Promise<{ toke
           setIsSuccess(true);
           toast({ title: "Letter Submitted", description: "Your recommendation has been securely uploaded." });
         } catch (err: any) {
-          toast({ title: "Update Failed", description: "The file was uploaded but we couldn't link it to the application. Our team has been notified.", variant: "destructive" });
+          setUploadError("The file was uploaded but we couldn't link it to the application.");
         } finally {
           setIsUploading(false);
         }
@@ -228,6 +229,12 @@ export default function RecommendUploadPage({ params }: { params: Promise<{ toke
                 </div>
               )}
             </div>
+            {uploadError && (
+              <Alert variant="destructive" className="py-2">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription className="text-xs">{uploadError}</AlertDescription>
+              </Alert>
+            )}
             <p className="text-[10px] text-muted-foreground">
               Max file size: 10MB. Once uploaded, the student and selection committee will be notified.
             </p>

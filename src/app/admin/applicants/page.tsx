@@ -31,13 +31,15 @@ import {
   Filter,
   CheckCircle2,
   ChevronRight,
-  Download
+  Download,
+  AlertCircle
 } from 'lucide-react';
 import { useFirebase, useUser } from '@/firebase';
 import { collection, doc, updateDoc, collectionGroup, query, where, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import Papa from 'papaparse';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 const RUBRIC_WEIGHTS = {
   gpa: 0.25,
@@ -58,14 +60,13 @@ export default function AdminApplicantsPage() {
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   
-  // Bulk actions state
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkStatus, setBulkStatus] = useState<string>('');
   const [isBulkUpdating, setIsBulkUpdating] = useState(false);
+  const [bulkError, setBulkError] = useState<string | null>(null);
 
   const orgId = userData?.schoolId || 'default-school';
 
-  // 1. Real-time Applicants Listener (Filtered by Org and Status)
   useEffect(() => {
     if (!firestore || !orgId || isUserLoading) return;
 
@@ -85,14 +86,12 @@ export default function AdminApplicantsPage() {
       setApplications(docs);
       setIsDataLoading(false);
     }, (error) => {
-      console.error("Error listening to applicants:", error);
       setIsDataLoading(false);
     });
 
     return () => unsubscribe();
   }, [firestore, orgId, isUserLoading]);
 
-  // 2. Real-time Reviews Listener (Collection Group)
   useEffect(() => {
     if (!firestore || isUserLoading) return;
 
@@ -105,7 +104,6 @@ export default function AdminApplicantsPage() {
     return () => unsubscribe();
   }, [firestore, isUserLoading]);
 
-  // 3. Processed Data for the Table
   const tableData = useMemo(() => {
     let data = applications.map(applicant => {
       const applicantReviews = allReviews.filter(r => r.applicationId === applicant.id) || [];
@@ -201,6 +199,7 @@ export default function AdminApplicantsPage() {
   const handleBulkUpdate = async () => {
     if (!firestore || !bulkStatus || selectedIds.length === 0) return;
     setIsBulkUpdating(true);
+    setBulkError(null);
     try {
       const promises = selectedIds.map(id => 
         updateDoc(doc(firestore, 'users', id), {
@@ -216,11 +215,7 @@ export default function AdminApplicantsPage() {
       setSelectedIds([]);
       setBulkStatus('');
     } catch (err: any) {
-      toast({ 
-        title: "Update Failed", 
-        description: err.message || "Could not complete bulk update.", 
-        variant: "destructive" 
-      });
+      setBulkError(err.message || "Could not complete bulk update.");
     } finally {
       setIsBulkUpdating(false);
     }
@@ -275,38 +270,46 @@ export default function AdminApplicantsPage() {
       </div>
 
       {selectedIds.length > 0 && (
-        <div className="flex items-center justify-between p-4 bg-primary/10 border border-primary/20 rounded-lg animate-in fade-in slide-in-from-top-4">
-          <div className="flex items-center gap-4">
-            <Badge variant="default" className="bg-primary px-3 py-1 font-bold">
-              {selectedIds.length} Selected
-            </Badge>
+        <div className="flex flex-col gap-4 p-4 bg-primary/10 border border-primary/20 rounded-lg animate-in fade-in slide-in-from-top-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <Badge variant="default" className="bg-primary px-3 py-1 font-bold">
+                {selectedIds.length} Selected
+              </Badge>
+              <div className="flex items-center gap-2">
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                <Select value={bulkStatus} onValueChange={setBulkStatus}>
+                  <SelectTrigger className="w-[200px] h-9 bg-background">
+                    <SelectValue placeholder="Change status to..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Submitted">Submitted</SelectItem>
+                    <SelectItem value="In Review">Under Review</SelectItem>
+                    <SelectItem value="Awarded">Awarded</SelectItem>
+                    <SelectItem value="Not Awarded">Not Awarded</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
             <div className="flex items-center gap-2">
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-              <Select value={bulkStatus} onValueChange={setBulkStatus}>
-                <SelectTrigger className="w-[200px] h-9 bg-background">
-                  <SelectValue placeholder="Change status to..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Submitted">Submitted</SelectItem>
-                  <SelectItem value="In Review">Under Review</SelectItem>
-                  <SelectItem value="Awarded">Awarded</SelectItem>
-                  <SelectItem value="Not Awarded">Not Awarded</SelectItem>
-                </SelectContent>
-              </Select>
+              <Button variant="ghost" size="sm" onClick={() => setSelectedIds([])}>Cancel</Button>
+              <Button 
+                size="sm" 
+                onClick={handleBulkUpdate} 
+                disabled={!bulkStatus || isBulkUpdating}
+                className="font-bold"
+              >
+                {isBulkUpdating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
+                {isBulkUpdating ? 'Updating...' : 'Apply Status'}
+              </Button>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={() => setSelectedIds([])}>Cancel</Button>
-            <Button 
-              size="sm" 
-              onClick={handleBulkUpdate} 
-              disabled={!bulkStatus || isBulkUpdating}
-              className="font-bold"
-            >
-              {isBulkUpdating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
-              Apply Status
-            </Button>
-          </div>
+          {bulkError && (
+            <Alert variant="destructive" className="py-2">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription className="text-xs">{bulkError}</AlertDescription>
+            </Alert>
+          )}
         </div>
       )}
 

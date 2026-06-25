@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useMemo, useEffect, use } from 'react';
@@ -27,7 +26,8 @@ import {
   ShieldAlert,
   GraduationCap,
   CheckCircle2,
-  Trophy
+  Trophy,
+  AlertCircle
 } from 'lucide-react';
 import { notFound, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -37,6 +37,7 @@ import type { Applicant } from '@/types/applicant';
 import type { Scholarship } from '@/types/scholarship';
 import { useToast } from '@/hooks/use-toast';
 import { analyzeScholarshipFit, type AnalyzeFitOutput } from '@/ai/flows/analyze-scholarship-fit';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export default function ApplicationReviewPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -52,7 +53,6 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
 
   const { data: application, isLoading } = useDoc<Applicant>(applicantRef);
 
-  // Fetch all assigned programs for this reviewer
   const programsQuery = useMemoFirebase(() => {
     if (!firestore || !reviewer) return null;
     return query(collection(firestore, 'programs'), where('reviewerIds', 'array-contains', reviewer.uid));
@@ -70,8 +70,8 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState<AnalyzeFitOutput | null>(null);
   const [isFinished, setIsFinished] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // Check if this reviewer has already submitted a score for this application
   const hasAlreadyReviewed = useMemo(() => {
     if (!application || !reviewer) return false;
     return (application as any).scores?.some((s: any) => s.reviewerId === reviewer.uid);
@@ -103,11 +103,12 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
     if (!firestore || !reviewer || !applicationId || hasAlreadyReviewed) return;
     
     if (!recommendation) {
-      toast({ title: "Incomplete", description: "Please provide a recommendation.", variant: "destructive" });
+      setSubmitError("Please provide a recommendation.");
       return;
     }
 
     setIsSubmitting(true);
+    setSubmitError(null);
 
     try {
       const criteriaScores = Object.entries(scores).map(([criteriaId, score]) => ({
@@ -127,7 +128,6 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
         aiAnalysis,
       };
 
-      // Update the application document (the applicant's doc in 'users')
       const applicantDocRef = doc(firestore, 'users', applicationId);
       await updateDoc(applicantDocRef, {
         scores: arrayUnion(reviewData),
@@ -139,7 +139,6 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
         description: "Evaluation finalized and stored.",
       });
       
-      // Find the next application to review
       const assignedSchoolIds = programs?.map(p => p.schoolId) || ['default-school'];
       const nextQ = query(
         collection(firestore, 'users'),
@@ -161,7 +160,7 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
         setIsFinished(true);
       }
     } catch (error: any) {
-      toast({ title: "Error", variant: "destructive", description: error.message || "Could not save review." });
+      setSubmitError(error.message || "Could not save review.");
     } finally { setIsSubmitting(false); }
   };
 
@@ -299,6 +298,13 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
             </CardHeader>
             
             <CardContent className="flex-1 overflow-y-auto space-y-6 p-6">
+              {submitError && (
+                <Alert variant="destructive" className="py-2">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription className="text-xs">{submitError}</AlertDescription>
+                </Alert>
+              )}
+
               {aiAnalysis && (
                 <div className="p-4 rounded-xl bg-primary/5 border border-primary/20">
                   <div className="flex items-center justify-between mb-2">

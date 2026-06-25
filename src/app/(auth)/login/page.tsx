@@ -1,4 +1,3 @@
-
 'use client';
 
 import Link from 'next/link';
@@ -17,9 +16,10 @@ import { useAuth, initiateEmailSignIn, useFirestore } from '@/firebase';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, Loader2, AlertCircle } from 'lucide-react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export default function LoginPage() {
   const auth = useAuth();
@@ -30,6 +30,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSigningIn, setIsSigningIn] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Synchronized Redirection Logic
   useEffect(() => {
@@ -37,7 +38,6 @@ export default function LoginPage() {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user && isSigningIn) {
         try {
-          // Check roles to determine redirect
           const [adminDoc, userDoc, reviewerDoc] = await Promise.all([
             getDoc(doc(firestore, 'roles_admin', user.uid)),
             getDoc(doc(firestore, 'users', user.uid)),
@@ -51,7 +51,6 @@ export default function LoginPage() {
             reviewerDoc.exists() || 
             user.email === 'hello@merited.com' || 
             user.email === 'hellow@meritedapp.com' ||
-            user.email === 'hello@meritedapp.com' ||
             user.email === 'kernenpm@gmail.com';
 
           if (isAdmin) {
@@ -62,7 +61,6 @@ export default function LoginPage() {
             router.push('/dashboard');
           }
         } catch (error) {
-          // Fallback to default dashboard on any lookup error
           router.push('/dashboard');
         }
       }
@@ -74,12 +72,9 @@ export default function LoginPage() {
     e.preventDefault();
     if (!auth) return;
     setIsSigningIn(true);
+    setError(null);
     try {
       await initiateEmailSignIn(auth, email, password);
-      toast({
-        title: 'Authenticating...',
-        description: 'Verifying your credentials and access level.',
-      });
     } catch (error: any) {
       let message = 'Please check your credentials and try again.';
       if (
@@ -92,12 +87,7 @@ export default function LoginPage() {
       } else if (error.code === 'auth/too-many-requests') {
         message = 'Too many failed login attempts. Please try again later.';
       }
-      
-      toast({
-        variant: 'destructive',
-        title: 'Login Failed',
-        description: message,
-      });
+      setError(message);
       setIsSigningIn(false);
     }
   };
@@ -112,6 +102,12 @@ export default function LoginPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {error && (
+            <Alert variant="destructive" className="py-2">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription className="text-xs">{error}</AlertDescription>
+            </Alert>
+          )}
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
             <Input
@@ -147,9 +143,6 @@ export default function LoginPage() {
                 onClick={() => setShowPassword(!showPassword)}
               >
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                <span className="sr-only">
-                  {showPassword ? "Hide password" : "Show password"}
-                </span>
               </button>
             </div>
           </div>

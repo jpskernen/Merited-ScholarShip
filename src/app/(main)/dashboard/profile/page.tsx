@@ -40,6 +40,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export default function ProfilePage() {
   const { toast } = useToast();
@@ -51,7 +52,10 @@ export default function ProfilePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+  const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
   const [isRequestingRec, setIsRequestingRec] = useState<Record<number, boolean>>({});
+  const [recErrors, setRecErrors] = useState<Record<number, string>>({});
+  const [formError, setFormError] = useState<string | null>(null);
   
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -107,12 +111,18 @@ export default function ProfilePage() {
   const handleFileUpload = async (file: File, field: string, promptId?: string) => {
     if (!user || !file) return;
 
+    setUploadErrors(prev => {
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+
     if (file.type !== 'application/pdf') {
-      toast({ title: "Invalid File Type", description: "Please upload a PDF file.", variant: "destructive" });
+      setUploadErrors(prev => ({ ...prev, [field]: "Please upload a PDF file." }));
       return;
     }
     if (file.size > 10 * 1024 * 1024) {
-      toast({ title: "File Too Large", description: "Maximum file size is 10MB.", variant: "destructive" });
+      setUploadErrors(prev => ({ ...prev, [field]: "Maximum file size is 10MB." }));
       return;
     }
 
@@ -129,7 +139,7 @@ export default function ProfilePage() {
         setUploadProgress(prev => ({ ...prev, [field]: progress }));
       }, 
       (error) => {
-        toast({ title: "Upload Failed", description: error.message, variant: "destructive" });
+        setUploadErrors(prev => ({ ...prev, [field]: error.message }));
         setUploadProgress(prev => {
           const next = { ...prev };
           delete next[field];
@@ -157,7 +167,6 @@ export default function ProfilePage() {
           await updateDoc(userDocRef!, updateObj);
         }
 
-        toast({ title: "Upload Successful", description: `${file.name} has been saved.` });
         setUploadProgress(prev => {
           const next = { ...prev };
           delete next[field];
@@ -175,11 +184,16 @@ export default function ProfilePage() {
     const title = getValues(`recommenderTitle${index}` as any);
 
     if (!name || !email || !title) {
-      toast({ title: "Missing Information", description: "Please fill out all recommender details.", variant: "destructive" });
+      setRecErrors(prev => ({ ...prev, [index]: "Please fill out all recommender details." }));
       return;
     }
 
     setIsRequestingRec(prev => ({ ...prev, [index]: true }));
+    setRecErrors(prev => {
+      const next = { ...prev };
+      delete next[index];
+      return next;
+    });
 
     try {
       const sendReq = httpsCallable(functions, 'sendRecommendationRequest');
@@ -192,10 +206,9 @@ export default function ProfilePage() {
         recommenderName: name,
         recommenderEmail: email,
         recommenderTitle: title,
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days default
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       });
 
-      // Update local status in Firestore
       await updateDoc(userDocRef!, {
         [`recommendationStatus${index}`]: 'Pending',
         updatedAt: serverTimestamp(),
@@ -203,7 +216,7 @@ export default function ProfilePage() {
 
       toast({ title: "Request Sent", description: `An invitation has been sent to ${name}.` });
     } catch (error: any) {
-      toast({ title: "Request Failed", description: error.message || "Could not send request.", variant: "destructive" });
+      setRecErrors(prev => ({ ...prev, [index]: error.message || "Could not send request." }));
     } finally {
       setIsRequestingRec(prev => ({ ...prev, [index]: false }));
     }
@@ -243,6 +256,7 @@ export default function ProfilePage() {
     if (submit) setIsSubmitting(true);
     else setIsSaving(true);
     
+    setFormError(null);
     const formData = new FormData(formRef.current);
 
     try {
@@ -257,7 +271,7 @@ export default function ProfilePage() {
         throw new Error(result.error);
       }
     } catch (error: any) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      setFormError(error.message);
       setSaveStatus('error');
     } finally {
       setIsSaving(false);
@@ -296,7 +310,13 @@ export default function ProfilePage() {
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-8">
-          {/* Step 1: Academic Profile */}
+          {formError && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{formError}</AlertDescription>
+            </Alert>
+          )}
+
           <Card>
             <CardHeader>
               <CardTitle>Step 1: Academic Profile</CardTitle>
@@ -307,10 +327,12 @@ export default function ProfilePage() {
                 <div className="space-y-2">
                   <Label htmlFor="name">Full Name</Label>
                   <Input id="name" {...register('name')} disabled={isAlreadySubmitted} onBlur={performAutoSave} />
+                  {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="gpa">GPA</Label>
                   <Input id="gpa" type="number" step="0.01" {...register('gpa')} disabled={isAlreadySubmitted} onBlur={performAutoSave} />
+                  {errors.gpa && <p className="text-xs text-destructive">{errors.gpa.message}</p>}
                 </div>
               </div>
 
@@ -323,6 +345,7 @@ export default function ProfilePage() {
                     onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], 'transcripts')}
                     disabled={isAlreadySubmitted || !!uploadProgress.transcripts}
                   />
+                  {uploadErrors.transcripts && <p className="text-xs text-destructive flex items-center gap-1"><AlertCircle className="h-3 w-3" /> {uploadErrors.transcripts}</p>}
                   {uploadProgress.transcripts !== undefined && (
                     <div className="space-y-1">
                       <Progress value={uploadProgress.transcripts} className="h-1" />
@@ -338,7 +361,6 @@ export default function ProfilePage() {
             </CardContent>
           </Card>
 
-          {/* Step 2: Essays */}
           <Card>
             <CardHeader>
               <CardTitle>Step 2: Essay Submission</CardTitle>
@@ -359,6 +381,7 @@ export default function ProfilePage() {
                 ) : (
                   <div className="p-4 border-2 border-dashed rounded-lg space-y-4">
                     <Input type="file" accept=".pdf" onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], 'essays', 'qualification')} disabled={isAlreadySubmitted} />
+                    {uploadErrors.essays && <p className="text-xs text-destructive flex items-center gap-1"><AlertCircle className="h-3 w-3" /> {uploadErrors.essays}</p>}
                   </div>
                 )}
               </div>
@@ -385,7 +408,6 @@ export default function ProfilePage() {
             </CardContent>
           </Card>
 
-          {/* Step 3: Recommendations */}
           <Card>
             <CardHeader>
               <CardTitle>Step 3: Recommendation Letters</CardTitle>
@@ -421,6 +443,13 @@ export default function ProfilePage() {
                       </div>
                     </div>
 
+                    {recErrors[i] && (
+                      <Alert variant="destructive" className="py-2">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertDescription className="text-xs">{recErrors[i]}</AlertDescription>
+                      </Alert>
+                    )}
+
                     {status === 'Not Requested' && !isAlreadySubmitted && (
                       <Button 
                         type="button" 
@@ -442,10 +471,12 @@ export default function ProfilePage() {
           {!isAlreadySubmitted && (
             <div className="flex gap-4 justify-end">
               <Button type="button" variant="outline" onClick={() => onSave(false)} disabled={isSaving || isSubmitting}>
-                <Save className="mr-2 h-4 w-4" /> Save Draft
+                {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                Save Draft
               </Button>
               <Button type="button" className="font-bold" onClick={() => onSave(true)} disabled={isSaving || isSubmitting}>
-                <Send className="mr-2 h-4 w-4" /> Submit Application
+                {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                Submit Application
               </Button>
             </div>
           )}
