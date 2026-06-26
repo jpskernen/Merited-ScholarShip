@@ -32,7 +32,8 @@ import {
   CheckCircle2,
   ChevronRight,
   Download,
-  AlertCircle
+  AlertCircle,
+  ExternalLink
 } from 'lucide-react';
 import { useFirebase, useUser } from '@/firebase';
 import { collection, doc, updateDoc, collectionGroup, query, where, onSnapshot, serverTimestamp } from 'firebase/firestore';
@@ -40,15 +41,6 @@ import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import Papa from 'papaparse';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-
-const RUBRIC_WEIGHTS = {
-  gpa: 0.25,
-  extracurriculars: 0.15,
-  volunteerism: 0.15,
-  leadership: 0.15,
-  major: 0.10,
-  other: 0.20
-};
 
 export default function AdminApplicantsPage() {
   const { firestore } = useFirebase();
@@ -65,39 +57,39 @@ export default function AdminApplicantsPage() {
   const [isBulkUpdating, setIsBulkUpdating] = useState(false);
   const [bulkError, setBulkError] = useState<string | null>(null);
 
-  const orgId = userData?.schoolId || 'default-school';
+  const schoolId = userData?.schoolId || 'scholarship-hib4j';
 
+  // Real-time listener for Applicants
   useEffect(() => {
-    if (!firestore || !orgId || isUserLoading) return;
+    if (!firestore || isUserLoading) return;
 
     setIsDataLoading(true);
     
     const q = query(
       collection(firestore, 'users'),
       where('role', '==', 'Applicant'),
-      where('schoolId', '==', orgId)
+      where('schoolId', '==', schoolId)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const docs = snapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter((app: any) => app.status !== 'Draft' && app.status !== 'draft');
-      
-      setApplications(docs);
+      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setApplications(docs.filter((app: any) => app.status !== 'Draft'));
       setIsDataLoading(false);
     }, (error) => {
+      console.error("Firestore Error:", error);
       setIsDataLoading(false);
     });
 
     return () => unsubscribe();
-  }, [firestore, orgId, isUserLoading]);
+  }, [firestore, schoolId, isUserLoading]);
 
+  // Real-time listener for all Reviews
   useEffect(() => {
     if (!firestore || isUserLoading) return;
 
     const q = collectionGroup(firestore, 'reviews');
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), applicationId: doc.ref.parent.parent?.id }));
       setAllReviews(docs);
     });
 
@@ -106,28 +98,14 @@ export default function AdminApplicantsPage() {
 
   const tableData = useMemo(() => {
     let data = applications.map(applicant => {
-      const applicantReviews = allReviews.filter(r => r.applicationId === applicant.id) || [];
+      const applicantReviews = allReviews.filter(r => r.applicationId === applicant.id);
       const reviewCount = applicantReviews.length;
-      let totalWeightedScore = 0;
-      let scores: number[] = [];
-
-      applicantReviews.forEach(review => {
-        if (review.scores) {
-          const weighted = 
-            (review.scores.gpa * RUBRIC_WEIGHTS.gpa) +
-            (review.scores.extracurriculars * RUBRIC_WEIGHTS.extracurriculars) +
-            (review.scores.volunteerism * RUBRIC_WEIGHTS.volunteerism) +
-            (review.scores.leadership * RUBRIC_WEIGHTS.leadership) +
-            (review.scores.major * RUBRIC_WEIGHTS.major) +
-            (review.scores.other * RUBRIC_WEIGHTS.other);
-          
-          totalWeightedScore += weighted;
-          scores.push(weighted);
-        }
-      });
-
-      const averageScore = reviewCount > 0 ? totalWeightedScore / reviewCount : 0;
-      const hasOutlier = scores.length >= 2 && scores.some(s => Math.abs(s - averageScore) > 0.8);
+      
+      const totalScore = applicantReviews.reduce((acc, r) => acc + (r.totalScore || 0), 0);
+      const averageScore = reviewCount > 0 ? totalScore / reviewCount : 0;
+      
+      const scores = applicantReviews.map(r => r.totalScore || 0);
+      const hasOutlier = scores.length >= 2 && scores.some(s => Math.abs(s - averageScore) > 1.5);
 
       return {
         ...applicant,
@@ -139,7 +117,7 @@ export default function AdminApplicantsPage() {
     });
 
     if (statusFilter !== 'all') {
-      data = data.filter(item => item.status?.toLowerCase() === statusFilter.toLowerCase());
+      data = data.filter(item => item.status === statusFilter);
     }
 
     return data;
@@ -152,14 +130,15 @@ export default function AdminApplicantsPage() {
     }
 
     const exportData = tableData.map(row => ({
-      'Student Name': row.name || `Applicant ${row.id.substring(0, 6).toUpperCase()}`,
+      'Candidate ID': row.id,
+      'Name': row.name || 'Anonymous',
       'Email': row.email,
-      'Scholarship': 'General Scholarship Portfolio',
-      'Status': row.status,
       'GPA': row.gpa?.toFixed(2) || 'N/A',
-      'Average Score': row.averageScore.toFixed(2),
-      'Submitted Date': row.submissionDate ? new Date(row.submissionDate).toLocaleDateString() : 'N/A',
-      'Rec Letters': `${[row.recommendationStatus1, row.recommendationStatus2].filter(s => s === 'Received').length}/2`
+      'Status': row.status,
+      'Review Count': row.reviewCount,
+      'Avg Score': row.averageScore.toFixed(2),
+      'Shortlisted': row.isShortlisted ? 'Yes' : 'No',
+      'Submitted At': row.submissionDate ? new Date(row.submissionDate).toLocaleString() : 'N/A'
     }));
 
     const csv = Papa.unparse(exportData);
@@ -167,19 +146,23 @@ export default function AdminApplicantsPage() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `merited-applications-${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
+    link.setAttribute('download', `applicants-export-${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     
-    toast({ title: "Export Complete", description: "Your CSV file has been generated." });
+    toast({ title: "Export Started", description: "Your CSV file is being generated." });
   };
 
   const handleToggleShortlist = async (id: string, current: boolean) => {
     if (!firestore) return;
-    const docRef = doc(firestore, 'users', id);
-    updateDoc(docRef, { isShortlisted: !current });
+    try {
+      const docRef = doc(firestore, 'users', id);
+      await updateDoc(docRef, { isShortlisted: !current });
+      toast({ title: current ? "Removed from Shortlist" : "Added to Shortlist" });
+    } catch (err) {
+      toast({ title: "Update Failed", variant: "destructive" });
+    }
   };
 
   const toggleSelectAll = () => {
@@ -209,13 +192,13 @@ export default function AdminApplicantsPage() {
       );
       await Promise.all(promises);
       toast({ 
-        title: "Status Updated", 
-        description: `Successfully updated ${selectedIds.length} candidate(s) to "${bulkStatus}".` 
+        title: "Bulk Status Updated", 
+        description: `Updated ${selectedIds.length} applicant(s) to ${bulkStatus}.` 
       });
       setSelectedIds([]);
       setBulkStatus('');
     } catch (err: any) {
-      setBulkError(err.message || "Could not complete bulk update.");
+      setBulkError(err.message || "Failed to update applicants.");
     } finally {
       setIsBulkUpdating(false);
     }
@@ -225,7 +208,7 @@ export default function AdminApplicantsPage() {
     return (
       <div className="flex h-64 flex-col items-center justify-center gap-4">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="text-muted-foreground animate-pulse">Syncing committee results...</p>
+        <p className="text-muted-foreground animate-pulse font-medium">Syncing committee records...</p>
       </div>
     );
   }
@@ -236,11 +219,11 @@ export default function AdminApplicantsPage() {
         <div>
           <h1 className="text-3xl font-bold">Committee Review Board</h1>
           <p className="text-muted-foreground">
-            Real-time multi-tenant evaluation analytics and candidate shortlisting.
+            Manage institutional applicants and evaluate committee scoring distribution.
           </p>
         </div>
         <div className="flex items-center gap-4">
-          <Button variant="outline" size="sm" onClick={handleExportCSV} className="hidden sm:flex">
+          <Button variant="outline" size="sm" onClick={handleExportCSV}>
             <Download className="h-4 w-4 mr-2" />
             Export CSV
           </Button>
@@ -248,7 +231,7 @@ export default function AdminApplicantsPage() {
             <Filter className="h-4 w-4 text-muted-foreground" />
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Filter by Status" />
+                <SelectValue placeholder="Status Filter" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Submissions</SelectItem>
@@ -259,73 +242,46 @@ export default function AdminApplicantsPage() {
               </SelectContent>
             </Select>
           </div>
-          <Card className="px-4 py-2 bg-primary/5 border-primary/20 flex items-center gap-3">
-            <Users className="h-4 w-4 text-primary" />
-            <div className="text-sm">
-              <span className="font-bold text-primary">{tableData.length}</span>
-              <span className="text-muted-foreground ml-1">Results</span>
-            </div>
-          </Card>
         </div>
       </div>
 
       {selectedIds.length > 0 && (
-        <div className="flex flex-col gap-4 p-4 bg-primary/10 border border-primary/20 rounded-lg animate-in fade-in slide-in-from-top-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Badge variant="default" className="bg-primary px-3 py-1 font-bold">
-                {selectedIds.length} Selected
-              </Badge>
-              <div className="flex items-center gap-2">
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                <Select value={bulkStatus} onValueChange={setBulkStatus}>
-                  <SelectTrigger className="w-[200px] h-9 bg-background">
-                    <SelectValue placeholder="Change status to..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Submitted">Submitted</SelectItem>
-                    <SelectItem value="In Review">Under Review</SelectItem>
-                    <SelectItem value="Awarded">Awarded</SelectItem>
-                    <SelectItem value="Not Awarded">Not Awarded</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setSelectedIds([])}>Cancel</Button>
-              <Button 
-                size="sm" 
-                onClick={handleBulkUpdate} 
-                disabled={!bulkStatus || isBulkUpdating}
-                className="font-bold"
-              >
-                {isBulkUpdating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
-                {isBulkUpdating ? 'Updating...' : 'Apply Status'}
-              </Button>
-            </div>
+        <div className="p-4 bg-primary/5 border-2 border-primary/20 rounded-xl flex flex-col md:flex-row items-center justify-between gap-4 animate-in fade-in slide-in-from-top-4">
+          <div className="flex items-center gap-4">
+            <Badge className="px-3 py-1 font-bold">{selectedIds.length} Selected</Badge>
+            <Select value={bulkStatus} onValueChange={setBulkStatus}>
+              <SelectTrigger className="w-[220px] bg-background">
+                <SelectValue placeholder="Change status to..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="In Review">Move to Review</SelectItem>
+                <SelectItem value="Awarded">Grant Award</SelectItem>
+                <SelectItem value="Not Awarded">Deny Application</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-          {bulkError && (
-            <Alert variant="destructive" className="py-2">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription className="text-xs">{bulkError}</AlertDescription>
-            </Alert>
-          )}
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setSelectedIds([])}>Cancel</Button>
+            <Button size="sm" onClick={handleBulkUpdate} disabled={!bulkStatus || isBulkUpdating}>
+              {isBulkUpdating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
+              Apply to Selection
+            </Button>
+          </div>
         </div>
       )}
 
-      <div className="overflow-hidden rounded-lg border bg-card shadow-sm">
+      <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
         <Table>
-          <TableHeader>
+          <TableHeader className="bg-muted/50">
             <TableRow>
               <TableHead className="w-[40px]">
                 <Checkbox 
                   checked={selectedIds.length === tableData.length && tableData.length > 0}
                   onCheckedChange={toggleSelectAll}
-                  aria-label="Select all"
                 />
               </TableHead>
-              <TableHead className="w-[300px]">Candidate Identifier</TableHead>
-              <TableHead>Evaluations</TableHead>
+              <TableHead>Candidate Identifier</TableHead>
+              <TableHead>Reviews</TableHead>
               <TableHead>Avg Weighted Score</TableHead>
               <TableHead>Status Indicators</TableHead>
               <TableHead className="text-right">Action</TableHead>
@@ -338,27 +294,26 @@ export default function AdminApplicantsPage() {
                   <Checkbox 
                     checked={selectedIds.includes(row.id)}
                     onCheckedChange={() => toggleSelectOne(row.id)}
-                    aria-label={`Select applicant ${row.id}`}
                   />
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-col">
-                    <span className="font-semibold flex items-center gap-2">
+                    <span className="font-bold flex items-center gap-2">
                       Applicant {row.id.substring(0, 6).toUpperCase()}
                       <EyeOff className="h-3 w-3 opacity-30" />
                     </span>
-                    <Badge variant="outline" className="w-fit text-[10px] mt-1">
+                    <Badge variant="outline" className="w-fit text-[9px] mt-1 uppercase font-black tracking-tight">
                       {row.status}
                     </Badge>
                   </div>
                 </TableCell>
                 <TableCell>
-                  <Badge variant="secondary" className="font-mono">{row.reviewCount}</Badge>
+                  <Badge variant="secondary" className="font-mono px-3">{row.reviewCount}</Badge>
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-2">
-                    <span className="text-lg font-bold text-primary">{row.averageScore.toFixed(2)}</span>
-                    <BarChart3 className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-lg font-black text-primary">{row.averageScore.toFixed(2)}</span>
+                    <BarChart3 className="h-4 w-4 text-muted-foreground opacity-40" />
                   </div>
                 </TableCell>
                 <TableCell>
@@ -369,7 +324,7 @@ export default function AdminApplicantsPage() {
                       </Badge>
                     )}
                     {row.needsDiscussion && (
-                      <Badge variant="secondary" className="bg-amber-500/10 text-amber-600 border-amber-200">
+                      <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50">
                         <MessageSquare className="h-3 w-3 mr-1" /> Panel Discussion
                       </Badge>
                     )}
@@ -383,10 +338,12 @@ export default function AdminApplicantsPage() {
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-2">
                     <Button variant="outline" size="sm" asChild>
-                      <Link href={`/review/applications/${row.id}`}>Review</Link>
+                      <Link href={`/reviewer/applications/${row.id}`}>
+                        Review <ExternalLink className="ml-2 h-3 w-3" />
+                      </Link>
                     </Button>
                     <Button 
-                      variant={row.isShortlisted ? 'destructive' : 'default'} 
+                      variant={row.isShortlisted ? 'destructive' : 'secondary'} 
                       size="sm"
                       onClick={() => handleToggleShortlist(row.id, row.isShortlisted)}
                     >
@@ -398,13 +355,14 @@ export default function AdminApplicantsPage() {
             ))}
           </TableBody>
         </Table>
+        
+        {tableData.length === 0 && (
+          <div className="text-center py-24 bg-muted/5">
+             <Users className="h-10 w-10 text-muted-foreground mx-auto mb-4 opacity-20" />
+             <p className="text-muted-foreground font-medium italic">No applicants found matching the current criteria.</p>
+          </div>
+        )}
       </div>
-      
-      {tableData.length === 0 && (
-        <div className="text-center py-20 bg-muted/5 rounded-lg border-2 border-dashed">
-          <p className="text-muted-foreground italic">No applications found matching the current criteria.</p>
-        </div>
-      )}
     </div>
   );
 }

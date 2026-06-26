@@ -14,7 +14,7 @@ export default function AdminDashboardPage() {
   const { userData } = useUser();
   
   // Multi-tenant Org ID (SaaS School ID)
-  const orgId = userData?.schoolId || 'default-school';
+  const orgId = userData?.schoolId || 'scholarship-hib4j';
 
   const [counts, setCounts] = useState({
     total: 0,
@@ -59,7 +59,7 @@ export default function AdminDashboardPage() {
       setCounts(prev => ({ ...prev, submitted: snapshot.size }));
     });
 
-    // Listener for 'Under Review' (mapped to 'In Review' in our schema)
+    // Listener for 'Under Review'
     const qReview = query(
       applicantsRef, 
       where('role', '==', 'Applicant'), 
@@ -81,7 +81,6 @@ export default function AdminDashboardPage() {
       setCounts(prev => ({ ...prev, awarded: snapshot.size }));
     });
 
-    // Unsubscribe on unmount to prevent leaks
     return () => {
       unsubscribeTotal();
       unsubscribeSubmitted();
@@ -144,7 +143,7 @@ export default function AdminDashboardPage() {
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         {stats.map((stat) => (
-          <Card key={stat.title} className="border-primary/10 shadow-sm">
+          <Card key={stat.title} className="border-primary/10 shadow-sm transition-all hover:shadow-md">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-xs font-black uppercase tracking-tight text-muted-foreground">{stat.title}</CardTitle>
               {stat.icon}
@@ -163,9 +162,9 @@ export default function AdminDashboardPage() {
       </div>
       
       <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-1">
+        <Card className="lg:col-span-1 shadow-sm">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2 text-lg">
               <Activity className="h-5 w-5 text-primary" />
               System Status
             </CardTitle>
@@ -178,9 +177,9 @@ export default function AdminDashboardPage() {
                  <span className="text-[10px] text-muted-foreground">Email Dispatch Service</span>
                </div>
                {systemHealth?.sendgrid?.isConfigured ? (
-                 <Badge className="bg-green-600">Active</Badge>
+                 <Badge className="bg-green-600 text-white font-bold">Active</Badge>
                ) : (
-                 <Badge variant="outline" className="text-amber-600 border-amber-200">Simulation Mode</Badge>
+                 <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50">Simulation Mode</Badge>
                )}
              </div>
              <div className="flex items-center justify-between py-2 border-b">
@@ -200,9 +199,9 @@ export default function AdminDashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-1">
+        <Card className="lg:col-span-1 shadow-sm">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2 text-lg">
               <Mail className="h-5 w-5 text-primary" />
               Recent Notifications
             </CardTitle>
@@ -210,7 +209,7 @@ export default function AdminDashboardPage() {
           </CardHeader>
           <CardContent>
             {isOutboxLoading ? (
-              <div className="flex justify-center py-6"><Loader2 className="h-6 w-6 animate-spin" /></div>
+              <div className="flex justify-center py-6"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
             ) : recentEmails && recentEmails.length > 0 ? (
               <div className="space-y-4">
                 {recentEmails.map((email: any) => (
@@ -236,9 +235,9 @@ export default function AdminDashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-1">
+        <Card className="lg:col-span-1 shadow-sm">
           <CardHeader>
-            <CardTitle>Committee Stats</CardTitle>
+            <CardTitle className="text-lg">Committee Stats</CardTitle>
             <CardDescription>Evaluation coverage overview.</CardDescription>
           </CardHeader>
           <CardContent>

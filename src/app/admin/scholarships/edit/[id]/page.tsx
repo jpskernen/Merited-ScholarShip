@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { ChevronLeft, Loader2, Users, Check, X, Plus, Trash2, Calculator } from 'lucide-react';
+import { ChevronLeft, Loader2, Users, Check, Plus, Trash2, Calculator } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
@@ -89,18 +89,24 @@ export default function EditScholarshipPage({ params }: { params: Promise<{ id: 
   const onSubmit = async (data: Scholarship) => {
     if (!firestore || !id) return;
     if (totalWeight !== 100) {
-      toast({ title: "Invalid Rubric", description: "Total weight must equal 100%. Currently: " + totalWeight + "%", variant: "destructive" });
+      toast({ 
+        title: "Invalid Rubric", 
+        description: `Total weight must equal 100%. Currently: ${totalWeight}%`, 
+        variant: "destructive" 
+      });
       return;
     }
     setIsSubmitting(true);
 
     try {
-      await updateDoc(doc(firestore, 'programs', id), {
+      const formattedData = {
         ...data,
         updatedAt: serverTimestamp(),
-      });
+      };
 
-      toast({ title: "Scholarship Updated", description: "Changes and committee assignments saved." });
+      await updateDoc(doc(firestore, 'programs', id), formattedData);
+
+      toast({ title: "Scholarship Updated", description: "Program details and committee assignments saved." });
       router.push('/admin/scholarships');
     } catch (error) {
       toast({ title: "Error", description: "Failed to update scholarship program.", variant: "destructive" });
@@ -119,21 +125,21 @@ export default function EditScholarshipPage({ params }: { params: Promise<{ id: 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <Button variant="ghost" onClick={() => router.back()} className="mb-4">
-        <ChevronLeft className="mr-2 h-4 w-4" /> Back to List
+        <ChevronLeft className="mr-2 h-4 w-4" /> Back to Programs
       </Button>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-8 pb-20">
-        <Card>
+        <Card className="shadow-sm">
           <CardHeader>
-            <CardTitle>Edit Scholarship Details</CardTitle>
+            <CardTitle>Program Profile</CardTitle>
             <CardDescription>
-              Update the program details. Applicants will see these changes immediately.
+              External program details visible to all potential applicants.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-2">
               <Label htmlFor="name">Scholarship Name</Label>
-              <Input id="name" {...register('name')} placeholder="e.g. Academic Excellence Award" />
+              <Input id="name" {...register('name')} placeholder="e.g. STEM Innovation Grant" />
               {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
             </div>
 
@@ -144,23 +150,23 @@ export default function EditScholarshipPage({ params }: { params: Promise<{ id: 
                 {errors.amount && <p className="text-xs text-destructive">{errors.amount.message}</p>}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="deadline">Deadline Description</Label>
+                <Label htmlFor="deadline">Deadline</Label>
                 <Input id="deadline" {...register('deadline')} placeholder="e.g. May 1st" />
                 {errors.deadline && <p className="text-xs text-destructive">{errors.deadline.message}</p>}
               </div>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="tags">Tags (comma separated)</Label>
-              <Input id="tags" {...register('tags')} placeholder="Academics, STEM, Leadership" />
+              <Label htmlFor="tags">Focus Area Tags (Comma Separated)</Label>
+              <Input id="tags" {...register('tags')} placeholder="Academic, Merit, First-Gen" />
             </div >
 
             <div className="space-y-2">
-              <Label htmlFor="description">Full Description</Label>
+              <Label htmlFor="description">Full Program Description</Label>
               <Textarea 
                 id="description" 
                 {...register('description')} 
-                placeholder="Provide eligibility criteria and award details..."
+                placeholder="Detail eligibility, expectations, and selection timeline..."
                 rows={6}
               />
               {errors.description && <p className="text-xs text-destructive">{errors.description.message}</p>}
@@ -168,30 +174,29 @@ export default function EditScholarshipPage({ params }: { params: Promise<{ id: 
           </CardContent>
         </Card>
 
-        {/* Evaluation Rubric */}
-        <Card className="border-primary/20 bg-muted/30">
+        <Card className="border-primary/20 bg-muted/30 shadow-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Calculator className="h-5 w-5 text-primary" />
-              Scoring Rubric
+              Evaluation Rubric
             </CardTitle>
             <CardDescription>
-              Define the evaluation criteria and their relative importance. Total weight must be 100%.
+              Define scoring criteria. Total weight must equal 100%.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-3">
               {fields.map((field, index) => (
-                <div key={field.id} className="flex items-end gap-4">
+                <div key={field.id} className="flex items-end gap-4 animate-in slide-in-from-left-2">
                   <div className="flex-1 space-y-2">
-                    <Label className="text-[10px] uppercase font-black text-muted-foreground">Criterion Name</Label>
-                    <Input {...register(`rubric.${index}.criterion`)} placeholder="e.g. GPA Quality" />
+                    <Label className="text-[10px] uppercase font-black text-muted-foreground">Criterion</Label>
+                    <Input {...register(`rubric.${index}.criterion`)} placeholder="e.g. Leadership Potential" />
                   </div>
                   <div className="w-24 space-y-2">
                     <Label className="text-[10px] uppercase font-black text-muted-foreground">Weight (%)</Label>
                     <Input type="number" {...register(`rubric.${index}.weight`, { valueAsNumber: true })} />
                   </div>
-                  <Button type="button" variant="ghost" size="icon" onClick={() => remove(index)} className="text-destructive">
+                  <Button type="button" variant="ghost" size="icon" onClick={() => remove(index)} className="text-destructive hover:bg-destructive/10">
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
@@ -199,35 +204,35 @@ export default function EditScholarshipPage({ params }: { params: Promise<{ id: 
             </div>
             
             <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => append({ criterion: '', weight: 0 })}>
-              <Plus className="h-4 w-4 mr-2" /> Add Criterion
+              <Plus className="h-4 w-4 mr-2" /> Add Criteria
             </Button>
 
             <Separator className="my-4" />
             
             <div className="flex justify-between items-center px-2">
-              <span className="text-sm font-bold">Total Rubric Weight</span>
-              <Badge variant={totalWeight === 100 ? "default" : "destructive"} className="text-lg py-1 px-4">
+              <span className="text-sm font-bold">Total Weighted distribution</span>
+              <Badge variant={totalWeight === 100 ? "default" : "destructive"} className="text-lg py-1 px-4 font-mono">
                 {totalWeight}%
               </Badge>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-primary/20 bg-primary/5">
+        <Card className="border-primary/20 bg-primary/5 shadow-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Users className="h-5 w-5 text-primary" />
-              Assign Committee Members
+              Committee Assignments
             </CardTitle>
             <CardDescription>
-              Select reviewers authorized to evaluate applications for this specific program.
+              Select authorized reviewers for this specific scholarship cycle.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
              {isReviewersLoading ? (
-               <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin" /></div>
+               <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin text-primary" /></div>
              ) : reviewers && reviewers.length > 0 ? (
-               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                  {reviewers.map((reviewer: any) => {
                    const isSelected = selectedReviewerIds.includes(reviewer.id);
                    return (
@@ -235,32 +240,32 @@ export default function EditScholarshipPage({ params }: { params: Promise<{ id: 
                        key={reviewer.id} 
                        onClick={() => toggleReviewer(reviewer.id)}
                        className={cn(
-                         "flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all",
+                         "flex items-center justify-between p-4 rounded-xl border-2 cursor-pointer transition-all",
                          isSelected 
-                           ? "bg-primary text-primary-foreground border-primary shadow-md" 
-                           : "bg-background border-border hover:border-primary/50"
+                           ? "bg-primary text-primary-foreground border-primary shadow-inner" 
+                           : "bg-background border-transparent hover:border-primary/30"
                        )}
                      >
                        <div className="flex flex-col">
-                         <span className="text-sm font-bold">{reviewer.name || 'Anonymous Reviewer'}</span>
-                         <span className={cn("text-[10px]", isSelected ? "text-primary-foreground/70" : "text-muted-foreground")}>{reviewer.email}</span>
+                         <span className="text-sm font-black">{reviewer.name || 'Committee Member'}</span>
+                         <span className={cn("text-[10px] font-mono", isSelected ? "text-primary-foreground/70" : "text-muted-foreground")}>{reviewer.email}</span>
                        </div>
-                       {isSelected ? <Check className="h-4 w-4" /> : <div className="h-4 w-4 rounded-full border border-dashed" />}
+                       {isSelected ? <Check className="h-5 w-5" /> : <div className="h-5 w-5 rounded-full border-2 border-dashed border-muted-foreground/30" />}
                      </div>
                    );
                  })}
                </div>
              ) : (
-               <div className="text-center py-6 border-2 border-dashed rounded-lg">
-                 <p className="text-sm text-muted-foreground italic">No reviewers found in the system.</p>
+               <div className="text-center py-10 border-2 border-dashed rounded-xl bg-muted/20">
+                 <p className="text-sm text-muted-foreground font-medium">No registered reviewers found. Invite committee members from the Manage Reviewers tab.</p>
                </div>
              )}
           </CardContent>
         </Card>
 
-        <Button type="submit" className="w-full h-12 text-lg font-bold" disabled={isSubmitting}>
-          {isSubmitting ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : null}
-          {isSubmitting ? 'Updating Program...' : 'Save Scholarship & assignments'}
+        <Button type="submit" className="w-full h-14 text-lg font-black uppercase tracking-widest shadow-xl" disabled={isSubmitting}>
+          {isSubmitting ? <Loader2 className="mr-2 h-6 w-6 animate-spin" /> : null}
+          {isSubmitting ? 'Syncing...' : 'Save & Distribute to Committee'}
         </Button>
       </form>
     </div>
