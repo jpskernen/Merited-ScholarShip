@@ -46,6 +46,7 @@ export const ApplicantSchema = z.object({
   submissionDate: z.string().optional(),
   updatedAt: z.any().optional(),
   schoolId: z.string().optional(),
+  reviewerIds: z.array(z.string()).optional().default([]),
   // Recommender fields
   recommenderName1: z.string().optional(),
   recommenderEmail1: z.string().optional(),

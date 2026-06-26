@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useMemo, useState, useEffect, Suspense } from 'react';
@@ -14,7 +15,6 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { 
   ArrowRight, 
-  MessageSquare,
   Loader2,
   Lock,
   Clock,
@@ -40,12 +40,12 @@ function ReviewerDashboardContent() {
 
   const filter = searchParams.get('status') || 'all';
 
-  // 1. Query applications assigned to this reviewer
+  // 1. Query applications specifically assigned to this reviewer
   const assignedApplicantsQuery = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return query(
       collection(firestore, 'users'), 
-      where('role', 'in', ['student', 'Applicant']),
+      where('role', '==', 'Applicant'),
       where('status', 'in', ['Submitted', 'In Review']),
       where('reviewerIds', 'array-contains', user.uid)
     );
@@ -66,8 +66,7 @@ function ReviewerDashboardContent() {
 
     return assignments.map(app => {
       // Find the specific review for this applicant by this reviewer
-      // Note: The review ID should be the reviewer's UID based on our new setDoc pattern
-      const review = myReviews.find(r => r.id === user?.uid || r.id === `${app.id}_${user?.uid}`);
+      const review = myReviews.find(r => r.applicationId === app.id);
       
       let evalStatus = 'Not Started';
       if (review?.status === 'Submitted') evalStatus = 'Evaluated';
@@ -80,7 +79,7 @@ function ReviewerDashboardContent() {
         lastUpdated: review?.updatedAt?.seconds ? new Date(review.updatedAt.seconds * 1000) : null
       };
     });
-  }, [assignments, myReviews, user?.uid]);
+  }, [assignments, myReviews]);
 
   const filteredAssignments = useMemo(() => {
     if (filter === 'all') return processedAssignments;
@@ -186,7 +185,7 @@ function ReviewerDashboardContent() {
           <Link href="/reviewer/dashboard?status=completed">✅ Finished</Link>
         </Button>
         <Button variant={filter === 'flagged' ? 'secondary' : 'ghost'} size="sm" asChild className="text-red-500 hover:text-red-600">
-          <Link href="/reviewer/dashboard?status=flagged">🚩 Revisit Required</Link>
+          <Link href="/reviewer/dashboard?status=flagged">🚩 Flagged</Link>
         </Button>
       </div>
 
@@ -208,7 +207,7 @@ function ReviewerDashboardContent() {
                     <div className="flex flex-col">
                       <span className="font-bold flex items-center gap-2">
                         Applicant {app.id.substring(0, 6).toUpperCase()}
-                        {app.isFlagged && <Badge variant="destructive" className="h-5 text-[9px] uppercase">Revisit</Badge>}
+                        {app.isFlagged && <Badge variant="destructive" className="h-5 text-[9px] uppercase">Flagged</Badge>}
                       </span>
                       <span className="text-[10px] text-muted-foreground uppercase flex items-center gap-1 mt-1">
                         <Clock className="h-2 w-2" /> Submitted: {app.submissionDate ? new Date(app.submissionDate).toLocaleDateString() : 'N/A'}

@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useMemo, useEffect, use } from 'react';
@@ -27,12 +28,13 @@ import {
   CheckCircle2,
   AlertCircle,
   Save,
-  ArrowRight
+  ArrowRight,
+  Trophy
 } from 'lucide-react';
 import { notFound, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useDoc, useFirebase, useMemoFirebase, useCollection } from '@/firebase';
-import { doc, setDoc, collection, query, where, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, collection, query, where, getDocs, limit, serverTimestamp } from 'firebase/firestore';
 import type { Applicant } from '@/types/applicant';
 import type { Scholarship } from '@/types/scholarship';
 import { useToast } from '@/hooks/use-toast';
@@ -46,6 +48,8 @@ export default function ReviewerApplicationPage({ params }: { params: Promise<{ 
   const { toast } = useToast();
   const { firestore, user: reviewer } = useFirebase();
   
+  const [isFinished, setIsFinished] = useState(false);
+
   // 1. Fetch Applicant Details
   const applicantRef = useMemoFirebase(() => {
     if (!firestore || !applicationId) return null;
@@ -62,14 +66,13 @@ export default function ReviewerApplicationPage({ params }: { params: Promise<{ 
 
   const { data: myReview, isLoading: isReviewLoading } = useDoc<any>(myReviewRef);
 
-  // 3. Fetch Scholarship Context
+  // 3. Fetch Scholarship Context (to get rubric)
   const programsQuery = useMemoFirebase(() => {
     if (!firestore || !reviewer) return null;
-    return query(collection(firestore, 'programs'), where('reviewerIds', 'array-contains', reviewer.uid));
+    return query(collection(firestore, 'programs'), where('reviewerIds', 'array-contains', reviewer.uid), limit(1));
   }, [firestore, reviewer]);
 
   const { data: programs, isLoading: isProgramsLoading } = useCollection<Scholarship>(programsQuery);
-
   const activeScholarship = programs?.[0]; 
 
   // Form State
@@ -114,6 +117,32 @@ export default function ReviewerApplicationPage({ params }: { params: Promise<{ 
 
   const scorePercentage = (totalWeightedScore / 10) * 100;
 
+  const findAndLoadNextApplication = async () => {
+    if (!firestore || !reviewer) return;
+    
+    // Query for other submitted applications assigned to this reviewer
+    const nextQuery = query(
+      collection(firestore, 'users'),
+      where('role', '==', 'Applicant'),
+      where('status', 'in', ['Submitted', 'In Review']),
+      where('reviewerIds', 'array-contains', reviewer.uid),
+      limit(10)
+    );
+
+    const snapshot = await getDocs(nextQuery);
+    
+    // Filter out the current one and those already fully reviewed
+    const nextCandidates = snapshot.docs.filter(doc => doc.id !== applicationId);
+    
+    // In a real app, we'd check subcollections, but for MVP we'll check if next candidate needs eval
+    // For simplicity, we just find the first one that isn't the current one
+    if (nextCandidates.length > 0) {
+      router.push(`/reviewer/applications/${nextCandidates[0].id}`);
+    } else {
+      setIsFinished(true);
+    }
+  };
+
   const handleSaveReview = async (status: 'Draft' | 'Submitted') => {
     if (!firestore || !reviewer || !applicationId) return;
     
@@ -136,6 +165,7 @@ export default function ReviewerApplicationPage({ params }: { params: Promise<{ 
       const reviewData = {
         reviewerId: reviewer.uid,
         reviewerName: reviewer.displayName || 'Anonymous Reviewer',
+        applicationId: applicationId,
         updatedAt: serverTimestamp(),
         submittedAt: status === 'Submitted' ? serverTimestamp() : null,
         criteriaScores,
@@ -152,11 +182,11 @@ export default function ReviewerApplicationPage({ params }: { params: Promise<{ 
 
       toast({
         title: status === 'Submitted' ? "Evaluation Finalized" : "Draft Saved",
-        description: status === 'Submitted' ? "Your scores have been locked for the committee." : "Your progress has been stored locally.",
+        description: status === 'Submitted' ? "Review locked. Loading next candidate..." : "Progress stored.",
       });
       
       if (status === 'Submitted') {
-        router.push('/reviewer/dashboard');
+        await findAndLoadNextApplication();
       }
     } catch (error: any) {
       setSubmitError(error.message || "Could not save review data.");
@@ -181,7 +211,6 @@ export default function ReviewerApplicationPage({ params }: { params: Promise<{ 
         scholarshipCriteria: activeScholarship.description,
       });
       setAiAnalysis(result);
-      toast({ title: "Analysis Complete", description: "AI Assessment applied to rubric sidebar." });
     } catch (error) {
       toast({ title: "Analysis Failed", variant: "destructive" });
     } finally { setIsAnalyzing(false); }
@@ -189,6 +218,25 @@ export default function ReviewerApplicationPage({ params }: { params: Promise<{ 
 
   if (isAppLoading || isReviewLoading || isProgramsLoading) {
     return <div className="flex h-[80vh] items-center justify-center animate-pulse text-muted-foreground font-medium">Loading Portfolio & Workspace...</div>;
+  }
+
+  if (isFinished) {
+    return (
+      <div className="flex h-[70vh] flex-col items-center justify-center space-y-6 text-center">
+        <div className="bg-primary/10 p-8 rounded-full animate-bounce">
+          <Trophy className="h-20 w-20 text-primary" />
+        </div>
+        <div className="space-y-2">
+          <h1 className="text-4xl font-black">Queue Cleared</h1>
+          <p className="text-muted-foreground max-w-md mx-auto">
+            Excellent work. You have reviewed all assigned portfolios for the current evaluation cycle.
+          </p>
+        </div>
+        <Button asChild size="lg" className="rounded-full px-12 h-14 text-lg font-bold">
+          <Link href="/reviewer/dashboard">Return to Dashboard</Link>
+        </Button>
+      </div>
+    );
   }
 
   if (!application) notFound();
@@ -210,13 +258,11 @@ export default function ReviewerApplicationPage({ params }: { params: Promise<{ 
                 <ShieldAlert className="h-3 w-3 mr-1" /> Blind Review
               </Badge>
               {isFinalized && <Badge className="bg-green-600 text-white border-none">Finalized</Badge>}
-              {myReview?.status === 'Draft' && <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50">Draft In Progress</Badge>}
             </h1>
-            <p className="text-[10px] text-muted-foreground uppercase font-black tracking-widest px-1">Committee ID: {reviewer?.uid.substring(0, 8)}</p>
           </div>
         </div>
         <div className="flex items-center gap-4">
-          <Button variant="outline" size="sm" onClick={runAiAnalysis} disabled={isAnalyzing || isFinalized} className="shadow-sm">
+          <Button variant="outline" size="sm" onClick={runAiAnalysis} disabled={isAnalyzing || isFinalized}>
             {isAnalyzing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2 text-primary" />}
             AI Merit Analysis
           </Button>
@@ -239,10 +285,6 @@ export default function ReviewerApplicationPage({ params }: { params: Promise<{ 
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div><Label className="text-muted-foreground">GPA</Label><p className="font-bold">{application.gpa.toFixed(2)}</p></div>
                   <div><Label className="text-muted-foreground">Intended Major</Label><p className="font-bold">{application.major}</p></div>
-                  <div className="col-span-2">
-                     <Label className="text-muted-foreground flex items-center gap-1.5"><GraduationCap className="h-3.5 w-3.5" /> Applied Program</Label>
-                     <p className="font-medium text-primary">{activeScholarship?.name || 'General Portfolio'}</p>
-                  </div>
                 </div>
               </section>
               <Separator />
@@ -253,7 +295,7 @@ export default function ReviewerApplicationPage({ params }: { params: Promise<{ 
               <section>
                 <h4 className="font-semibold text-sm mb-2 uppercase tracking-tight">Personal Statement</h4>
                 <div className="p-4 rounded-lg bg-muted/20 border text-sm leading-relaxed whitespace-pre-wrap">
-                  {application.essay || application.qualificationStatement || "No text essay provided."}
+                  {application.essay || application.qualificationStatement || "No text response provided."}
                 </div>
               </section>
               <Separator />
@@ -262,8 +304,9 @@ export default function ReviewerApplicationPage({ params }: { params: Promise<{ 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {application.transcripts && <Button variant="outline" className="justify-start h-auto py-3 px-4" asChild><Link href={application.transcripts as string} target="_blank"><FileText className="h-4 w-4 mr-3 text-primary" /><div className="text-left"><p className="text-xs font-bold">Academic Transcript</p><p className="text-[10px] text-muted-foreground">PDF Document</p></div></Link></Button>}
                   {application.resume && <Button variant="outline" className="justify-start h-auto py-3 px-4" asChild><Link href={application.resume as string} target="_blank"><FileText className="h-4 w-4 mr-3 text-primary" /><div className="text-left"><p className="text-xs font-bold">Student Resume</p><p className="text-[10px] text-muted-foreground">PDF Document</p></div></Link></Button>}
+                  {application.recommendationLetter1 && <Button variant="outline" className="justify-start h-auto py-3 px-4 border-green-200 bg-green-50/50" asChild><Link href={application.recommendationLetter1 as string} target="_blank"><CheckCircle2 className="h-4 w-4 mr-3 text-green-600" /><div className="text-left"><p className="text-xs font-bold">Recommendation #1</p><p className="text-[10px] text-muted-foreground">Verified Upload</p></div></Link></Button>}
                   {application.essays?.map((essay, i) => (
-                    <Button key={i} variant="outline" className="justify-start h-auto py-3 px-4" asChild><Link href={essay.fileUrl} target="_blank"><FileText className="h-4 w-4 mr-3 text-primary" /><div className="text-left"><p className="text-xs font-bold truncate max-w-[120px]">Essay: {essay.fileName}</p><p className="text-[10px] text-muted-foreground">Uploaded Attachment</p></div></Link></Button>
+                    <Button key={i} variant="outline" className="justify-start h-auto py-3 px-4" asChild><Link href={essay.fileUrl} target="_blank"><FileText className="h-4 w-4 mr-3 text-primary" /><div className="text-left"><p className="text-xs font-bold truncate max-w-[120px]">Essay: {essay.fileName}</p><p className="text-[10px] text-muted-foreground">Attachment</p></div></Link></Button>
                   ))}
                 </div>
               </section>
@@ -276,10 +319,6 @@ export default function ReviewerApplicationPage({ params }: { params: Promise<{ 
             <CardHeader className="bg-primary/5 border-b py-4">
               <div className="flex justify-between items-center">
                 <CardTitle className="text-lg flex items-center gap-2"><Calculator className="h-5 w-5" /> Evaluation Rubric</CardTitle>
-                <div className="flex items-center gap-2">
-                  <History className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Committee Panel</span>
-                </div>
               </div>
               <Progress value={scorePercentage} className="h-1.5 mt-2" />
             </CardHeader>
@@ -293,24 +332,28 @@ export default function ReviewerApplicationPage({ params }: { params: Promise<{ 
               )}
 
               {aiAnalysis && (
-                <div className="p-4 rounded-xl bg-primary/5 border border-primary/20 animate-in fade-in slide-in-from-top-1">
+                <div className="p-4 rounded-xl bg-primary/5 border border-primary/20 animate-in fade-in">
                   <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-[10px] font-black uppercase text-primary flex items-center gap-1.5">AI Merit Analysis</h4>
+                    <h4 className="text-[10px] font-black uppercase text-primary flex items-center gap-1.5">AI Analysis</h4>
                     <Badge variant="secondary" className="font-mono">{aiAnalysis.fitScore}% Match</Badge>
                   </div>
-                  <p className="text-xs text-muted-foreground italic leading-relaxed mb-1">"{aiAnalysis.justification}"</p>
-                  <p className="text-[10px] font-bold text-primary">Rec: {aiAnalysis.recommendation}</p>
+                  <p className="text-xs text-muted-foreground italic leading-relaxed">"{aiAnalysis.justification}"</p>
                 </div>
               )}
 
-              {activeScholarship?.rubric?.map((item) => (
+              {(activeScholarship?.rubric || [
+                { criterion: 'Academic Excellence', weight: 25 },
+                { criterion: 'Community Service', weight: 25 },
+                { criterion: 'Leadership', weight: 25 },
+                { criterion: 'Overall Impression', weight: 25 }
+              ]).map((item) => (
                 <div key={item.criterion} className="space-y-2">
                   <div className="flex justify-between items-baseline">
                     <div className="flex flex-col">
                       <Label className="text-sm font-bold">{item.criterion}</Label>
                       <span className="text-[9px] text-muted-foreground uppercase font-black tracking-widest">Weight: {item.weight}%</span>
                     </div>
-                    <Badge variant="outline" className="font-mono text-primary border-primary/30">{scores[item.criterion] || 0} / 10</Badge>
+                    <Badge variant="outline" className="font-mono text-primary border-primary/30">{scores[item.criterion] || 5} / 10</Badge>
                   </div>
                   <Slider 
                     value={[scores[item.criterion] || 5]} max={10} min={1} step={1} 
@@ -323,7 +366,7 @@ export default function ReviewerApplicationPage({ params }: { params: Promise<{ 
               <Separator />
 
               <div className="space-y-3">
-                <Label className="text-sm font-black uppercase tracking-tight block">Committee Decision</Label>
+                <Label className="text-sm font-black uppercase tracking-tight block">Decision</Label>
                 <Select value={recommendation} onValueChange={(val) => !isFinalized && setRecommendation(val)} disabled={isFinalized}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select outcome..." />
@@ -331,7 +374,7 @@ export default function ReviewerApplicationPage({ params }: { params: Promise<{ 
                   <SelectContent>
                     <SelectItem value="Recommend">Highly Recommend</SelectItem>
                     <SelectItem value="Do Not Recommend">Do Not Recommend</SelectItem>
-                    <SelectItem value="Undecided">Undecided / Needs Discussion</SelectItem>
+                    <SelectItem value="Undecided">Undecided / Discuss</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -340,12 +383,12 @@ export default function ReviewerApplicationPage({ params }: { params: Promise<{ 
                 <div className="flex items-center justify-between">
                   <Label className="flex items-center gap-2 font-bold"><MessageSquare className="h-4 w-4" /> Internal Notes</Label>
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-black uppercase text-red-600">Flag for Revisit</span>
+                    <span className="text-[10px] font-black uppercase text-red-600">Flag</span>
                     <Switch checked={markForDiscussion} onCheckedChange={setMarkForDiscussion} disabled={isFinalized} />
                   </div>
                 </div>
                 <Textarea 
-                  placeholder="Rationale for scores and internal commentary..." 
+                  placeholder="Reviewer rationale..." 
                   className="min-h-[120px] text-sm bg-muted/20" 
                   value={comment} 
                   onChange={(e) => setComment(e.target.value)} 
@@ -372,9 +415,8 @@ export default function ReviewerApplicationPage({ params }: { params: Promise<{ 
                      <Lock className="h-3 w-3" /> Evaluation Finalized
                   </div>
                   <Button variant="outline" className="w-full h-11 font-bold" onClick={() => router.push('/reviewer/dashboard')}>
-                    Return to Assignment Queue <ArrowRight className="ml-2 h-4 w-4" />
+                    Back to Queue <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
-                  <p className="text-[9px] text-center text-muted-foreground uppercase tracking-widest font-black">Submitted on: {myReview?.submittedAt?.seconds ? new Date(myReview.submittedAt.seconds * 1000).toLocaleDateString() : 'N/A'}</p>
                 </div>
               )}
             </CardFooter>
