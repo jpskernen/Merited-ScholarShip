@@ -35,7 +35,7 @@ import {
   UserPlus,
   Mail,
   Clock,
-  ShieldCheck
+  Lock
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -171,6 +171,7 @@ export default function ProfilePage() {
           delete next[field];
           return next;
         });
+        toast({ title: "Upload Success", description: `${field} has been attached to your profile.` });
       }
     );
   };
@@ -195,7 +196,6 @@ export default function ProfilePage() {
     });
 
     try {
-      // Call the secure Server Action
       const result = await sendRecommendationRequest({
         applicationId: user.uid,
         studentName: user.displayName || 'A Student',
@@ -207,12 +207,11 @@ export default function ProfilePage() {
       });
 
       if (result.success) {
-        const isLive = result.deliveryMethod === 'SendGrid';
         toast({ 
-          title: isLive ? "Request Dispatched" : "Request Logged", 
-          description: isLive 
-            ? `A professional invitation has been sent to ${name} via SendGrid.`
-            : `Invitation link generated and saved to System Outbox for ${name}.` 
+          title: result.deliveryMethod === 'SendGrid' ? "Request Sent" : "Request Logged", 
+          description: result.deliveryMethod === 'SendGrid' 
+            ? `Invitation dispatched to ${name} via SendGrid.`
+            : `Token generated. Link available in Admin System Outbox for testing.`
         });
       } else {
         throw new Error(result.error);
@@ -236,7 +235,7 @@ export default function ProfilePage() {
       
       await setDoc(docRef, {
         ...currentValues,
-        status: 'Draft',
+        status: applicantData?.status || 'Draft',
         updatedAt: serverTimestamp(),
       }, { merge: true });
 
@@ -265,8 +264,8 @@ export default function ProfilePage() {
       const result = await saveApplicantData(user.uid, formData, submit);
       if (result.success) {
         toast({
-            title: submit ? 'Application Submitted!' : 'Draft Saved',
-            description: submit ? 'Your scholarship portfolio has been sent.' : 'Progress saved securely.',
+            title: submit ? 'Portfolio Finalized' : 'Draft Saved',
+            description: submit ? 'Your scholarship application has been sent for committee review.' : 'Your progress has been stored securely.',
         });
         setSaveStatus('saved');
       } else {
@@ -282,54 +281,61 @@ export default function ProfilePage() {
   };
   
   if (isUserLoading || isApplicantDataLoading) {
-    return <div className="flex h-64 items-center justify-center animate-pulse">Loading Application Profile...</div>;
+    return (
+      <div className="flex h-64 flex-col items-center justify-center gap-4">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="text-muted-foreground animate-pulse font-medium">Syncing Secure Profile...</p>
+      </div>
+    );
   }
 
-  const isAlreadySubmitted = applicantData?.status === 'Submitted' || applicantData?.status === 'In Review';
+  const isAlreadySubmitted = applicantData?.status === 'Submitted' || 
+                             applicantData?.status === 'In Review' || 
+                             applicantData?.status === 'Awarded' || 
+                             applicantData?.status === 'Not Awarded';
 
-  // Step Indicators for visual progress
   const steps = [
-    { id: 1, label: 'Academic' },
+    { id: 1, label: 'Profile' },
     { id: 2, label: 'Essays' },
-    { id: 3, label: 'Recommendations' },
+    { id: 3, label: 'Verified Endorsements' },
   ];
 
   return (
     <form ref={formRef} className="space-y-6 md:space-y-8" noValidate>
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-2xl md:text-3xl font-bold">Scholarship Application</h1>
+          <h1 className="text-2xl md:text-3xl font-bold">Scholarship Portfolio</h1>
           <p className="text-xs md:text-sm text-muted-foreground">
-            {isAlreadySubmitted ? 'Application finalized and under review.' : 'Complete your portfolio to apply.'}
+            {isAlreadySubmitted 
+              ? 'Your portfolio is locked and undergoing institutional review.' 
+              : 'Provide your academic background and supporting evidence.'}
           </p>
           {!isAlreadySubmitted && (
             <div className="flex items-center pt-1">
-              {saveStatus === 'saving' && <Badge variant="outline" className="animate-pulse text-primary border-primary/20 text-[10px]"><CloudUpload className="h-3 w-3 mr-1" /> Saving...</Badge>}
-              {saveStatus === 'saved' && <Badge variant="outline" className="text-green-500 border-green-500/20 text-[10px]"><CloudUpload className="h-3 w-3 mr-1" /> Saved</Badge>}
-              {saveStatus === 'error' && <Badge variant="destructive" className="text-[10px]"><AlertCircle className="h-3 w-3 mr-1" /> Error</Badge>}
+              {saveStatus === 'saving' && <Badge variant="outline" className="animate-pulse text-primary border-primary/20 text-[10px]"><CloudUpload className="h-3 w-3 mr-1" /> Auto-Saving...</Badge>}
+              {saveStatus === 'saved' && <Badge variant="outline" className="text-green-500 border-green-500/20 text-[10px]"><CheckCircle className="h-3 w-3 mr-1" /> All Changes Saved</Badge>}
+              {saveStatus === 'error' && <Badge variant="destructive" className="text-[10px]"><AlertCircle className="h-3 w-3 mr-1" /> Connection Error</Badge>}
             </div>
           )}
         </div>
         {isAlreadySubmitted && (
-          <Badge className="bg-green-500/10 text-green-500 border-green-500/20 py-1 px-4 self-start md:self-center">
-            <CheckCircle className="h-4 w-4 mr-2" /> Submitted
+          <Badge className="bg-primary/10 text-primary border-primary/20 py-1.5 px-4 self-start md:self-center font-bold">
+            <Lock className="h-4 w-4 mr-2" /> PORTFOLIO LOCKED
           </Badge>
         )}
       </div>
 
-      {/* Responsive Step Indicator */}
-      <div className="flex items-center justify-between px-2 mb-4">
+      <div className="flex items-center justify-between px-2 mb-4 max-w-2xl">
         {steps.map((step, idx) => (
           <div key={step.id} className="flex items-center flex-1 last:flex-none">
             <div className="flex flex-col items-center gap-1.5">
               <div className={cn(
                 "flex h-8 w-8 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors",
-                step.id === 1 ? "bg-primary border-primary text-primary-foreground" : "border-muted-foreground/30 text-muted-foreground"
+                step.id <= (isAlreadySubmitted ? 3 : 1) ? "bg-primary border-primary text-primary-foreground" : "border-muted-foreground/30 text-muted-foreground"
               )}>
                 {step.id}
               </div>
               <span className="text-[10px] font-medium hidden md:block">{step.label}</span>
-              <span className="text-[10px] font-medium md:hidden">{step.id}</span>
             </div>
             {idx < steps.length - 1 && (
               <div className="mx-2 h-[2px] flex-1 bg-muted-foreground/20" />
@@ -341,78 +347,100 @@ export default function ProfilePage() {
       <div className="grid grid-cols-1 gap-6 md:gap-8 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6 md:space-y-8">
           {formError && (
-            <Alert variant="destructive">
+            <Alert variant="destructive" className="animate-in fade-in slide-in-from-top-2">
               <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{formError}</AlertDescription>
+              <AlertDescription className="font-bold">{formError}</AlertDescription>
             </Alert>
           )}
 
-          <Card>
-            <CardHeader className="p-4 md:p-6">
-              <CardTitle className="text-lg md:text-xl">Step 1: Academic Profile</CardTitle>
-              <CardDescription className="text-xs md:text-sm">Basic details and transcript upload.</CardDescription>
+          <Card className={cn(isAlreadySubmitted && "opacity-80 grayscale-[20%]")}>
+            <CardHeader className="p-4 md:p-6 border-b bg-muted/20">
+              <CardTitle className="text-lg md:text-xl">Academic & Personal Profile</CardTitle>
+              <CardDescription className="text-xs md:text-sm">Foundational details for committee evaluation.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4 md:space-y-6 p-4 md:p-6 pt-0 md:pt-0">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <CardContent className="space-y-6 p-4 md:p-6">
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="name" className="text-sm">Full Name</Label>
-                  <Input id="name" {...register('name')} disabled={isAlreadySubmitted} onBlur={performAutoSave} className="h-9" />
-                  {errors.name && <p className="text-[10px] text-destructive">{errors.name.message}</p>}
+                  <Label htmlFor="name" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Full Legal Name</Label>
+                  <Input id="name" {...register('name')} disabled={isAlreadySubmitted} className="h-10" />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="gpa" className="text-sm">GPA</Label>
-                  <Input id="gpa" type="number" step="0.01" {...register('gpa')} disabled={isAlreadySubmitted} onBlur={performAutoSave} className="h-9" />
-                  {errors.gpa && <p className="text-[10px] text-destructive">{errors.gpa.message}</p>}
+                  <Label htmlFor="email" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Primary Contact Email</Label>
+                  <Input id="email" {...register('email')} disabled className="h-10 bg-muted/50" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="school" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Current Institution</Label>
+                  <Input id="school" {...register('school')} disabled={isAlreadySubmitted} className="h-10" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="gpa" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Cumulative GPA</Label>
+                  <Input id="gpa" type="number" step="0.01" {...register('gpa')} disabled={isAlreadySubmitted} className="h-10" />
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="address" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Permanent Mailing Address</Label>
+                  <Input id="address" {...register('address')} disabled={isAlreadySubmitted} className="h-10" />
                 </div>
               </div>
 
+              <Separator />
+
               <div className="space-y-4">
-                <Label className="text-sm">Official Transcript (PDF only)</Label>
-                <div className="flex flex-col gap-2">
-                  <Input 
-                    type="file" 
-                    accept=".pdf" 
-                    onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], 'transcripts')}
-                    disabled={isAlreadySubmitted || !!uploadProgress.transcripts}
-                    className="h-9 text-xs"
-                  />
-                  {uploadErrors.transcripts && <p className="text-[10px] text-destructive flex items-center gap-1"><AlertCircle className="h-3 w-3" /> {uploadErrors.transcripts}</p>}
+                <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Official Academic Records (PDF)</Label>
+                <div className="flex flex-col gap-3">
+                  {!isAlreadySubmitted && (
+                    <Input 
+                      type="file" 
+                      accept=".pdf" 
+                      onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], 'transcripts')}
+                      disabled={!!uploadProgress.transcripts}
+                      className="h-10 text-xs cursor-pointer"
+                    />
+                  )}
                   {uploadProgress.transcripts !== undefined && (
-                    <div className="space-y-1">
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-[10px] font-bold text-primary"><span>Uploading Transcript...</span><span>{Math.round(uploadProgress.transcripts)}%</span></div>
                       <Progress value={uploadProgress.transcripts} className="h-1" />
                     </div>
                   )}
                   {applicantData?.transcripts && (
-                    <p className="text-[10px] text-muted-foreground flex items-center gap-1.5">
-                      <Paperclip className="h-3 w-3" /> Current: <a href={applicantData.transcripts as string} target="_blank" className="underline text-primary">View Transcript</a>
-                    </p>
+                    <div className="p-3 rounded-lg border bg-primary/5 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-4 w-4 text-primary" />
+                        <span className="text-xs font-medium">Official_Transcript.pdf</span>
+                      </div>
+                      <Button variant="ghost" size="sm" className="h-7 text-[10px]" asChild>
+                        <a href={applicantData.transcripts as string} target="_blank">View File</a>
+                      </Button>
+                    </div>
                   )}
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="p-4 md:p-6">
-              <CardTitle className="text-lg md:text-xl">Step 2: Essay Submission</CardTitle>
-              <CardDescription className="text-xs md:text-sm">Type your response or upload a PDF.</CardDescription>
+          <Card className={cn(isAlreadySubmitted && "opacity-80")}>
+            <CardHeader className="p-4 md:p-6 border-b bg-muted/20">
+              <CardTitle className="text-lg md:text-xl">Merit Statements</CardTitle>
+              <CardDescription className="text-xs md:text-sm">Showcase your goals and qualifications.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6 md:space-y-8 p-4 md:p-6 pt-0 md:pt-0">
+            <CardContent className="space-y-8 p-4 md:p-6">
               <div className="space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <Label className="text-sm md:text-base font-bold">Qualification Statement</Label>
-                  <div className="flex bg-muted rounded-md p-0.5 w-fit">
-                    <Button type="button" size="sm" variant={essayInputMethod.qual[0] === 'text' ? 'secondary' : 'ghost'} className="h-7 text-[10px]" onClick={() => essayInputMethod.qual[1]('text')}><Type className="h-3 w-3 mr-1" /> Type</Button>
-                    <Button type="button" size="sm" variant={essayInputMethod.qual[0] === 'file' ? 'secondary' : 'ghost'} className="h-7 text-[10px]" onClick={() => essayInputMethod.qual[1]('file')}><Upload className="h-3 w-3 mr-1" /> Upload</Button>
-                  </div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <Label className="text-sm font-black uppercase tracking-tight">Qualification Summary</Label>
+                  {!isAlreadySubmitted && (
+                    <div className="flex bg-muted rounded-md p-1 w-fit border">
+                      <Button type="button" size="sm" variant={essayInputMethod.qual[0] === 'text' ? 'secondary' : 'ghost'} className="h-8 text-[10px] font-bold" onClick={() => essayInputMethod.qual[1]('text')}><Type className="h-3 w-3 mr-1.5" /> Direct Entry</Button>
+                      <Button type="button" size="sm" variant={essayInputMethod.qual[0] === 'file' ? 'secondary' : 'ghost'} className="h-8 text-[10px] font-bold" onClick={() => essayInputMethod.qual[1]('file')}><Upload className="h-3 w-3 mr-1.5" /> PDF Upload</Button>
+                    </div>
+                  )}
                 </div>
                 
                 {essayInputMethod.qual[0] === 'text' ? (
-                  <Textarea {...register('qualificationStatement')} rows={5} placeholder="Why are you qualified?" disabled={isAlreadySubmitted} onBlur={performAutoSave} className="text-sm" />
+                  <Textarea {...register('qualificationStatement')} rows={6} placeholder="Summarize your key achievements..." disabled={isAlreadySubmitted} onBlur={performAutoSave} className="text-sm leading-relaxed" />
                 ) : (
-                  <div className="p-4 border-2 border-dashed rounded-lg space-y-4">
-                    <Input type="file" accept=".pdf" onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], 'essays', 'qualification')} disabled={isAlreadySubmitted} className="text-xs h-9" />
-                    {uploadErrors.essays && <p className="text-[10px] text-destructive flex items-center gap-1"><AlertCircle className="h-3 w-3" /> {uploadErrors.essays}</p>}
+                  <div className="p-8 border-2 border-dashed rounded-xl bg-muted/10 space-y-4 text-center">
+                    <Input type="file" accept=".pdf" onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], 'essays', 'qualification')} disabled={isAlreadySubmitted} className="text-xs h-10 w-full max-w-sm mx-auto cursor-pointer" />
+                    <p className="text-[10px] text-muted-foreground">Secure PDF storage enabled.</p>
                   </div>
                 )}
               </div>
@@ -420,67 +448,70 @@ export default function ProfilePage() {
               <Separator />
 
               <div className="space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <Label className="text-sm md:text-base font-bold">Personal Statement</Label>
-                  <div className="flex bg-muted rounded-md p-0.5 w-fit">
-                    <Button type="button" size="sm" variant={essayInputMethod.general[0] === 'text' ? 'secondary' : 'ghost'} className="h-7 text-[10px]" onClick={() => essayInputMethod.general[1]('text')}><Type className="h-3 w-3 mr-1" /> Type</Button>
-                    <Button type="button" size="sm" variant={essayInputMethod.general[0] === 'file' ? 'secondary' : 'ghost'} className="h-7 text-[10px]" onClick={() => essayInputMethod.general[1]('file')}><Upload className="h-3 w-3 mr-1" /> Upload</Button>
-                  </div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <Label className="text-sm font-black uppercase tracking-tight">Personal Statement (Core Essay)</Label>
+                  {!isAlreadySubmitted && (
+                    <div className="flex bg-muted rounded-md p-1 w-fit border">
+                      <Button type="button" size="sm" variant={essayInputMethod.general[0] === 'text' ? 'secondary' : 'ghost'} className="h-8 text-[10px] font-bold" onClick={() => essayInputMethod.general[1]('text')}><Type className="h-3 w-3 mr-1.5" /> Direct Entry</Button>
+                      <Button type="button" size="sm" variant={essayInputMethod.general[0] === 'file' ? 'secondary' : 'ghost'} className="h-8 text-[10px] font-bold" onClick={() => essayInputMethod.general[1]('file')}><Upload className="h-3 w-3 mr-1.5" /> PDF Upload</Button>
+                    </div>
+                  )}
                 </div>
                 
                 {essayInputMethod.general[0] === 'text' ? (
-                  <Textarea {...register('essay')} rows={6} placeholder="Tell us your story..." disabled={isAlreadySubmitted} onBlur={performAutoSave} className="text-sm" />
+                  <Textarea {...register('essay')} rows={8} placeholder="Tell your unique story..." disabled={isAlreadySubmitted} onBlur={performAutoSave} className="text-sm leading-relaxed" />
                 ) : (
-                  <div className="p-4 border-2 border-dashed rounded-lg space-y-4">
-                    <Input type="file" accept=".pdf" onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], 'essays', 'personal-statement')} disabled={isAlreadySubmitted} className="text-xs h-9" />
+                  <div className="p-8 border-2 border-dashed rounded-xl bg-muted/10 space-y-4 text-center">
+                    <Input type="file" accept=".pdf" onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], 'essays', 'personal-statement')} disabled={isAlreadySubmitted} className="text-xs h-10 w-full max-w-sm mx-auto cursor-pointer" />
                   </div>
                 )}
               </div>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="p-4 md:p-6">
-              <CardTitle className="text-lg md:text-xl">Step 3: Recommendation Letters</CardTitle>
-              <CardDescription className="text-xs md:text-sm">Request official endorsements.</CardDescription>
+          <Card className={cn(isAlreadySubmitted && "opacity-80")}>
+            <CardHeader className="p-4 md:p-6 border-b bg-muted/20">
+              <CardTitle className="text-lg md:text-xl">External Endorsements</CardTitle>
+              <CardDescription className="text-xs md:text-sm">Two professional recommendation letters are required.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4 p-4 md:p-6 pt-0 md:pt-0">
+            <CardContent className="space-y-6 p-4 md:p-6">
               {[1, 2].map((i) => {
                 const status = (applicantData as any)?.[`recommendationStatus${i}`] || 'Not Requested';
                 return (
-                  <div key={i} className="rounded-lg border p-4 space-y-4 bg-muted/20">
+                  <div key={i} className="rounded-xl border p-5 space-y-5 bg-muted/5 transition-colors hover:bg-muted/10">
                     <div className="flex items-center justify-between gap-2">
-                      <h4 className="text-xs md:text-sm font-bold flex items-center gap-2">
-                        <UserPlus className="h-3 w-3 md:h-4 md:w-4 text-primary" /> Request #{i}
+                      <h4 className="text-xs md:text-sm font-black uppercase flex items-center gap-2">
+                        <UserPlus className="h-4 w-4 text-primary" /> Endorsement Request #{i}
                       </h4>
-                      <Badge variant={status === 'Received' ? 'default' : 'secondary'} className={cn(
-                        "text-[9px] px-2 py-0.5",
-                        status === 'Pending' ? 'bg-amber-500/10 text-amber-600 border-amber-200' : ''
+                      <Badge variant={status === 'Received' ? 'default' : 'outline'} className={cn(
+                        "text-[10px] px-3 py-1 font-bold",
+                        status === 'Pending' ? 'bg-amber-500/10 text-amber-600 border-amber-200' : 
+                        status === 'Received' ? 'bg-green-600 text-white border-none' : ''
                       )}>
-                        {status === 'Pending' && <Clock className="h-2 w-2 mr-1 animate-pulse" />}
+                        {status === 'Pending' && <Clock className="h-3 w-3 mr-1.5 animate-pulse" />}
                         {status}
                       </Badge>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                      <div className="space-y-1">
-                        <Label className="text-[10px] md:text-xs">Name</Label>
-                        <Input {...register(`recommenderName${i}` as any)} placeholder="Dr. Smith" disabled={isAlreadySubmitted || status !== 'Not Requested'} className="h-8 text-xs" />
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-[10px] font-black uppercase text-muted-foreground">Full Name</Label>
+                        <Input {...register(`recommenderName${i}` as any)} placeholder="Dr. Jane Smith" disabled={isAlreadySubmitted || status !== 'Not Requested'} className="h-9 text-xs" />
                       </div>
-                      <div className="space-y-1">
-                        <Label className="text-[10px] md:text-xs">Email</Label>
-                        <Input type="email" {...register(`recommenderEmail${i}` as any)} placeholder="smith@school.edu" disabled={isAlreadySubmitted || status !== 'Not Requested'} className="h-8 text-xs" />
+                      <div className="space-y-1.5">
+                        <Label className="text-[10px] font-black uppercase text-muted-foreground">Professional Email</Label>
+                        <Input type="email" {...register(`recommenderEmail${i}` as any)} placeholder="jsmith@university.edu" disabled={isAlreadySubmitted || status !== 'Not Requested'} className="h-9 text-xs" />
                       </div>
-                      <div className="space-y-1">
-                        <Label className="text-[10px] md:text-xs">Relationship</Label>
-                        <Input {...register(`recommenderTitle${i}` as any)} placeholder="Teacher" disabled={isAlreadySubmitted || status !== 'Not Requested'} className="h-8 text-xs" />
+                      <div className="space-y-1.5">
+                        <Label className="text-[10px] font-black uppercase text-muted-foreground">Relationship</Label>
+                        <Input {...register(`recommenderTitle${i}` as any)} placeholder="Thesis Advisor" disabled={isAlreadySubmitted || status !== 'Not Requested'} className="h-9 text-xs" />
                       </div>
                     </div>
 
                     {recErrors[i] && (
-                      <Alert variant="destructive" className="py-1 px-3">
+                      <Alert variant="destructive" className="py-2 px-3">
                         <AlertCircle className="h-3 w-3" />
-                        <AlertDescription className="text-[10px]">{recErrors[i]}</AlertDescription>
+                        <AlertDescription className="text-[10px] font-bold">{recErrors[i]}</AlertDescription>
                       </Alert>
                     )}
 
@@ -488,18 +519,18 @@ export default function ProfilePage() {
                       <Button 
                         type="button" 
                         size="sm" 
-                        className="w-full h-8 text-xs" 
+                        className="w-full h-10 text-xs font-bold" 
                         onClick={() => handleSendRecommendationRequest(i)}
                         disabled={isRequestingRec[i]}
                       >
-                        {isRequestingRec[i] ? <Loader2 className="h-3 w-3 mr-2 animate-spin" /> : <Mail className="h-3 w-3 mr-2" />}
-                        Send Request
+                        {isRequestingRec[i] ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Mail className="h-4 w-4 mr-2" />}
+                        Send Secure Invitation
                       </Button>
                     )}
                     
                     {status === 'Received' && (
-                      <div className="flex items-center gap-2 text-[10px] text-green-600 font-bold">
-                        <CheckCircle className="h-3 w-3" /> Endorsement Verified
+                      <div className="flex items-center gap-2 p-3 rounded-lg bg-green-50 border border-green-200 text-[11px] text-green-700 font-black uppercase tracking-wider">
+                        <CheckCircle className="h-4 w-4" /> Letter Verified & Attached
                       </div>
                     )}
                   </div>
@@ -509,43 +540,57 @@ export default function ProfilePage() {
           </Card>
 
           {!isAlreadySubmitted && (
-            <div className="flex flex-col sm:flex-row gap-3 justify-end">
-              <Button type="button" variant="outline" onClick={() => onSave(false)} disabled={isSaving || isSubmitting} className="w-full sm:w-auto h-10">
+            <div className="flex flex-col sm:flex-row gap-4 justify-end pt-4 pb-10">
+              <Button type="button" variant="outline" onClick={() => onSave(false)} disabled={isSaving || isSubmitting} className="w-full sm:w-auto h-12 px-8 font-bold">
                 {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                Save Draft
+                Save Draft Progress
               </Button>
-              <Button type="button" className="font-bold w-full sm:w-auto h-10" onClick={() => onSave(true)} disabled={isSaving || isSubmitting}>
+              <Button type="button" className="font-black uppercase tracking-widest w-full sm:w-auto h-12 px-10 shadow-lg" onClick={() => onSave(true)} disabled={isSaving || isSubmitting}>
                 {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                Submit Application
+                Finalize & Submit
               </Button>
             </div>
           )}
         </div>
 
         <div className="space-y-6">
-          <Card className="lg:sticky lg:top-24">
-            <CardHeader className="p-4 md:p-6"><CardTitle className="text-base md:text-lg">Checklist</CardTitle></CardHeader>
-            <CardContent className="space-y-3 md:space-y-4 text-xs md:text-sm p-4 md:p-6 pt-0 md:pt-0">
-              <div className="flex items-center gap-2">
-                <Badge variant={getValues('name') ? 'default' : 'outline'} className="h-5 w-5 p-0 justify-center">{getValues('name') ? '✓' : '!'}</Badge>
-                <span>Profile Details</span>
+          <Card className="lg:sticky lg:top-24 border-primary/20 shadow-sm">
+            <CardHeader className="p-4 md:p-6 bg-muted/10 border-b">
+              <CardTitle className="text-base md:text-lg flex items-center gap-2"><CheckCircle className="h-5 w-5 text-primary" /> Submission Checklist</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4 text-xs md:text-sm p-4 md:p-6">
+              <div className="flex items-center gap-3">
+                <div className={cn("h-6 w-6 rounded-full flex items-center justify-center border-2 text-[10px] font-bold", getValues('name') ? "bg-primary text-primary-foreground border-primary" : "border-muted text-muted-foreground")}>
+                  {getValues('name') ? '✓' : '1'}
+                </div>
+                <span className={cn("font-medium", !getValues('name') && "text-muted-foreground")}>Personal Details</span>
               </div>
-              <div className="flex items-center gap-2">
-                <Badge variant={applicantData?.transcripts ? 'default' : 'outline'} className="h-5 w-5 p-0 justify-center">{applicantData?.transcripts ? '✓' : '!'}</Badge>
-                <span>Academic Transcript</span>
+              <div className="flex items-center gap-3">
+                <div className={cn("h-6 w-6 rounded-full flex items-center justify-center border-2 text-[10px] font-bold", applicantData?.transcripts ? "bg-primary text-primary-foreground border-primary" : "border-muted text-muted-foreground")}>
+                  {applicantData?.transcripts ? '✓' : '2'}
+                </div>
+                <span className={cn("font-medium", !applicantData?.transcripts && "text-muted-foreground")}>Official Transcripts</span>
               </div>
-              <div className="flex items-center gap-2">
-                <Badge variant={(watch('essay') || applicantData?.essays?.some(e => e.promptId === 'personal-statement')) ? 'default' : 'outline'} className="h-5 w-5 p-0 justify-center">
-                  {(watch('essay') || applicantData?.essays?.some(e => e.promptId === 'personal-statement')) ? '✓' : '!'}
-                </Badge>
-                <span>Personal Statement</span>
+              <div className="flex items-center gap-3">
+                <div className={cn("h-6 w-6 rounded-full flex items-center justify-center border-2 text-[10px] font-bold", (watch('essay') || applicantData?.essays?.some(e => e.promptId === 'personal-statement')) ? "bg-primary text-primary-foreground border-primary" : "border-muted text-muted-foreground")}>
+                  {(watch('essay') || applicantData?.essays?.some(e => e.promptId === 'personal-statement')) ? '✓' : '3'}
+                </div>
+                <span className={cn("font-medium", !(watch('essay') || applicantData?.essays?.some(e => e.promptId === 'personal-statement')) && "text-muted-foreground")}>Personal Statement</span>
               </div>
-              <div className="flex items-center gap-2">
-                <Badge variant={((applicantData as any)?.recommendationStatus1 === 'Pending' || (applicantData as any)?.recommendationStatus1 === 'Received') ? 'default' : 'outline'} className="h-5 w-5 p-0 justify-center">
-                  {((applicantData as any)?.recommendationStatus1 === 'Pending' || (applicantData as any)?.recommendationStatus1 === 'Received') ? '✓' : '!'}
-                </Badge>
-                <span>Rec Letter #1 Request</span>
+              <div className="flex items-center gap-3">
+                <div className={cn("h-6 w-6 rounded-full flex items-center justify-center border-2 text-[10px] font-bold", ((applicantData as any)?.recommendationStatus1 === 'Pending' || (applicantData as any)?.recommendationStatus1 === 'Received') ? "bg-primary text-primary-foreground border-primary" : "border-muted text-muted-foreground")}>
+                  {((applicantData as any)?.recommendationStatus1 === 'Pending' || (applicantData as any)?.recommendationStatus1 === 'Received') ? '✓' : '4'}
+                </div>
+                <span className={cn("font-medium", !((applicantData as any)?.recommendationStatus1 === 'Pending' || (applicantData as any)?.recommendationStatus1 === 'Received') && "text-muted-foreground")}>Endorsement Verified</span>
               </div>
+              
+              {!isAlreadySubmitted && (
+                <div className="mt-6 p-4 rounded-lg bg-amber-50 border border-amber-200">
+                  <p className="text-[10px] font-bold text-amber-700 leading-relaxed uppercase tracking-tighter">
+                    Important: Once submitted, you will no longer be able to modify your portfolio or upload documents.
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

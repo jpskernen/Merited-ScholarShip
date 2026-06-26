@@ -10,11 +10,11 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { useCollection, useFirebase, useMemoFirebase } from '@/firebase';
-import { collection, query } from 'firebase/firestore';
+import { useCollection, useFirebase, useMemoFirebase, useDoc } from '@/firebase';
+import { collection, query, doc } from 'firebase/firestore';
 import { useState, useEffect, Suspense, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Loader2, FileText, ExternalLink } from 'lucide-react';
+import { Loader2, FileText, ExternalLink, Clock, CheckCircle, FileEdit } from 'lucide-react';
 import Link from 'next/link';
 
 const getStatusVariant = (status?: string): 'default' | 'secondary' | 'destructive' | 'outline' => {
@@ -28,6 +28,8 @@ const getStatusVariant = (status?: string): 'default' | 'secondary' | 'destructi
       return 'secondary';
     case 'Not Awarded':
       return 'destructive';
+    case 'Draft':
+      return 'outline';
     default:
       return 'outline';
   }
@@ -44,26 +46,47 @@ function ApplicationsPageContent() {
 
   const filter = searchParams.get('status') || 'all';
 
+  // 1. Fetch main portfolio status
+  const userDocRef = useMemoFirebase(() => {
+    if (!user || !firestore) return null;
+    return doc(firestore, 'users', user.uid);
+  }, [user, firestore]);
+
+  const { data: mainProfile, isLoading: isProfileLoading } = useDoc(userDocRef);
+
+  // 2. Fetch history subcollection
   const applicationsQuery = useMemoFirebase(() => {
     if (!user || !firestore) return null;
     return query(collection(firestore, `users/${user.uid}/applications`));
   }, [user, firestore]);
 
-  const { data: allApplications, isLoading } = useCollection(applicationsQuery);
+  const { data: historyApplications, isLoading: isHistoryLoading } = useCollection(applicationsQuery);
 
   const applications = useMemo(() => {
-    const apps = allApplications || [];
+    const apps = historyApplications ? [...historyApplications] : [];
+    
+    // Add the current active portfolio if it's not already in history (e.g. if it's a draft)
+    if (mainProfile && mainProfile.status === 'Draft') {
+      const exists = apps.some(a => a.status === 'Draft');
+      if (!exists) {
+        apps.unshift({
+          id: 'current-draft',
+          scholarshipName: 'General Scholarship Portfolio',
+          status: 'Draft',
+          submissionDate: mainProfile.updatedAt || new Date().toISOString(),
+        });
+      }
+    }
+
     if (filter === 'all') return apps;
     return apps.filter(app => app.status?.toLowerCase() === filter.toLowerCase());
-  }, [allApplications, filter]);
+  }, [historyApplications, mainProfile, filter]);
 
-  if (isLoading || !mounted) {
+  if (isProfileLoading || isHistoryLoading || !mounted) {
     return (
-      <div className="flex h-64 items-center justify-center">
-        <div className="flex flex-col items-center gap-2">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-muted-foreground font-medium">Syncing applications...</p>
-        </div>
+      <div className="flex h-64 flex-col items-center justify-center gap-4">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="text-muted-foreground animate-pulse font-medium">Syncing Application Status...</p>
       </div>
     );
   }
@@ -71,7 +94,6 @@ function ApplicationsPageContent() {
   const formatDate = (dateValue: any) => {
     if (!dateValue) return 'N/A';
     try {
-      // Handle both ISO strings and Firestore Timestamps
       const date = typeof dateValue === 'string' ? new Date(dateValue) : dateValue.toDate?.() || new Date(dateValue);
       if (isNaN(date.getTime())) return 'Invalid Date';
       return date.toLocaleDateString();
@@ -83,9 +105,9 @@ function ApplicationsPageContent() {
   return (
     <div className="space-y-8">
       <div className="flex flex-col gap-2">
-        <h1 className="text-3xl font-bold">Application Status</h1>
+        <h1 className="text-3xl font-bold">Submission Tracking</h1>
         <p className="text-muted-foreground">
-          Track your progress and view updates from the selection committee.
+          Real-time updates on your scholarship portfolio and committee reviews.
         </p>
       </div>
 
@@ -93,8 +115,8 @@ function ApplicationsPageContent() {
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50">
-              <TableHead className="font-bold">Scholarship Program</TableHead>
-              <TableHead className="font-bold">Date Submitted</TableHead>
+              <TableHead className="font-bold">Portfolio / Program</TableHead>
+              <TableHead className="font-bold">Last Update</TableHead>
               <TableHead className="text-center font-bold">Status</TableHead>
               <TableHead className="text-right font-bold">Actions</TableHead>
             </TableRow>
@@ -102,25 +124,31 @@ function ApplicationsPageContent() {
           <TableBody>
             {applications.map((app: any) => (
               <TableRow key={app.id} className="hover:bg-muted/30 transition-colors">
-                <TableCell className="font-semibold flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-primary opacity-40" />
-                  {app.scholarshipName || 'General Portfolio'}
+                <TableCell className="font-semibold">
+                  <div className="flex items-center gap-2">
+                    {app.status === 'Submitted' ? <CheckCircle className="h-4 w-4 text-green-500" /> : <FileEdit className="h-4 w-4 text-primary opacity-40" />}
+                    {app.scholarshipName || 'General Portfolio'}
+                  </div>
                 </TableCell>
-                <TableCell>
+                <TableCell className="text-muted-foreground text-sm">
                   {formatDate(app.submissionDate)}
                 </TableCell>
                 <TableCell className="text-center">
                   <Badge 
                     variant={getStatusVariant(app.status)} 
-                    className={app.status === 'Awarded' ? 'bg-green-500/20 text-green-600 border-green-500/30 font-bold' : ''}
+                    className={cn(
+                      "font-bold px-3",
+                      app.status === 'Awarded' ? 'bg-green-600 text-white' : 
+                      app.status === 'Draft' ? 'border-primary/20 text-primary bg-primary/5' : ''
+                    )}
                   >
                     {app.status || 'Pending'}
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right">
-                  <Button variant="ghost" size="sm" asChild>
+                  <Button variant="outline" size="sm" asChild className="font-bold">
                     <Link href="/dashboard/profile">
-                      View Application <ExternalLink className="ml-2 h-3 w-3" />
+                      {app.status === 'Draft' ? 'Continue' : 'View Details'} <ExternalLink className="ml-2 h-3 w-3" />
                     </Link>
                   </Button>
                 </TableCell>
@@ -130,17 +158,17 @@ function ApplicationsPageContent() {
         </Table>
         
         {applications.length === 0 && (
-          <div className="text-center py-20 bg-muted/5">
+          <div className="text-center py-24 bg-muted/5">
             <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-muted mb-4">
-              <FileText className="h-6 w-6 text-muted-foreground" />
+              <Clock className="h-6 w-6 text-muted-foreground opacity-20" />
             </div>
-            <p className="text-muted-foreground font-medium">
+            <p className="text-muted-foreground font-medium italic">
               {filter === 'all' 
-                ? "You haven't submitted any applications yet." 
-                : `No applications found with status "${filter}".`}
+                ? "Your submission history is currently empty." 
+                : `No records found with status "${filter}".`}
             </p>
-            <Button variant="outline" className="mt-4" asChild>
-              <Link href="/dashboard/scholarships">Browse Opportunities</Link>
+            <Button variant="default" className="mt-6 px-8 rounded-full" asChild>
+              <Link href="/dashboard/scholarships">Start My Application</Link>
             </Button>
           </div>
         )}

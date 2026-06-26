@@ -6,6 +6,7 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import { Applicant, ApplicantSchema } from '@/types/applicant';
 import { firebaseConfig } from '@/firebase/config';
 import sgMail from '@sendgrid/mail';
+import { z } from 'zod';
 
 // Initialize Firebase for server-side operations
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
@@ -30,6 +31,7 @@ export async function saveApplicantData(userId: string, formData: FormData, isSu
         ...existingData,
     };
 
+    // Extract basic fields
     for (const [key, value] of Object.entries(rawData)) {
         if (value instanceof File) {
             if (value.size === 0) continue;
@@ -38,16 +40,16 @@ export async function saveApplicantData(userId: string, formData: FormData, isSu
         if (key.endsWith('Accepted') && typeof value === 'string') {
             dataToSave[key] = value === 'on';
         } else if (key === 'gpa') {
-            dataToSave[key] = parseFloat(value as string);
+            dataToSave[key] = value === '' ? 0 : parseFloat(value as string);
         } else {
              dataToSave[key] = value;
         }
     }
     
+    // Handle File Fields
     const fileFields: (keyof Applicant)[] = [
       'transcripts', 
       'resume', 
-      'acceptanceLetter', 
       'recommendationLetter1', 
       'recommendationLetter2'
     ];
@@ -55,13 +57,9 @@ export async function saveApplicantData(userId: string, formData: FormData, isSu
     for (const fieldName of fileFields) {
         const file = formData.get(fieldName) as File | null;
         if (file && file.size > 0) {
-            const path = `${userId}/${fieldName}/${Date.now()}-${file.name}`;
+            const path = `applications/${userId}/${fieldName}/${Date.now()}-${file.name}`;
             const downloadURL = await uploadFile(file, path);
             dataToSave[fieldName] = downloadURL;
-        } else if (existingData && existingData[fieldName]) {
-            dataToSave[fieldName] = existingData[fieldName];
-        } else {
-            delete dataToSave[fieldName];
         }
     }
 
@@ -72,34 +70,33 @@ export async function saveApplicantData(userId: string, formData: FormData, isSu
       dataToSave.status = 'Draft';
     }
 
-    const finalDataForValidation = { ...dataToSave };
-    for (const field of fileFields) {
-        if (finalDataForValidation[field] === '') {
-            delete finalDataForValidation[field];
-        }
-    }
-    
-    const validatedFields = ApplicantSchema.safeParse(finalDataForValidation);
+    dataToSave.updatedAt = serverTimestamp();
+
+    // Validation Strategy: 
+    // If it's a draft, allow partials. If it's a submission, enforce full schema.
+    const validationSchema = isSubmit ? ApplicantSchema : ApplicantSchema.partial();
+    const validatedFields = validationSchema.safeParse(dataToSave);
 
     if (!validatedFields.success) {
       console.error('Validation Errors:', validatedFields.error.flatten().fieldErrors);
       return { 
         success: false, 
-        error: 'Invalid data provided.',
+        error: isSubmit ? 'Please complete all required fields before submitting.' : 'Invalid data format.',
         issues: validatedFields.error.flatten().fieldErrors,
       };
     }
 
     await setDoc(docRef, validatedFields.data, { merge: true });
 
-    // If submitted, create an entry in the applications subcollection for history
+    // If submitted, create a record in the history subcollection
     if (isSubmit) {
       const appHistoryRef = collection(db, 'users', userId, 'applications');
       await addDoc(appHistoryRef, {
         scholarshipName: 'General Scholarship Portfolio',
         status: 'Submitted',
         submissionDate: new Date().toISOString(),
-        updatedAt: serverTimestamp()
+        updatedAt: serverTimestamp(),
+        schoolId: dataToSave.schoolId || 'scholarship-hib4j'
       });
     }
     
@@ -144,7 +141,7 @@ export async function sendRecommendationRequest(params: {
 
     const tokenLink = `${params.origin}/recommend/${tokenRef.id}`;
 
-    // 2. Dispatch Email via SendGrid if API key is present and valid
+    // 2. Dispatch Email via SendGrid
     if (apiKey && !apiKey.includes('YOUR_SENDGRID')) {
       sgMail.setApiKey(apiKey);
       const msg = {
@@ -167,20 +164,17 @@ export async function sendRecommendationRequest(params: {
       
       try {
         await sgMail.send(msg);
-        console.log(`Email successfully sent to ${params.recommenderEmail}`);
         emailSent = true;
       } catch (sgError: any) {
         console.error('SendGrid API Error:', sgError.response?.body || sgError.message);
       }
-    } else {
-      console.warn('SENDGRID_API_KEY is missing or using placeholder. Email dispatch skipped but logged to system outbox.');
     }
 
-    // 3. Always log simulated email for visibility in the prototype dashboard
+    // 3. Log email attempt
     await addDoc(collection(db, 'sent_emails'), {
       recipient: params.recommenderEmail,
       subject: `Recommendation Request for ${params.studentName}`,
-      body: emailSent ? `Live email sent via SendGrid.` : `Simulated email (API Key missing). Link: ${tokenLink}`,
+      body: emailSent ? `Sent via SendGrid.` : `Simulation only. Link: ${tokenLink}`,
       type: 'Recommendation Request',
       deliveryMethod: emailSent ? 'SendGrid' : 'Simulation',
       sentAt: serverTimestamp()
@@ -197,7 +191,7 @@ export async function sendRecommendationRequest(params: {
       success: true, 
       tokenId: tokenRef.id, 
       emailSent,
-      deliveryMethod: emailSent ? 'SendGrid' : 'System Outbox'
+      deliveryMethod: emailSent ? 'SendGrid' : 'Simulation'
     };
   } catch (error: any) {
     console.error('sendRecommendationRequest Error:', error);
