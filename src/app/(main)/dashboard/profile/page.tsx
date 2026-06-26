@@ -1,3 +1,4 @@
+
 'use client';
 
 import { Button } from '@/components/ui/button';
@@ -18,10 +19,9 @@ import { useForm } from 'react-hook-form';
 import { saveApplicantData } from './actions';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { Separator } from '@/components/ui/separator';
-import { useDoc, useFirebase, useMemoFirebase, useFunctions } from '@/firebase';
-import { doc, setDoc, serverTimestamp, updateDoc, arrayUnion } from 'firebase/firestore';
+import { useDoc, useFirebase, useMemoFirebase } from '@/firebase';
+import { doc, setDoc, serverTimestamp, updateDoc, arrayUnion, collection, addDoc } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL, getStorage } from 'firebase/storage';
-import { httpsCallable } from 'firebase/functions';
 import { 
   CheckCircle, 
   Send, 
@@ -45,7 +45,6 @@ import { cn } from '@/lib/utils';
 export default function ProfilePage() {
   const { toast } = useToast();
   const { user, isUserLoading, firestore } = useFirebase();
-  const functions = useFunctions();
   const storage = getStorage();
   
   const [isSaving, setIsSaving] = useState(false);
@@ -177,7 +176,7 @@ export default function ProfilePage() {
   };
 
   const handleSendRecommendationRequest = async (index: number) => {
-    if (!user || !functions) return;
+    if (!user || !firestore) return;
     
     const name = getValues(`recommenderName${index}` as any);
     const email = getValues(`recommenderEmail${index}` as any);
@@ -196,25 +195,40 @@ export default function ProfilePage() {
     });
 
     try {
-      const sendReq = httpsCallable(functions, 'sendRecommendationRequest');
-      await sendReq({
+      // 1. Create a secure token in Firestore
+      const tokenRef = await addDoc(collection(firestore, 'recommendationTokens'), {
         applicationId: user.uid,
-        scholarshipId: 'general-portfolio',
-        organizationId: 'default-school',
         studentName: user.displayName || 'A Student',
-        scholarshipTitle: 'General Scholarship Portfolio',
         recommenderName: name,
         recommenderEmail: email,
-        recommenderTitle: title,
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        scholarshipTitle: 'General Scholarship Portfolio',
+        requestIndex: index,
+        used: false,
+        createdAt: serverTimestamp(),
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days
       });
 
+      const tokenLink = `${window.location.origin}/recommend/${tokenRef.id}`;
+
+      // 2. Simulate sending an email by creating a record in sent_emails
+      await addDoc(collection(firestore, 'sent_emails'), {
+        recipient: email,
+        subject: `Recommendation Request for ${user.displayName || 'a student'}`,
+        body: `Hello ${name},\n\n${user.displayName || 'A student'} has requested a recommendation letter for their scholarship application. Please upload your letter using the secure link below:\n\n${tokenLink}\n\nThank you for supporting student success.`,
+        type: 'Recommendation Request',
+        sentAt: serverTimestamp()
+      });
+
+      // 3. Update the student document status
       await updateDoc(userDocRef!, {
         [`recommendationStatus${index}`]: 'Pending',
         updatedAt: serverTimestamp(),
       });
 
-      toast({ title: "Request Sent", description: `An invitation has been sent to ${name}.` });
+      toast({ 
+        title: "Request Sent", 
+        description: `A secure portal link has been prepared for ${name}.` 
+      });
     } catch (error: any) {
       setRecErrors(prev => ({ ...prev, [index]: error.message || "Could not send request." }));
     } finally {
@@ -493,6 +507,12 @@ export default function ProfilePage() {
                         {isRequestingRec[i] ? <Loader2 className="h-3 w-3 mr-2 animate-spin" /> : <Mail className="h-3 w-3 mr-2" />}
                         Send Request
                       </Button>
+                    )}
+                    
+                    {status === 'Received' && (
+                      <div className="flex items-center gap-2 text-[10px] text-green-600 font-bold">
+                        <CheckCircle className="h-3 w-3" /> Endorsement Verified
+                      </div>
                     )}
                   </div>
                 );

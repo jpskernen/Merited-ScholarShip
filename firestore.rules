@@ -1,3 +1,4 @@
+
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -52,7 +53,7 @@ service cloud.firestore {
 
     // Sent Emails Outbox
     match /sent_emails/{emailId} {
-      allow read, write: if isSponsor();
+      allow read, write: if isSponsor() || isSignedIn();
     }
 
     // User Profiles

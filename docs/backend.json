@@ -58,6 +58,24 @@
       },
       "required": ["name", "amount", "deadline", "description", "schoolId"]
     },
+    "RecommendationToken": {
+      "title": "RecommendationToken",
+      "description": "A secure token allowing a recommender to upload a letter for a student.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "applicationId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "recommenderName": { "type": "string" },
+        "recommenderEmail": { "type": "string" },
+        "scholarshipTitle": { "type": "string" },
+        "requestIndex": { "type": "number" },
+        "used": { "type": "boolean" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["applicationId", "studentName", "recommenderName", "recommenderEmail", "used"]
+    },
     "School": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "School",
@@ -161,6 +179,10 @@
     ]
   },
   "firestore": {
+    "/recommendationTokens/{tokenId}": {
+      "schema": "#/backend/entities/RecommendationToken",
+      "description": "Tokens for secure recommendation letter uploads."
+    },
     "/invites/{inviteId}": {
       "schema": "#/backend/entities/ReviewerInvite",
       "description": "Secure invitations for new reviewers."
