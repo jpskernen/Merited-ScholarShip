@@ -1,4 +1,3 @@
-
 'use server';
 
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -115,9 +114,6 @@ export async function saveApplicantData(userId: string, formData: FormData, isSu
 
 /**
  * Server Action to handle recommendation requests securely.
- * 1. Creates a token in Firestore.
- * 2. Sends an email via SendGrid (if configured).
- * 3. Returns the tokenId.
  */
 export async function sendRecommendationRequest(params: {
   applicationId: string;
@@ -128,6 +124,9 @@ export async function sendRecommendationRequest(params: {
   requestIndex: number;
   origin: string;
 }) {
+  const apiKey = process.env.SENDGRID_API_KEY;
+  const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'scholarships@meritedapp.com';
+
   try {
     // 1. Create a secure token in Firestore
     const tokenRef = await addDoc(collection(db, 'recommendationTokens'), {
@@ -145,15 +144,15 @@ export async function sendRecommendationRequest(params: {
     const tokenLink = `${params.origin}/recommend/${tokenRef.id}`;
 
     // 2. Dispatch Email via SendGrid if API key is present
-    if (process.env.SENDGRID_API_KEY) {
-      sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+    if (apiKey) {
+      sgMail.setApiKey(apiKey);
       const msg = {
         to: params.recommenderEmail,
-        from: 'scholarships@meritedapp.com', // Must be a verified sender in SendGrid
+        from: fromEmail,
         subject: `Recommendation Request for ${params.studentName}`,
         text: `Hello ${params.recommenderName},\n\n${params.studentName} has requested a recommendation letter for their scholarship application. Please upload your letter using the secure link below:\n\n${tokenLink}\n\nThank you for supporting student success.`,
         html: `
-          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; rounded: 8px;">
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;">
             <h2 style="color: #111827;">Recommendation Request</h2>
             <p>Hello ${params.recommenderName},</p>
             <p><strong>${params.studentName}</strong> has requested a recommendation letter for their scholarship application.</p>
@@ -164,7 +163,16 @@ export async function sendRecommendationRequest(params: {
           </div>
         `,
       };
-      await sgMail.send(msg);
+      
+      try {
+        await sgMail.send(msg);
+        console.log(`Email successfully sent to ${params.recommenderEmail}`);
+      } catch (sgError: any) {
+        console.error('SendGrid API Error:', sgError.response?.body || sgError.message);
+        // We still log the attempt in Firestore even if the actual email fails
+      }
+    } else {
+      console.warn('SENDGRID_API_KEY is missing. Email dispatch skipped but logged to system outbox.');
     }
 
     // 3. Always log simulated email for visibility in the prototype dashboard
@@ -185,7 +193,7 @@ export async function sendRecommendationRequest(params: {
 
     return { success: true, tokenId: tokenRef.id };
   } catch (error: any) {
-    console.error('Server Action Error (sendRecommendationRequest):', error);
+    console.error('sendRecommendationRequest Error:', error);
     return { success: false, error: error.message || 'Failed to dispatch request.' };
   }
 }

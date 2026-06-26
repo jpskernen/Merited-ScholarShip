@@ -30,3 +30,7 @@ env:
     value: "345364291560"
   - variable: NEXT_PUBLIC_FIREBASE_APP_ID
     value: "1:345364291560:web:5a490f54f942c3e29b4e5d"
+  - variable: SENDGRID_API_KEY
+    value: "YOUR_SENDGRID_API_KEY_HERE"
+  - variable: SENDGRID_FROM_EMAIL
+    value: "scholarships@meritedapp.com"
