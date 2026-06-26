@@ -5,10 +5,8 @@ import { getFirestore, doc, setDoc, getDoc, collection, addDoc, serverTimestamp 
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { Applicant, ApplicantSchema } from '@/types/applicant';
 import { firebaseConfig } from '@/firebase/config';
-import sgMail from '@sendgrid/mail';
-import { z } from 'zod';
+import { sendSubmissionConfirmation, sendNotification } from '@/app/lib/notifications';
 
-// Initialize Firebase for server-side operations
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const storage = getStorage(app);
@@ -23,43 +21,19 @@ export async function saveApplicantData(userId: string, formData: FormData, isSu
   try {
     const rawData = Object.fromEntries(formData.entries());
     const docRef = doc(db, 'users', userId);
+    const existingSnap = await getDoc(docRef);
+    const existingData = existingSnap.exists() ? existingSnap.data() : {};
 
-    const existingDoc = await getDoc(docRef);
-    const existingData = existingDoc.exists() ? existingDoc.data() : {};
+    const dataToSave: any = { ...existingData };
 
-    const dataToSave: { [key: string]: any } = {
-        ...existingData,
-    };
-
-    // Extract basic fields
     for (const [key, value] of Object.entries(rawData)) {
-        if (value instanceof File) {
-            if (value.size === 0) continue;
-        }
-        
-        if (key.endsWith('Accepted') && typeof value === 'string') {
-            dataToSave[key] = value === 'on';
+        if (value instanceof File && value.size > 0) {
+            const path = `applications/${userId}/${key}/${Date.now()}-${value.name}`;
+            dataToSave[key] = await uploadFile(value, path);
+        } else if (typeof value === 'string' && key !== 'gpa') {
+            dataToSave[key] = value;
         } else if (key === 'gpa') {
             dataToSave[key] = value === '' ? 0 : parseFloat(value as string);
-        } else {
-             dataToSave[key] = value;
-        }
-    }
-    
-    // Handle File Fields
-    const fileFields: (keyof Applicant)[] = [
-      'transcripts', 
-      'resume', 
-      'recommendationLetter1', 
-      'recommendationLetter2'
-    ];
-
-    for (const fieldName of fileFields) {
-        const file = formData.get(fieldName) as File | null;
-        if (file && file.size > 0) {
-            const path = `applications/${userId}/${fieldName}/${Date.now()}-${file.name}`;
-            const downloadURL = await uploadFile(file, path);
-            dataToSave[fieldName] = downloadURL;
         }
     }
 
@@ -72,46 +46,25 @@ export async function saveApplicantData(userId: string, formData: FormData, isSu
 
     dataToSave.updatedAt = serverTimestamp();
 
-    // Validation Strategy: 
-    // If it's a draft, allow partials. If it's a submission, enforce full schema.
     const validationSchema = isSubmit ? ApplicantSchema : ApplicantSchema.partial();
-    const validatedFields = validationSchema.safeParse(dataToSave);
+    const validated = validationSchema.safeParse(dataToSave);
 
-    if (!validatedFields.success) {
-      console.error('Validation Errors:', validatedFields.error.flatten().fieldErrors);
-      return { 
-        success: false, 
-        error: isSubmit ? 'Please complete all required fields before submitting.' : 'Invalid data format.',
-        issues: validatedFields.error.flatten().fieldErrors,
-      };
+    if (!validated.success) {
+      return { success: false, error: 'Validation failed.' };
     }
 
-    await setDoc(docRef, validatedFields.data, { merge: true });
+    await setDoc(docRef, validated.data, { merge: true });
 
-    // If submitted, create a record in the history subcollection
-    if (isSubmit) {
-      const appHistoryRef = collection(db, 'users', userId, 'applications');
-      await addDoc(appHistoryRef, {
-        scholarshipName: 'General Scholarship Portfolio',
-        status: 'Submitted',
-        submissionDate: new Date().toISOString(),
-        updatedAt: serverTimestamp(),
-        schoolId: dataToSave.schoolId || 'scholarship-hib4j'
-      });
+    if (isSubmit && dataToSave.email) {
+      await sendSubmissionConfirmation(dataToSave.email, dataToSave.name || 'Student');
     }
     
     return { success: true, id: userId };
-
-  } catch (error) {
-    console.error('Error saving applicant data:', error);
-    const message = error instanceof Error ? error.message : 'An unknown error occurred.';
-    return { success: false, error: message };
+  } catch (error: any) {
+    return { success: false, error: error.message };
   }
 }
 
-/**
- * Server Action to handle recommendation requests securely.
- */
 export async function sendRecommendationRequest(params: {
   applicationId: string;
   studentName: string;
@@ -121,80 +74,36 @@ export async function sendRecommendationRequest(params: {
   requestIndex: number;
   origin: string;
 }) {
-  const apiKey = process.env.SENDGRID_API_KEY;
-  const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'scholarships@meritedapp.com';
-  let emailSent = false;
-
   try {
-    // 1. Create a secure token in Firestore
     const tokenRef = await addDoc(collection(db, 'recommendationTokens'), {
       applicationId: params.applicationId,
       studentName: params.studentName,
       recommenderName: params.recommenderName,
       recommenderEmail: params.recommenderEmail,
-      scholarshipTitle: 'General Scholarship Portfolio',
+      scholarshipTitle: 'General Portfolio',
       requestIndex: params.requestIndex,
       used: false,
       createdAt: serverTimestamp(),
-      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
     });
 
     const tokenLink = `${params.origin}/recommend/${tokenRef.id}`;
 
-    // 2. Dispatch Email via SendGrid
-    if (apiKey && !apiKey.includes('YOUR_SENDGRID')) {
-      sgMail.setApiKey(apiKey);
-      const msg = {
-        to: params.recommenderEmail,
-        from: fromEmail,
-        subject: `Recommendation Request for ${params.studentName}`,
-        text: `Hello ${params.recommenderName},\n\n${params.studentName} has requested a recommendation letter for their scholarship application. Please upload your letter using the secure link below:\n\n${tokenLink}\n\nThank you for supporting student success.`,
-        html: `
-          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;">
-            <h2 style="color: #111827;">Recommendation Request</h2>
-            <p>Hello ${params.recommenderName},</p>
-            <p><strong>${params.studentName}</strong> has requested a recommendation letter for their scholarship application.</p>
-            <div style="margin: 30px 0; text-align: center;">
-              <a href="${tokenLink}" style="background-color: #111827; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Upload Recommendation Letter</a>
-            </div>
-            <p style="color: #6b7280; font-size: 12px;">This link is secure and unique to this request. Do not share it.</p>
-          </div>
-        `,
-      };
-      
-      try {
-        await sgMail.send(msg);
-        emailSent = true;
-      } catch (sgError: any) {
-        console.error('SendGrid API Error:', sgError.response?.body || sgError.message);
-      }
-    }
-
-    // 3. Log email attempt
-    await addDoc(collection(db, 'sent_emails'), {
-      recipient: params.recommenderEmail,
+    await sendNotification({
+      to: params.recommenderEmail,
       subject: `Recommendation Request for ${params.studentName}`,
-      body: emailSent ? `Sent via SendGrid.` : `Simulation only. Link: ${tokenLink}`,
       type: 'Recommendation Request',
-      deliveryMethod: emailSent ? 'SendGrid' : 'Simulation',
-      sentAt: serverTimestamp()
+      text: `Hello ${params.recommenderName}, ${params.studentName} has requested a recommendation. Link: ${tokenLink}`,
+      html: `<p>Hello ${params.recommenderName},</p><p><strong>${params.studentName}</strong> has requested a recommendation letter. Please upload it via this secure link: <a href="${tokenLink}">${tokenLink}</a></p>`
     });
 
-    // 4. Update the student document status
-    const studentRef = doc(db, 'users', params.applicationId);
-    await setDoc(studentRef, {
+    await setDoc(doc(db, 'users', params.applicationId), {
       [`recommendationStatus${params.requestIndex}`]: 'Pending',
       updatedAt: serverTimestamp(),
     }, { merge: true });
 
-    return { 
-      success: true, 
-      tokenId: tokenRef.id, 
-      emailSent,
-      deliveryMethod: emailSent ? 'SendGrid' : 'Simulation'
-    };
+    return { success: true };
   } catch (error: any) {
-    console.error('sendRecommendationRequest Error:', error);
-    return { success: false, error: error.message || 'Failed to dispatch request.' };
+    return { success: false, error: error.message };
   }
 }
