@@ -69,6 +69,7 @@
         "recommenderName": { "type": "string" },
         "recommenderEmail": { "type": "string" },
         "scholarshipTitle": { "type": "string" },
+        "organizationId": { "type": "string" },
         "requestIndex": { "type": "number" },
         "used": { "type": "boolean" },
         "expiresAt": { "type": "string", "format": "date-time" },

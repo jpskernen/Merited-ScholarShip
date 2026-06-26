@@ -1,3 +1,4 @@
+
 'use client';
 
 import {
@@ -21,7 +22,8 @@ import {
   UserPlus,
   ShieldCheck,
   Loader2,
-  History
+  History,
+  FlaskConical
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -36,6 +38,7 @@ const adminNav = [
   { href: '/admin/admins', label: 'Administrators', icon: ShieldCheck },
   { href: '/admin/scholarships', label: 'Scholarships', icon: Award },
   { href: '/admin/audit-log', label: 'Audit Log', icon: History },
+  { href: '/admin/test-utils', label: 'Dev Utils', icon: FlaskConical },
 ];
 
 export default function AdminLayout({
