@@ -126,6 +126,7 @@ export async function sendRecommendationRequest(params: {
 }) {
   const apiKey = process.env.SENDGRID_API_KEY;
   const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'scholarships@meritedapp.com';
+  let emailSent = false;
 
   try {
     // 1. Create a secure token in Firestore
@@ -143,8 +144,8 @@ export async function sendRecommendationRequest(params: {
 
     const tokenLink = `${params.origin}/recommend/${tokenRef.id}`;
 
-    // 2. Dispatch Email via SendGrid if API key is present
-    if (apiKey) {
+    // 2. Dispatch Email via SendGrid if API key is present and valid
+    if (apiKey && !apiKey.includes('YOUR_SENDGRID')) {
       sgMail.setApiKey(apiKey);
       const msg = {
         to: params.recommenderEmail,
@@ -167,20 +168,21 @@ export async function sendRecommendationRequest(params: {
       try {
         await sgMail.send(msg);
         console.log(`Email successfully sent to ${params.recommenderEmail}`);
+        emailSent = true;
       } catch (sgError: any) {
         console.error('SendGrid API Error:', sgError.response?.body || sgError.message);
-        // We still log the attempt in Firestore even if the actual email fails
       }
     } else {
-      console.warn('SENDGRID_API_KEY is missing. Email dispatch skipped but logged to system outbox.');
+      console.warn('SENDGRID_API_KEY is missing or using placeholder. Email dispatch skipped but logged to system outbox.');
     }
 
     // 3. Always log simulated email for visibility in the prototype dashboard
     await addDoc(collection(db, 'sent_emails'), {
       recipient: params.recommenderEmail,
       subject: `Recommendation Request for ${params.studentName}`,
-      body: `Email dispatched to ${params.recommenderEmail}. Link: ${tokenLink}`,
+      body: emailSent ? `Live email sent via SendGrid.` : `Simulated email (API Key missing). Link: ${tokenLink}`,
       type: 'Recommendation Request',
+      deliveryMethod: emailSent ? 'SendGrid' : 'Simulation',
       sentAt: serverTimestamp()
     });
 
@@ -191,7 +193,12 @@ export async function sendRecommendationRequest(params: {
       updatedAt: serverTimestamp(),
     }, { merge: true });
 
-    return { success: true, tokenId: tokenRef.id };
+    return { 
+      success: true, 
+      tokenId: tokenRef.id, 
+      emailSent,
+      deliveryMethod: emailSent ? 'SendGrid' : 'System Outbox'
+    };
   } catch (error: any) {
     console.error('sendRecommendationRequest Error:', error);
     return { success: false, error: error.message || 'Failed to dispatch request.' };

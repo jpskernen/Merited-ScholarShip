@@ -1,13 +1,13 @@
-
 'use client';
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Award, FileCheck, Users, Clock, Mail, ExternalLink, Loader2, FileText, CheckCircle, Search, ClipboardList } from 'lucide-react';
+import { Award, FileCheck, Users, Clock, Mail, ExternalLink, Loader2, FileText, CheckCircle, Search, ClipboardList, Activity, ShieldCheck, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import { useCollection, useFirebase, useMemoFirebase, useUser } from '@/firebase';
 import { collection, query, orderBy, limit, where, onSnapshot } from 'firebase/firestore';
 import { Badge } from '@/components/ui/badge';
 import { useState, useEffect } from 'react';
+import { getSystemHealth } from './actions';
 
 export default function AdminDashboardPage() {
   const { firestore } = useFirebase();
@@ -22,6 +22,16 @@ export default function AdminDashboardPage() {
     underReview: 0,
     awarded: 0
   });
+
+  const [systemHealth, setSystemHealth] = useState<any>(null);
+
+  useEffect(() => {
+    async function checkHealth() {
+      const health = await getSystemHealth();
+      setSystemHealth(health);
+    }
+    checkHealth();
+  }, []);
 
   useEffect(() => {
     if (!firestore || !orgId) return;
@@ -152,14 +162,51 @@ export default function AdminDashboardPage() {
         ))}
       </div>
       
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card>
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-1">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="h-5 w-5 text-primary" />
+              System Status
+            </CardTitle>
+            <CardDescription>Integration health checks.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+             <div className="flex items-center justify-between py-2 border-b">
+               <div className="flex flex-col">
+                 <span className="text-sm font-bold">SendGrid API</span>
+                 <span className="text-[10px] text-muted-foreground">Email Dispatch Service</span>
+               </div>
+               {systemHealth?.sendgrid?.isConfigured ? (
+                 <Badge className="bg-green-600">Active</Badge>
+               ) : (
+                 <Badge variant="outline" className="text-amber-600 border-amber-200">Simulation Mode</Badge>
+               )}
+             </div>
+             <div className="flex items-center justify-between py-2 border-b">
+               <div className="flex flex-col">
+                 <span className="text-sm font-bold">Sender Email</span>
+                 <span className="text-[10px] text-muted-foreground truncate max-w-[120px]">{systemHealth?.sendgrid?.senderEmail}</span>
+               </div>
+               {systemHealth?.sendgrid?.senderVerified ? (
+                 <CheckCircle className="h-4 w-4 text-green-500" />
+               ) : (
+                 <AlertCircle className="h-4 w-4 text-amber-500" />
+               )}
+             </div>
+             <div className="p-3 bg-muted rounded-md text-[10px] leading-relaxed text-muted-foreground italic">
+               To activate live emails, update SENDGRID_API_KEY in the App Hosting settings dashboard.
+             </div>
+          </CardContent>
+        </Card>
+
+        <Card className="lg:col-span-1">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Mail className="h-5 w-5 text-primary" />
-              System Outbox (Simulated)
+              Recent Notifications
             </CardTitle>
-            <CardDescription>Records of AI-generated invitation emails and notifications.</CardDescription>
+            <CardDescription>Records of invitations and requests.</CardDescription>
           </CardHeader>
           <CardContent>
             {isOutboxLoading ? (
@@ -169,15 +216,17 @@ export default function AdminDashboardPage() {
                 {recentEmails.map((email: any) => (
                   <div key={email.id} className="flex items-start justify-between border-b pb-3 last:border-0 last:pb-0">
                     <div className="space-y-1">
-                      <p className="text-sm font-bold">{email.recipient}</p>
-                      <p className="text-xs text-muted-foreground line-clamp-1">{email.subject}</p>
-                      <p className="text-[10px] text-muted-foreground">
-                        {email.sentAt && new Date(email.sentAt.seconds * 1000).toLocaleString()}
-                      </p>
+                      <p className="text-sm font-bold truncate max-w-[150px]">{email.recipient}</p>
+                      <p className="text-[10px] text-muted-foreground line-clamp-1">{email.subject}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                         <Badge variant="outline" className="text-[9px] px-1 py-0 h-4">
+                            {email.deliveryMethod || 'Auto'}
+                         </Badge>
+                         <span className="text-[9px] text-muted-foreground font-mono">
+                            {email.sentAt && new Date(email.sentAt.seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                         </span>
+                      </div>
                     </div>
-                    <Badge variant="outline" className="text-[10px] whitespace-nowrap">
-                      {email.type}
-                    </Badge>
                   </div>
                 ))}
               </div>
@@ -187,13 +236,13 @@ export default function AdminDashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="lg:col-span-1">
           <CardHeader>
-            <CardTitle>Committee Analytics</CardTitle>
-            <CardDescription>High-level overview of review coverage and score distribution.</CardDescription>
+            <CardTitle>Committee Stats</CardTitle>
+            <CardDescription>Evaluation coverage overview.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
+            <div className="space-y-4 pt-2">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Portfolio Completion</span>
                 <span className="font-bold">88%</span>
@@ -202,8 +251,18 @@ export default function AdminDashboardPage() {
                 <div className="bg-primary h-full w-[88%]" />
               </div>
               <p className="text-xs text-muted-foreground italic">
-                Committees are currently processing the spring award cycle.
+                Committees are currently processing the active cycle.
               </p>
+              <div className="grid grid-cols-2 gap-4 pt-4 border-t">
+                 <div>
+                    <p className="text-[10px] font-black uppercase text-muted-foreground">Avg Score</p>
+                    <p className="text-lg font-bold">7.42</p>
+                 </div>
+                 <div>
+                    <p className="text-[10px] font-black uppercase text-muted-foreground">Reviews</p>
+                    <p className="text-lg font-bold">142</p>
+                 </div>
+              </div>
             </div>
           </CardContent>
         </Card>

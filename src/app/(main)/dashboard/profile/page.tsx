@@ -1,4 +1,3 @@
-
 'use client';
 
 import { Button } from '@/components/ui/button';
@@ -35,7 +34,8 @@ import {
   Paperclip,
   UserPlus,
   Mail,
-  Clock
+  Clock,
+  ShieldCheck
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -207,9 +207,12 @@ export default function ProfilePage() {
       });
 
       if (result.success) {
+        const isLive = result.deliveryMethod === 'SendGrid';
         toast({ 
-          title: "Request Dispatched", 
-          description: `A secure portal link has been prepared and sent to ${name}.` 
+          title: isLive ? "Request Dispatched" : "Request Logged", 
+          description: isLive 
+            ? `A professional invitation has been sent to ${name} via SendGrid.`
+            : `Invitation link generated and saved to System Outbox for ${name}.` 
         });
       } else {
         throw new Error(result.error);
