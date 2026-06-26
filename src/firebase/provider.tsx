@@ -106,7 +106,8 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
             'hello@merited.com',
             'hellow@meritedapp.com',
             'hello@meritedapp.com',
-            'kernenpm@gmail.com'
+            'kernenpm@gmail.com',
+            'reviewer@test.com'
           ].includes(firebaseUser.email || '');
 
           let role = dbUserData?.role || null;

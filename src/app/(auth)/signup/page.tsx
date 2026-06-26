@@ -74,7 +74,18 @@ export default function SignupPage() {
           await updateProfile(user, { displayName: name });
 
           const isSuperAdmin = user.email === 'peyton.vandenbemden@gmail.com';
-          const role = isSuperAdmin ? 'Admin' : 'Applicant';
+          const isReviewerAccount = user.email === 'reviewer@test.com';
+          
+          let role = 'Applicant';
+          let schoolId = 'default-school';
+
+          if (isSuperAdmin) {
+            role = 'Admin';
+            schoolId = 'scholarship-hib4j';
+          } else if (isReviewerAccount) {
+            role = 'Reviewer';
+            schoolId = 'scholarship-hib4j';
+          }
 
           // Create the user document in Firestore
           const userRef = doc(firestore, 'users', user.uid);
@@ -83,7 +94,7 @@ export default function SignupPage() {
             name: name,
             email: user.email,
             role: role,
-            schoolId: 'default-school',
+            schoolId: schoolId,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           }, { merge: true });
@@ -97,11 +108,25 @@ export default function SignupPage() {
             });
           }
 
+          // If reviewer test account, ensure registration in reviewers collection
+          if (isReviewerAccount) {
+            await setDoc(doc(firestore, 'reviewers', user.uid), {
+              id: user.uid,
+              schoolId: schoolId,
+              role: 'Reviewer',
+              assignedDate: serverTimestamp()
+            });
+          }
+
           toast({
-            title: isSuperAdmin ? 'Admin account created!' : 'Account created!',
+            title: role + ' account created!',
             description: 'Welcome to your dashboard.',
           });
-          router.push(isSuperAdmin ? '/admin' : '/dashboard/profile');
+
+          if (role === 'Admin') router.push('/admin');
+          else if (role === 'Reviewer') router.push('/reviewer/dashboard');
+          else router.push('/dashboard/profile');
+
         } catch (err: any) {
           // Internal system error - can be logged but handle gracefully for UI
           setIsSigningUp(false);
