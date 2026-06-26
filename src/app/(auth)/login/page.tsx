@@ -38,9 +38,14 @@ export default function LoginPage() {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user && isSigningIn) {
         try {
-          const userDoc = await getDoc(doc(firestore, 'users', user.uid));
+          const [userDoc, adminDoc] = await Promise.all([
+            getDoc(doc(firestore, 'users', user.uid)),
+            getDoc(doc(firestore, 'roles_admin', user.uid))
+          ]);
+          
           const userData = userDoc.exists() ? userDoc.data() : null;
-          const role = userData?.role?.toLowerCase();
+          const isAdmin = adminDoc.exists() || user.email === 'peyton.vandenbemden@gmail.com';
+          const role = isAdmin ? 'admin' : (userData?.role?.toLowerCase() || 'student');
 
           if (role === 'admin') {
             router.push('/admin');

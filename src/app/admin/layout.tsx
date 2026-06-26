@@ -1,4 +1,3 @@
-
 'use client';
 
 import {
@@ -48,7 +47,7 @@ export default function AdminLayout({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, isUserLoading } = useUser();
+  const { user, role, isUserLoading } = useUser();
   const firestore = useFirestore();
   const [mounted, setMounted] = useState(false);
 
@@ -56,18 +55,10 @@ export default function AdminLayout({
     setMounted(true);
   }, []);
 
-  const adminRoleRef = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
-    return doc(firestore, 'roles_admin', user.uid);
-  }, [firestore, user]);
-
-  const { data: adminRole, isLoading: isAdminRoleLoading } = useDoc(adminRoleRef);
-  
-  const isMetadataLoading = isUserLoading || isAdminRoleLoading;
-  const isAdmin = !!adminRole || (user?.email === 'peyton.vandenbemden@gmail.com');
+  const isAdmin = role?.toLowerCase() === 'admin' || user?.email === 'peyton.vandenbemden@gmail.com';
 
   useEffect(() => {
-    if (mounted && !isMetadataLoading) {
+    if (mounted && !isUserLoading) {
       if (!user) {
         router.push('/login');
         return;
@@ -76,13 +67,13 @@ export default function AdminLayout({
         router.push('/dashboard');
       }
     }
-  }, [mounted, user, isMetadataLoading, isAdmin, router]);
+  }, [mounted, user, isUserLoading, isAdmin, router]);
 
   const isActive = (href: string) => {
     return pathname === href || (href !== '/admin' && pathname.startsWith(href));
   };
 
-  if (!mounted || isMetadataLoading) {
+  if (!mounted || isUserLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">

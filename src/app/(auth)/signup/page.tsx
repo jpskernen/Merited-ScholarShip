@@ -37,7 +37,6 @@ export default function SignupPage() {
     setIsSigningUp(true);
 
     try {
-      // We await this to catch specific auth errors like email-already-in-use
       await initiateEmailSignUp(auth, email, password);
       
       toast({
@@ -46,7 +45,6 @@ export default function SignupPage() {
       });
       
     } catch (error: any) {
-      // Do not use console.error here as it triggers the dev overlay for common user errors
       let message = 'An unexpected error occurred during signup.';
       if (error.code === 'auth/email-already-in-use') {
         message = 'This email is already registered. Please try logging in instead.';
@@ -70,21 +68,18 @@ export default function SignupPage() {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user && isSigningUp) {
         try {
-          // Set display name in Auth
           await updateProfile(user, { displayName: name });
 
           const isSuperAdmin = user.email === 'peyton.vandenbemden@gmail.com';
           const isReviewerAccount = user.email === 'reviewer@test.com';
           
           let role = 'Applicant';
-          let schoolId = 'default-school';
+          let schoolId = 'scholarship-hib4j';
 
           if (isSuperAdmin) {
             role = 'Admin';
-            schoolId = 'scholarship-hib4j';
           } else if (isReviewerAccount) {
             role = 'Reviewer';
-            schoolId = 'scholarship-hib4j';
           }
 
           // Create the user document in Firestore
@@ -125,10 +120,9 @@ export default function SignupPage() {
 
           if (role === 'Admin') router.push('/admin');
           else if (role === 'Reviewer') router.push('/reviewer/dashboard');
-          else router.push('/dashboard/profile');
+          else router.push('/dashboard');
 
         } catch (err: any) {
-          // Internal system error - can be logged but handle gracefully for UI
           setIsSigningUp(false);
         }
       }

@@ -76,15 +76,15 @@ function DashboardLayoutContent({
       const userRole = role?.toLowerCase();
       const isAdmin = userRole === 'admin';
       const isReviewer = userRole === 'reviewer' || isAdmin;
-      const isStudent = userRole === 'student' || userRole === 'applicant' || !userRole;
+      const isApplicant = userRole === 'applicant' || isAdmin;
 
       // Access Control Redirection
       if (pathname.startsWith('/admin') && !isAdmin) {
         router.push('/unauthorized');
       } else if (pathname.startsWith('/reviewer') && !isReviewer) {
         router.push('/unauthorized');
-      } else if (pathname.startsWith('/dashboard') && !isStudent && !isAdmin) {
-        // Redirect non-students away from the student dashboard unless admin
+      } else if (pathname.startsWith('/dashboard') && !isApplicant) {
+        // Reviewers should be sent to their portal if they try to access student portal
         router.push(isReviewer ? '/reviewer/dashboard' : '/login');
       }
     }
@@ -125,13 +125,15 @@ function DashboardLayoutContent({
   
   if (!user && shouldShowLayout) return null;
 
-  // Final check before rendering
   const userRole = role?.toLowerCase();
   const isAdmin = userRole === 'admin';
   const isReviewer = userRole === 'reviewer' || isAdmin;
+  const isApplicant = userRole === 'applicant' || isAdmin;
   
+  // Final safeguard before render
   if (pathname.startsWith('/admin') && !isAdmin) return null;
   if (pathname.startsWith('/reviewer') && !isReviewer) return null;
+  if (pathname.startsWith('/dashboard') && !isApplicant) return null;
 
   if (!shouldShowLayout) return <>{children}</>;
 

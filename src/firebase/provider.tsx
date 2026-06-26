@@ -101,19 +101,19 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
           ]);
 
           const dbUserData = userDoc.exists() ? userDoc.data() : null;
-          const isBootstrapAdmin = firebaseUser.email === 'peyton.vandenbemden@gmail.com';
-          const isBootstrapReviewer = [
-            'hello@merited.com',
-            'hellow@meritedapp.com',
-            'hello@meritedapp.com',
-            'kernenpm@gmail.com',
-            'reviewer@test.com'
-          ].includes(firebaseUser.email || '');
-
-          let role = dbUserData?.role || null;
-          if (isBootstrapAdmin || adminDoc.exists()) role = 'Admin';
-          else if (isBootstrapReviewer || reviewerDoc.exists() || role === 'Reviewer') role = 'Reviewer';
-          else if (!role) role = 'Applicant';
+          
+          // Role Detection Priority: 1. Admin Registry, 2. Reviewer Registry, 3. Profile Role, 4. Default Applicant
+          let role = 'Applicant';
+          
+          if (adminDoc.exists() || firebaseUser.email === 'peyton.vandenbemden@gmail.com') {
+            role = 'Admin';
+          } else if (reviewerDoc.exists() || dbUserData?.role?.toLowerCase() === 'reviewer') {
+            role = 'Reviewer';
+          } else if (dbUserData?.role) {
+            // Capitalize for consistency (Admin, Reviewer, Applicant)
+            role = dbUserData.role.charAt(0).toUpperCase() + dbUserData.role.slice(1).toLowerCase();
+            if (role === 'Student') role = 'Applicant';
+          }
 
           setUserAuthState({
             user: firebaseUser,
