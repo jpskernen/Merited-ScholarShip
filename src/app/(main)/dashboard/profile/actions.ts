@@ -6,6 +6,7 @@ import { getFirestore, doc, setDoc, getDoc, collection, addDoc, serverTimestamp 
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { Applicant, ApplicantSchema } from '@/types/applicant';
 import { firebaseConfig } from '@/firebase/config';
+import sgMail from '@sendgrid/mail';
 
 // Initialize Firebase for server-side operations
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
@@ -109,5 +110,82 @@ export async function saveApplicantData(userId: string, formData: FormData, isSu
     console.error('Error saving applicant data:', error);
     const message = error instanceof Error ? error.message : 'An unknown error occurred.';
     return { success: false, error: message };
+  }
+}
+
+/**
+ * Server Action to handle recommendation requests securely.
+ * 1. Creates a token in Firestore.
+ * 2. Sends an email via SendGrid (if configured).
+ * 3. Returns the tokenId.
+ */
+export async function sendRecommendationRequest(params: {
+  applicationId: string;
+  studentName: string;
+  recommenderName: string;
+  recommenderEmail: string;
+  recommenderTitle: string;
+  requestIndex: number;
+  origin: string;
+}) {
+  try {
+    // 1. Create a secure token in Firestore
+    const tokenRef = await addDoc(collection(db, 'recommendationTokens'), {
+      applicationId: params.applicationId,
+      studentName: params.studentName,
+      recommenderName: params.recommenderName,
+      recommenderEmail: params.recommenderEmail,
+      scholarshipTitle: 'General Scholarship Portfolio',
+      requestIndex: params.requestIndex,
+      used: false,
+      createdAt: serverTimestamp(),
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days
+    });
+
+    const tokenLink = `${params.origin}/recommend/${tokenRef.id}`;
+
+    // 2. Dispatch Email via SendGrid if API key is present
+    if (process.env.SENDGRID_API_KEY) {
+      sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+      const msg = {
+        to: params.recommenderEmail,
+        from: 'scholarships@meritedapp.com', // Must be a verified sender in SendGrid
+        subject: `Recommendation Request for ${params.studentName}`,
+        text: `Hello ${params.recommenderName},\n\n${params.studentName} has requested a recommendation letter for their scholarship application. Please upload your letter using the secure link below:\n\n${tokenLink}\n\nThank you for supporting student success.`,
+        html: `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; rounded: 8px;">
+            <h2 style="color: #111827;">Recommendation Request</h2>
+            <p>Hello ${params.recommenderName},</p>
+            <p><strong>${params.studentName}</strong> has requested a recommendation letter for their scholarship application.</p>
+            <div style="margin: 30px 0; text-align: center;">
+              <a href="${tokenLink}" style="background-color: #111827; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Upload Recommendation Letter</a>
+            </div>
+            <p style="color: #6b7280; font-size: 12px;">This link is secure and unique to this request. Do not share it.</p>
+          </div>
+        `,
+      };
+      await sgMail.send(msg);
+    }
+
+    // 3. Always log simulated email for visibility in the prototype dashboard
+    await addDoc(collection(db, 'sent_emails'), {
+      recipient: params.recommenderEmail,
+      subject: `Recommendation Request for ${params.studentName}`,
+      body: `Email dispatched to ${params.recommenderEmail}. Link: ${tokenLink}`,
+      type: 'Recommendation Request',
+      sentAt: serverTimestamp()
+    });
+
+    // 4. Update the student document status
+    const studentRef = doc(db, 'users', params.applicationId);
+    await setDoc(studentRef, {
+      [`recommendationStatus${params.requestIndex}`]: 'Pending',
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+
+    return { success: true, tokenId: tokenRef.id };
+  } catch (error: any) {
+    console.error('Server Action Error (sendRecommendationRequest):', error);
+    return { success: false, error: error.message || 'Failed to dispatch request.' };
   }
 }

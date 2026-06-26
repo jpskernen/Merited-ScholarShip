@@ -16,11 +16,11 @@ import { useToast } from '@/hooks/use-toast';
 import { Applicant, ApplicantSchema } from '@/types/applicant';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
-import { saveApplicantData } from './actions';
+import { saveApplicantData, sendRecommendationRequest } from './actions';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { Separator } from '@/components/ui/separator';
 import { useDoc, useFirebase, useMemoFirebase } from '@/firebase';
-import { doc, setDoc, serverTimestamp, updateDoc, arrayUnion, collection, addDoc } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp, updateDoc, arrayUnion } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL, getStorage } from 'firebase/storage';
 import { 
   CheckCircle, 
@@ -176,7 +176,7 @@ export default function ProfilePage() {
   };
 
   const handleSendRecommendationRequest = async (index: number) => {
-    if (!user || !firestore) return;
+    if (!user) return;
     
     const name = getValues(`recommenderName${index}` as any);
     const email = getValues(`recommenderEmail${index}` as any);
@@ -195,40 +195,25 @@ export default function ProfilePage() {
     });
 
     try {
-      // 1. Create a secure token in Firestore
-      const tokenRef = await addDoc(collection(firestore, 'recommendationTokens'), {
+      // Call the secure Server Action
+      const result = await sendRecommendationRequest({
         applicationId: user.uid,
         studentName: user.displayName || 'A Student',
         recommenderName: name,
         recommenderEmail: email,
-        scholarshipTitle: 'General Scholarship Portfolio',
+        recommenderTitle: title,
         requestIndex: index,
-        used: false,
-        createdAt: serverTimestamp(),
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days
+        origin: window.location.origin
       });
 
-      const tokenLink = `${window.location.origin}/recommend/${tokenRef.id}`;
-
-      // 2. Simulate sending an email by creating a record in sent_emails
-      await addDoc(collection(firestore, 'sent_emails'), {
-        recipient: email,
-        subject: `Recommendation Request for ${user.displayName || 'a student'}`,
-        body: `Hello ${name},\n\n${user.displayName || 'A student'} has requested a recommendation letter for their scholarship application. Please upload your letter using the secure link below:\n\n${tokenLink}\n\nThank you for supporting student success.`,
-        type: 'Recommendation Request',
-        sentAt: serverTimestamp()
-      });
-
-      // 3. Update the student document status
-      await updateDoc(userDocRef!, {
-        [`recommendationStatus${index}`]: 'Pending',
-        updatedAt: serverTimestamp(),
-      });
-
-      toast({ 
-        title: "Request Sent", 
-        description: `A secure portal link has been prepared for ${name}.` 
-      });
+      if (result.success) {
+        toast({ 
+          title: "Request Dispatched", 
+          description: `A secure portal link has been prepared and sent to ${name}.` 
+        });
+      } else {
+        throw new Error(result.error);
+      }
     } catch (error: any) {
       setRecErrors(prev => ({ ...prev, [index]: error.message || "Could not send request." }));
     } finally {
