@@ -17,12 +17,16 @@ export const ScholarshipSchema = z.object({
     { id: 'personal-statement', title: 'Personal Statement', description: 'Tell us about your background and goals.' }
   ]),
   rubric: z.array(z.object({
-    criterion: z.string().min(1, 'Criterion name required'),
+    id: z.string(),
+    label: z.string().min(1, 'Label required'),
+    description: z.string().optional(),
     weight: z.number().min(0).max(100),
   })).optional().default([
-    { criterion: 'Academic Excellence', weight: 40 },
-    { criterion: 'Leadership', weight: 30 },
-    { criterion: 'Community Impact', weight: 30 }
+    { id: "academic", label: "Academic Achievement", description: "Consider GPA and course difficulty", weight: 30 },
+    { id: "essay", label: "Essay Quality", description: "Evaluate clarity and authenticity", weight: 25 },
+    { id: "financial", label: "Financial Need", description: "Based on submitted financial information", weight: 20 },
+    { id: "community", label: "Community Service", description: "Volunteer work and extracurriculars", weight: 15 },
+    { id: "recommendation", label: "Recommendation Strength", description: "Quality of recommendation letters", weight: 10 }
   ]),
 });
 

@@ -35,9 +35,11 @@ export default function NewScholarshipPage() {
       tags: 'Academics, Merit',
       prompts: [{ id: 'prompt-1', title: 'Personal Statement' }],
       rubric: [
-        { criterion: 'Academic Excellence', weight: 40 },
-        { criterion: 'Leadership', weight: 30 },
-        { criterion: 'Community Impact', weight: 30 }
+        { id: "academic", label: "Academic Achievement", description: "Consider GPA and course difficulty", weight: 30 },
+        { id: "essay", label: "Essay Quality", description: "Evaluate clarity and authenticity", weight: 25 },
+        { id: "financial", label: "Financial Need", description: "Based on submitted financial information", weight: 20 },
+        { id: "community", label: "Community Service", description: "Volunteer work and extracurriculars", weight: 15 },
+        { id: "recommendation", label: "Recommendation Strength", description: "Quality of recommendation letters", weight: 10 }
       ]
     }
   });
@@ -140,14 +142,26 @@ export default function NewScholarshipPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             {rubricFields.map((field, index) => (
-              <div key={field.id} className="flex gap-4 items-end">
-                <div className="flex-1"><Label className="text-[10px] font-black uppercase">Criterion</Label><Input {...register(`rubric.${index}.criterion`)} /></div>
-                <div className="w-24"><Label className="text-[10px] font-black uppercase">Weight (%)</Label><Input type="number" {...register(`rubric.${index}.weight`, { valueAsNumber: true })} /></div>
-                <Button type="button" variant="ghost" size="icon" onClick={() => removeRubric(index)} className="text-destructive"><Trash2 className="h-4 w-4" /></Button>
+              <div key={field.id} className="flex flex-col gap-4 p-4 border rounded-lg bg-background mb-4">
+                <div className="flex justify-between items-start gap-4">
+                  <div className="flex-1 space-y-2">
+                    <Label className="text-[10px] font-black uppercase">Criterion Label</Label>
+                    <Input {...register(`rubric.${index}.label`)} placeholder="Academic Achievement" />
+                  </div>
+                  <div className="w-24 space-y-2">
+                    <Label className="text-[10px] font-black uppercase">Weight (%)</Label>
+                    <Input type="number" {...register(`rubric.${index}.weight`, { valueAsNumber: true })} />
+                  </div>
+                  <Button type="button" variant="ghost" size="icon" onClick={() => removeRubric(index)} className="mt-6 text-destructive"><Trash2 className="h-4 w-4" /></Button>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase text-muted-foreground">Description (Reviewer Hint)</Label>
+                  <Input {...register(`rubric.${index}.description`)} placeholder="Consider GPA and course difficulty..." />
+                </div>
               </div>
             ))}
             <div className="flex justify-between items-center pt-4 border-t">
-              <Button type="button" variant="outline" size="sm" onClick={() => appendRubric({ criterion: '', weight: 0 })}>Add Criterion</Button>
+              <Button type="button" variant="outline" size="sm" onClick={() => appendRubric({ id: `r-${Date.now()}`, label: '', weight: 0, description: '' })}>Add Criterion</Button>
               <Badge variant={totalWeight === 100 ? "default" : "destructive"} className="text-lg px-4 font-mono">{totalWeight}%</Badge>
             </div>
           </CardContent>

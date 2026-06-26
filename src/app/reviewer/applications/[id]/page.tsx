@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useMemo, useEffect, use } from 'react';
@@ -21,7 +20,6 @@ import {
   ChevronLeft, 
   Calculator, 
   Lock, 
-  History,
   MessageSquare,
   ShieldAlert,
   GraduationCap,
@@ -29,7 +27,8 @@ import {
   AlertCircle,
   Save,
   ArrowRight,
-  Trophy
+  Trophy,
+  Info
 } from 'lucide-react';
 import { notFound, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -100,16 +99,16 @@ export default function ReviewerApplicationPage({ params }: { params: Promise<{ 
       setAiAnalysis(myReview.aiAnalysis || null);
     } else if (activeScholarship?.rubric && Object.keys(scores).length === 0) {
       const initialScores: Record<string, number> = {};
-      activeScholarship.rubric.forEach(r => { initialScores[r.criterion] = 5; });
+      activeScholarship.rubric.forEach(r => { initialScores[r.id || r.label] = 5; });
       setScores(initialScores);
     }
-  }, [myReview, activeScholarship]);
+  }, [myReview, activeScholarship, scores]);
 
   const totalWeightedScore = useMemo(() => {
     if (!activeScholarship?.rubric) return 0;
     let total = 0;
     activeScholarship.rubric.forEach(r => {
-      const score = scores[r.criterion] || 0;
+      const score = scores[r.id || r.label] || 0;
       total += (score * (r.weight / 100));
     });
     return Number(total.toFixed(2));
@@ -120,7 +119,6 @@ export default function ReviewerApplicationPage({ params }: { params: Promise<{ 
   const findAndLoadNextApplication = async () => {
     if (!firestore || !reviewer) return;
     
-    // Query for other submitted applications assigned to this reviewer
     const nextQuery = query(
       collection(firestore, 'users'),
       where('role', '==', 'Applicant'),
@@ -130,12 +128,8 @@ export default function ReviewerApplicationPage({ params }: { params: Promise<{ 
     );
 
     const snapshot = await getDocs(nextQuery);
-    
-    // Filter out the current one and those already fully reviewed
     const nextCandidates = snapshot.docs.filter(doc => doc.id !== applicationId);
     
-    // In a real app, we'd check subcollections, but for MVP we'll check if next candidate needs eval
-    // For simplicity, we just find the first one that isn't the current one
     if (nextCandidates.length > 0) {
       router.push(`/reviewer/applications/${nextCandidates[0].id}`);
     } else {
@@ -264,7 +258,7 @@ export default function ReviewerApplicationPage({ params }: { params: Promise<{ 
         <div className="flex items-center gap-4">
           <Button variant="outline" size="sm" onClick={runAiAnalysis} disabled={isAnalyzing || isFinalized}>
             {isAnalyzing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2 text-primary" />}
-            AI Merit Analysis
+            AI Analysis
           </Button>
           <div className="text-right hidden sm:block">
             <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Weighted Score</p>
@@ -318,7 +312,7 @@ export default function ReviewerApplicationPage({ params }: { params: Promise<{ 
           <Card className={`flex flex-col min-h-0 shadow-lg ${isFinalized ? 'border-green-200' : 'border-primary/20'}`}>
             <CardHeader className="bg-primary/5 border-b py-4">
               <div className="flex justify-between items-center">
-                <CardTitle className="text-lg flex items-center gap-2"><Calculator className="h-5 w-5" /> Evaluation Rubric</CardTitle>
+                <CardTitle className="text-lg flex items-center gap-2"><Calculator className="h-5 w-5" /> Scoring Rubric</CardTitle>
               </div>
               <Progress value={scorePercentage} className="h-1.5 mt-2" />
             </CardHeader>
@@ -334,39 +328,60 @@ export default function ReviewerApplicationPage({ params }: { params: Promise<{ 
               {aiAnalysis && (
                 <div className="p-4 rounded-xl bg-primary/5 border border-primary/20 animate-in fade-in">
                   <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-[10px] font-black uppercase text-primary flex items-center gap-1.5">AI Analysis</h4>
+                    <h4 className="text-[10px] font-black uppercase text-primary flex items-center gap-1.5">AI Merit Logic</h4>
                     <Badge variant="secondary" className="font-mono">{aiAnalysis.fitScore}% Match</Badge>
                   </div>
                   <p className="text-xs text-muted-foreground italic leading-relaxed">"{aiAnalysis.justification}"</p>
                 </div>
               )}
 
-              {(activeScholarship?.rubric || [
-                { criterion: 'Academic Excellence', weight: 25 },
-                { criterion: 'Community Service', weight: 25 },
-                { criterion: 'Leadership', weight: 25 },
-                { criterion: 'Overall Impression', weight: 25 }
-              ]).map((item) => (
-                <div key={item.criterion} className="space-y-2">
-                  <div className="flex justify-between items-baseline">
-                    <div className="flex flex-col">
-                      <Label className="text-sm font-bold">{item.criterion}</Label>
-                      <span className="text-[9px] text-muted-foreground uppercase font-black tracking-widest">Weight: {item.weight}%</span>
-                    </div>
-                    <Badge variant="outline" className="font-mono text-primary border-primary/30">{scores[item.criterion] || 5} / 10</Badge>
-                  </div>
-                  <Slider 
-                    value={[scores[item.criterion] || 5]} max={10} min={1} step={1} 
-                    onValueChange={(val) => !isFinalized && setScores({ ...scores, [item.criterion]: val[0] })}
-                    disabled={isFinalized}
-                  />
-                </div>
-              ))}
+              <div className="space-y-4">
+                {(activeScholarship?.rubric || [
+                  { id: "academic", label: "Academic Achievement", weight: 30 },
+                  { id: "essay", label: "Essay Quality", weight: 25 },
+                  { id: "financial", label: "Financial Need", weight: 20 },
+                  { id: "community", label: "Community Service", weight: 15 },
+                  { id: "recommendation", label: "Recommendation Strength", weight: 10 }
+                ]).map((item) => {
+                  const itemKey = item.id || item.label;
+                  const currentScore = scores[itemKey] || 5;
+                  const weightedContribution = (currentScore * (item.weight / 100)).toFixed(2);
+
+                  return (
+                    <Card key={itemKey} className="border-muted bg-muted/10">
+                      <CardContent className="p-4 space-y-3">
+                        <div className="flex justify-between items-start gap-2">
+                          <div className="space-y-0.5">
+                            <Label className="text-sm font-bold">{item.label}</Label>
+                            {item.description && (
+                              <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                                <Info className="h-2 w-2" /> {item.description}
+                              </p>
+                            )}
+                          </div>
+                          <div className="text-right">
+                            <Badge variant="outline" className="font-mono text-primary text-[10px] border-primary/30">
+                              {currentScore} / 10
+                            </Badge>
+                            <p className="text-[9px] font-black text-primary/60 uppercase mt-1">+{weightedContribution} pts</p>
+                          </div>
+                        </div>
+                        <Slider 
+                          value={[currentScore]} max={10} min={1} step={1} 
+                          onValueChange={(val) => !isFinalized && setScores({ ...scores, [itemKey]: val[0] })}
+                          disabled={isFinalized}
+                          className="py-2"
+                        />
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
               
               <Separator />
 
               <div className="space-y-3">
-                <Label className="text-sm font-black uppercase tracking-tight block">Decision</Label>
+                <Label className="text-sm font-black uppercase tracking-tight block">Final Recommendation</Label>
                 <Select value={recommendation} onValueChange={(val) => !isFinalized && setRecommendation(val)} disabled={isFinalized}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select outcome..." />
@@ -388,7 +403,7 @@ export default function ReviewerApplicationPage({ params }: { params: Promise<{ 
                   </div>
                 </div>
                 <Textarea 
-                  placeholder="Reviewer rationale..." 
+                  placeholder="Rationale for scores..." 
                   className="min-h-[120px] text-sm bg-muted/20" 
                   value={comment} 
                   onChange={(e) => setComment(e.target.value)} 
