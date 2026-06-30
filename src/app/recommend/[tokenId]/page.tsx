@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { FileText, CheckCircle, AlertCircle, Loader2, GraduationCap } from 'lucide-react';
+import { FileText, CheckCircle, AlertCircle, Loader2, GraduationCap, XCircle } from 'lucide-react';
 import Link from 'next/link';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { sendNotification } from '@/app/lib/notifications';
@@ -40,10 +40,15 @@ export default function RecommendUploadPage({ params }: { params: Promise<{ toke
           return;
         }
         const data = tokenSnap.data();
-        if (data.used) setError('Already uploaded.');
-        else setTokenData(data);
+        if (data.used) {
+          setError('This recommendation has already been uploaded.');
+        } else if (data.cancelled) {
+          setError('This recommendation request has been cancelled by the student.');
+        } else {
+          setTokenData(data);
+        }
       } catch (err) {
-        setError('Error loading portal.');
+        setError('Error loading the recommendation portal.');
       } finally {
         setIsLoading(false);
       }
@@ -102,13 +107,21 @@ export default function RecommendUploadPage({ params }: { params: Promise<{ toke
   if (error || isSuccess) {
     return (
       <div className="flex min-h-screen items-center justify-center p-4">
-        <Card className="max-w-md w-full">
+        <Card className="max-w-md w-full border-primary/20 shadow-xl">
           <CardHeader className="text-center">
-            {isSuccess ? <CheckCircle className="h-12 w-12 text-green-600 mx-auto mb-4" /> : <AlertCircle className="h-12 w-12 text-destructive mx-auto mb-4" />}
-            <CardTitle>{isSuccess ? 'Upload Complete' : 'Error'}</CardTitle>
-            <CardDescription>{isSuccess ? 'Thank you. The student has been notified.' : error}</CardDescription>
+            {isSuccess ? (
+              <CheckCircle className="h-12 w-12 text-green-600 mx-auto mb-4" />
+            ) : (
+              <XCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
+            )}
+            <CardTitle>{isSuccess ? 'Upload Complete' : 'Portal Error'}</CardTitle>
+            <CardDescription>{isSuccess ? 'Thank you. The student has been notified that your endorsement is verified.' : error}</CardDescription>
           </CardHeader>
-          <CardFooter><Button variant="outline" className="w-full" asChild><Link href="/">Return to Site</Link></Button></CardFooter>
+          <CardFooter>
+            <Button variant="outline" className="w-full" asChild>
+              <Link href="/">Return to Site</Link>
+            </Button>
+          </CardFooter>
         </Card>
       </div>
     );
@@ -120,19 +133,51 @@ export default function RecommendUploadPage({ params }: { params: Promise<{ toke
         <GraduationCap className="h-8 w-8 text-primary" />
         <span className="text-2xl font-bold">ScholarShip</span>
       </div>
-      <Card className="max-w-lg w-full shadow-2xl">
+      <Card className="max-w-lg w-full shadow-2xl border-primary/10">
         <CardHeader>
-          <CardTitle>Submit Recommendation</CardTitle>
-          <CardDescription>For student: <strong>{tokenData.studentName}</strong></CardDescription>
+          <CardTitle className="text-2xl">Submit Recommendation</CardTitle>
+          <CardDescription>
+            Confidential endorsement for: <strong>{tokenData.studentName}</strong>
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="space-y-2">
-            <Label htmlFor="pdf">Select Letter (PDF Only)</Label>
-            <Input id="pdf" type="file" accept=".pdf" onChange={handleFileUpload} disabled={isUploading} />
-            {isUploading && <Progress value={uploadProgress} className="h-1 mt-2" />}
+          <div className="p-4 bg-primary/5 rounded-lg border border-primary/10">
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              You have been requested to provide a professional recommendation for the general scholarship portfolio of <strong>{tokenData.studentName}</strong>. 
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <Label htmlFor="pdf" className="font-bold text-xs uppercase tracking-wider text-muted-foreground">Select Letter (PDF Only)</Label>
+            <div className="relative group">
+              <Input 
+                id="pdf" 
+                type="file" 
+                accept=".pdf" 
+                onChange={handleFileUpload} 
+                disabled={isUploading}
+                className="h-14 py-4 cursor-pointer"
+              />
+              <FileText className="absolute right-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
+            </div>
+            {isUploading && (
+              <div className="space-y-2">
+                <div className="flex justify-between text-[10px] font-black text-primary">
+                  <span>Uploading to Secure Storage...</span>
+                  <span>{Math.round(uploadProgress)}%</span>
+                </div>
+                <Progress value={uploadProgress} className="h-1.5" />
+              </div>
+            )}
           </div>
         </CardContent>
-        <CardFooter className="text-[10px] text-muted-foreground italic text-center">Your upload is secure and will be viewed only by the selection committee.</CardFooter>
+        <CardFooter className="flex flex-col gap-2">
+           <Separator className="mb-2" />
+           <p className="text-[10px] text-muted-foreground italic text-center leading-tight">
+             Your upload is encrypted and will be viewed only by the authorized scholarship selection committee. 
+             This link is unique to your email address and should not be shared.
+           </p>
+        </CardFooter>
       </Card>
     </div>
   );

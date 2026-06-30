@@ -15,7 +15,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Applicant, ApplicantSchema } from '@/types/applicant';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
-import { saveApplicantData, sendRecommendationRequest, sendRecommendationReminder } from './actions';
+import { saveApplicantData, sendRecommendationRequest, sendRecommendationReminder, cancelRecommendationRequest } from './actions';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { Separator } from '@/components/ui/separator';
 import { useDoc, useFirebase, useMemoFirebase } from '@/firebase';
@@ -36,13 +36,26 @@ import {
   Mail,
   Clock,
   Lock,
-  Bell
+  Bell,
+  UserMinus,
+  RefreshCw
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/dialog";
 
 export default function ProfilePage() {
   const { toast } = useToast();
@@ -56,6 +69,7 @@ export default function ProfilePage() {
   const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
   const [isRequestingRec, setIsRequestingRec] = useState<Record<number, boolean>>({});
   const [isRemindingRec, setIsRemindingRec] = useState<Record<number, boolean>>({});
+  const [isCancellingRec, setIsCancellingRec] = useState<Record<number, boolean>>({});
   const [recErrors, setRecErrors] = useState<Record<number, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   
@@ -253,6 +267,35 @@ export default function ProfilePage() {
       });
     } finally {
       setIsRemindingRec(prev => ({ ...prev, [index]: false }));
+    }
+  };
+
+  const handleReplaceRecommender = async (index: number) => {
+    if (!user) return;
+
+    setIsCancellingRec(prev => ({ ...prev, [index]: true }));
+    try {
+      const result = await cancelRecommendationRequest({
+        applicationId: user.uid,
+        requestIndex: index
+      });
+
+      if (result.success) {
+        toast({
+          title: "Recommender Removed",
+          description: "Previous invitation deactivated. You can now invite someone else.",
+        });
+      } else {
+        throw new Error(result.error);
+      }
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: "Action Failed",
+        description: error.message,
+      });
+    } finally {
+      setIsCancellingRec(prev => ({ ...prev, [index]: false }));
     }
   };
 
@@ -522,6 +565,7 @@ export default function ProfilePage() {
               {[1, 2].map((i) => {
                 const status = (applicantData as any)?.[`recommendationStatus${i}`] || 'Not Requested';
                 const lastReminder = (applicantData as any)?.[`recommendationLastReminder${i}`];
+                const recommenderName = (applicantData as any)?.[`recommenderName${i}`] || 'Recommender';
                 const canRemind = checkReminderCooldown(i);
                 
                 return (
@@ -562,7 +606,7 @@ export default function ProfilePage() {
                       </Alert>
                     )}
 
-                    <div className="flex flex-col gap-3">
+                    <div className="flex flex-col sm:flex-row gap-3">
                       {status === 'Not Requested' && !isAlreadySubmitted && (
                         <Button 
                           type="button" 
@@ -577,26 +621,56 @@ export default function ProfilePage() {
                       )}
 
                       {status === 'Pending' && !isAlreadySubmitted && (
-                        <div className="space-y-2">
-                           <Button 
+                        <>
+                          <Button 
                             type="button" 
                             size="sm" 
                             variant="outline"
-                            className="w-full h-10 text-xs font-bold border-primary/20 hover:bg-primary/5" 
+                            className="flex-1 h-10 text-xs font-bold border-primary/20 hover:bg-primary/5" 
                             onClick={() => handleSendReminder(i)}
                             disabled={isRemindingRec[i] || !canRemind}
                           >
                             {isRemindingRec[i] ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Bell className="h-4 w-4 mr-2" />}
                             {canRemind ? 'Send Reminder' : 'Reminder Sent Recently'}
                           </Button>
-                          {lastReminder && (
-                            <p className="text-[9px] text-muted-foreground text-center font-medium italic">
-                              Last reminder sent {formatDistanceToNow(new Date(lastReminder))} ago. Available again in 24 hours.
-                            </p>
-                          )}
-                        </div>
+                          
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button 
+                                type="button" 
+                                size="sm" 
+                                variant="ghost"
+                                className="flex-1 h-10 text-xs font-bold text-destructive hover:bg-destructive/10 hover:text-destructive" 
+                                disabled={isCancellingRec[i]}
+                              >
+                                {isCancellingRec[i] ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <UserMinus className="h-4 w-4 mr-2" />}
+                                Replace Recommender
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Replace {recommenderName}?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Are you sure you want to replace this recommender? Their secure upload link will be permanently deactivated.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => handleReplaceRecommender(i)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                                  Confirm Replacement
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </>
                       )}
                     </div>
+
+                    {status === 'Pending' && lastReminder && !isAlreadySubmitted && (
+                      <p className="text-[9px] text-muted-foreground text-center font-medium italic">
+                        Last reminder sent {formatDistanceToNow(new Date(lastReminder))} ago. Available again in 24 hours.
+                      </p>
+                    )}
                     
                     {status === 'Received' && (
                       <div className="flex items-center gap-2 p-3 rounded-lg bg-green-50 border border-green-200 text-[11px] text-green-700 font-black uppercase tracking-wider">
@@ -642,7 +716,7 @@ export default function ProfilePage() {
                 <span className={cn("font-medium", !applicantData?.transcripts && "text-muted-foreground")}>Official Transcripts</span>
               </div>
               <div className="flex items-center gap-3">
-                <div className={cn("h-6 w-6 rounded-full flex items-center justify-center border-2 text-[10px] font-bold", (watch('essay') || applicantData?.essays?.some(e => e.promptId === 'personal-statement')) ? "bg-primary text-primary-foreground border-primary" : "border-muted text-muted-foreground")}>
+                <div className={cn("h-6 w-6 rounded-full flex items-center justify-center border-2 text-[10px] font-bold", (watch('essay') || applicantData?.essays?.some(e => e.promptId === 'personal-statement')) ? "bg-primary text-primary-foreground border-primary" : "border-muted-foreground/30 text-muted-foreground")}>
                   {(watch('essay') || applicantData?.essays?.some(e => e.promptId === 'personal-statement')) ? '✓' : '3'}
                 </div>
                 <span className={cn("font-medium", !(watch('essay') || applicantData?.essays?.some(e => e.promptId === 'personal-statement')) && "text-muted-foreground")}>Personal Statement</span>

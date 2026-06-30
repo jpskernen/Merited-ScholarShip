@@ -83,6 +83,7 @@ export async function sendRecommendationRequest(params: {
       scholarshipTitle: 'General Portfolio',
       requestIndex: params.requestIndex,
       used: false,
+      cancelled: false,
       createdAt: serverTimestamp(),
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
     });
@@ -114,32 +115,30 @@ export async function sendRecommendationReminder(params: {
   origin: string;
 }) {
   try {
-    // 1. Find the original token
     const tokensRef = collection(db, 'recommendationTokens');
     const q = query(
       tokensRef, 
       where('applicationId', '==', params.applicationId),
       where('requestIndex', '==', params.requestIndex),
       where('used', '==', false),
+      where('cancelled', '==', false),
       limit(1)
     );
     
     const querySnapshot = await getDocs(q);
     if (querySnapshot.empty) {
-      return { success: false, error: "Active invitation not found or already used." };
+      return { success: false, error: "Active invitation not found or already used/cancelled." };
     }
 
     const tokenDoc = querySnapshot.docs[0];
     const tokenData = tokenDoc.data();
     
-    // 2. Security Checks (Expiry)
     const now = new Date();
     const expiresAt = tokenData.expiresAt?.toDate ? tokenData.expiresAt.toDate() : new Date(tokenData.expiresAt);
     if (now > expiresAt) {
       return { success: false, error: "The recommendation link has expired." };
     }
 
-    // 3. Send Email
     const tokenLink = `${params.origin}/recommend/${tokenDoc.id}`;
     const emailResult = await sendRecommendationReminderEmail({
       email: tokenData.recommenderEmail,
@@ -152,18 +151,57 @@ export async function sendRecommendationReminder(params: {
       throw new Error(emailResult.error);
     }
 
-    // 4. Update Token Tracking
     await updateDoc(doc(db, 'recommendationTokens', tokenDoc.id), {
       lastReminderSentAt: serverTimestamp()
     });
 
-    // 5. Update Student Record
     await updateDoc(doc(db, 'users', params.applicationId), {
       [`recommendationLastReminder${params.requestIndex}`]: new Date().toISOString(),
       updatedAt: serverTimestamp()
     });
 
     return { success: true, method: emailResult.method };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}
+
+export async function cancelRecommendationRequest(params: {
+  applicationId: string;
+  requestIndex: number;
+}) {
+  try {
+    // 1. Mark active token as cancelled
+    const tokensRef = collection(db, 'recommendationTokens');
+    const q = query(
+      tokensRef,
+      where('applicationId', '==', params.applicationId),
+      where('requestIndex', '==', params.requestIndex),
+      where('used', '==', false),
+      where('cancelled', '==', false),
+      limit(1)
+    );
+
+    const querySnapshot = await getDocs(q);
+    if (!querySnapshot.empty) {
+      const tokenDoc = querySnapshot.docs[0];
+      await updateDoc(doc(db, 'recommendationTokens', tokenDoc.id), {
+        cancelled: true,
+        updatedAt: serverTimestamp()
+      });
+    }
+
+    // 2. Reset student record
+    await updateDoc(doc(db, 'users', params.applicationId), {
+      [`recommendationStatus${params.requestIndex}`]: 'Not Requested',
+      [`recommenderName${params.requestIndex}`]: '',
+      [`recommenderEmail${params.requestIndex}`]: '',
+      [`recommenderTitle${params.requestIndex}`]: '',
+      [`recommendationLastReminder${params.requestIndex}`]: null,
+      updatedAt: serverTimestamp()
+    });
+
+    return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message };
   }
