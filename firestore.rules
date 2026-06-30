@@ -7,7 +7,10 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // High-security check for administrative privileges
+    /**
+     * @description High-security check for administrative privileges.
+     * Checks for specific email or entry in roles_admin collection.
+     */
     function isSponsor() {
       return isSignedIn() && (
         (exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid)) &&
@@ -16,20 +19,29 @@ service cloud.firestore {
       );
     }
 
-    // Check for reviewer registry or specific user role
+    /**
+     * @description Check for reviewer registry or specific user role.
+     * Includes the authorized test account for cycle verification.
+     */
     function isReviewer() {
       return isSignedIn() && (
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Reviewer') ||
         exists(/databases/$(database)/documents/reviewers/$(request.auth.uid)) ||
-        request.auth.token.email in ['hello@merited.com', 'hellow@meritedapp.com', 'hello@meritedapp.com', 'kernenpm@gmail.com', 'reviewer@test.com'] ||
+        request.auth.token.email in [
+          'hello@merited.com', 
+          'hellow@meritedapp.com', 
+          'hello@meritedapp.com', 
+          'kernenpm@gmail.com', 
+          'reviewer@test.com'
+        ] ||
         isSponsor()
       );
     }
 
     // Recommendation Tokens
     match /recommendationTokens/{tokenId} {
-      // 1. Authenticated students can create tokens (Server Actions use unauthenticated client SDK)
+      // 1. Authenticated students to create tokens (Server Actions run unauthenticated in this context)
       // 3. Unauthenticated recommenders can READ the token details
       // 4. Unauthenticated recommenders can UPDATE to mark as used
       allow read, update, create: if true;
@@ -53,9 +65,14 @@ service cloud.firestore {
       allow write: if isSponsor();
     }
 
-    // Sent Emails Outbox
+    // Sent Emails & Audit Logs
     match /sent_emails/{emailId} {
-      allow read, write: if true; // Support server-side logging
+      allow read, write: if true; // Support server-side logging for transparency
+    }
+    
+    match /auditLog/{logId} {
+      allow read: if isSponsor();
+      allow write: if true; // Support administrative action logging
     }
 
     // User Profiles / Applications
@@ -68,7 +85,7 @@ service cloud.firestore {
       
       // 2. Authenticated students to update their own application
       // 5. Unauthenticated users (recommenders) to update for letter URL
-      // Note: allow update is set to true to support public letter uploads and server-side status updates.
+      // Broad update access is granted here to support the public portal and server-side status management.
       allow update: if true;
       
       allow create: if isSignedIn() && (request.auth.uid == userId || isSponsor());
