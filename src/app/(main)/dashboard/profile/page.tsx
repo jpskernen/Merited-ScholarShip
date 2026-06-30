@@ -1,3 +1,4 @@
+
 'use client';
 
 import { Button } from '@/components/ui/button';
@@ -66,6 +67,7 @@ export default function ProfilePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+  const [uploadStatus, setUploadStatus] = useState<Record<string, string>>({});
   const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
   const [isRequestingRec, setIsRequestingRec] = useState<Record<number, boolean>>({});
   const [isRemindingRec, setIsRemindingRec] = useState<Record<number, boolean>>({});
@@ -133,14 +135,17 @@ export default function ProfilePage() {
       return next;
     });
 
+    // 1. Validation
     if (file.type !== 'application/pdf') {
       setUploadErrors(prev => ({ ...prev, [field]: "Please upload a PDF file." }));
       return;
     }
     if (file.size > 10 * 1024 * 1024) {
-      setUploadErrors(prev => ({ ...prev, [field]: "Maximum file size is 10MB." }));
+      setUploadErrors(prev => ({ ...prev, [field]: "File too large. Please upload a PDF under 10MB." }));
       return;
     }
+
+    setUploadStatus(prev => ({ ...prev, [field]: "Preparing file..." }));
 
     const path = promptId 
       ? `applications/${user.uid}/essays/${promptId}.pdf`
@@ -153,9 +158,15 @@ export default function ProfilePage() {
       (snapshot) => {
         const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
         setUploadProgress(prev => ({ ...prev, [field]: progress }));
+        setUploadStatus(prev => ({ ...prev, [field]: `Uploading... ${Math.round(progress)}%` }));
       }, 
       (error) => {
-        setUploadErrors(prev => ({ ...prev, [field]: error.message }));
+        setUploadErrors(prev => ({ ...prev, [field]: "Upload failed. Please try again." }));
+        setUploadStatus(prev => {
+          const next = { ...prev };
+          delete next[field];
+          return next;
+        });
         setUploadProgress(prev => {
           const next = { ...prev };
           delete next[field];
@@ -183,11 +194,20 @@ export default function ProfilePage() {
           await updateDoc(userDocRef!, updateObj);
         }
 
-        setUploadProgress(prev => {
-          const next = { ...prev };
-          delete next[field];
-          return next;
-        });
+        setUploadStatus(prev => ({ ...prev, [field]: "Upload complete!" }));
+        setTimeout(() => {
+          setUploadStatus(prev => {
+            const next = { ...prev };
+            delete next[field];
+            return next;
+          });
+          setUploadProgress(prev => {
+            const next = { ...prev };
+            delete next[field];
+            return next;
+          });
+        }, 2000);
+
         toast({ title: "Upload Success", description: `${field} has been attached to your profile.` });
       }
     );
@@ -473,22 +493,28 @@ export default function ProfilePage() {
                 <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Official Academic Records (PDF)</Label>
                 <div className="flex flex-col gap-3">
                   {!isAlreadySubmitted && (
-                    <Input 
-                      type="file" 
-                      accept=".pdf" 
-                      onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], 'transcripts')}
-                      disabled={!!uploadProgress.transcripts}
-                      className="h-10 text-xs cursor-pointer"
-                    />
+                    <div className="space-y-2">
+                      <Input 
+                        type="file" 
+                        accept=".pdf" 
+                        onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], 'transcripts')}
+                        disabled={!!uploadProgress.transcripts}
+                        className="h-10 text-xs cursor-pointer"
+                      />
+                      {uploadErrors.transcripts && <p className="text-[10px] text-destructive font-bold">{uploadErrors.transcripts}</p>}
+                    </div>
                   )}
                   {uploadProgress.transcripts !== undefined && (
                     <div className="space-y-2">
-                      <div className="flex justify-between text-[10px] font-bold text-primary"><span>Uploading Transcript...</span><span>{Math.round(uploadProgress.transcripts)}%</span></div>
-                      <Progress value={uploadProgress.transcripts} className="h-1" />
+                      <div className="flex justify-between text-[10px] font-bold text-primary">
+                        <span>{uploadStatus.transcripts}</span>
+                        <span>{Math.round(uploadProgress.transcripts)}%</span>
+                      </div>
+                      <Progress value={uploadProgress.transcripts} className="h-1.5" />
                     </div>
                   )}
-                  {applicantData?.transcripts && (
-                    <div className="p-3 rounded-lg border bg-primary/5 flex items-center justify-between">
+                  {applicantData?.transcripts && !uploadProgress.transcripts && (
+                    <div className="p-3 rounded-lg border bg-primary/5 flex items-center justify-between animate-in fade-in">
                       <div className="flex items-center gap-2">
                         <FileText className="h-4 w-4 text-primary" />
                         <span className="text-xs font-medium">Official_Transcript.pdf</span>

@@ -26,13 +26,21 @@ service firebase.storage {
       allow write: if true; // Allow public uploads from the recommendation portal
     }
 
-    // Match any file in a user's directory.
-    // The {document=**} wildcard matches any path segment under the user's folder.
-    match /{userId}/{document=**} {
+    // Optimized match for student applications
+    // We match specific paths to avoid unnecessary rule overhead
+    match /applications/{userId}/{allPaths=**} {
       // Grant read access to the file owner, admins, or reviewers.
+      // Firestore lookups (isAdmin/isReviewer) are only performed on read
       allow read: if request.auth != null && (request.auth.uid == userId || isAdmin() || isReviewer());
       
-      // Grant write access (create, update, delete) only to the file owner.
+      // Grant write access only to the file owner. 
+      // No Firestore lookup for writes to keep them ultra-fast.
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Fallback for root segments
+    match /{userId}/{document=**} {
+      allow read: if request.auth != null && (request.auth.uid == userId || isAdmin() || isReviewer());
       allow write: if request.auth != null && request.auth.uid == userId;
     }
   }
