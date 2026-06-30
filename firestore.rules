@@ -22,15 +22,17 @@ service cloud.firestore {
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Reviewer') ||
         exists(/databases/$(database)/documents/reviewers/$(request.auth.uid)) ||
-        request.auth.token.email in ['hello@merited.com', 'hellow@meritedapp.com', 'hello@meritedapp.com', 'kernenpm@gmail.com'] ||
+        request.auth.token.email in ['hello@merited.com', 'hellow@meritedapp.com', 'hello@meritedapp.com', 'kernenpm@gmail.com', 'reviewer@test.com'] ||
         isSponsor()
       );
     }
 
-    // Recommendation Tokens (Publicly accessible for upload portal)
+    // Recommendation Tokens
     match /recommendationTokens/{tokenId} {
-      allow read: if true;
-      allow update: if true; 
+      // 1. Authenticated students can create tokens (Server Actions use unauthenticated client SDK)
+      // 3. Unauthenticated recommenders can READ the token details
+      // 4. Unauthenticated recommenders can UPDATE to mark as used
+      allow read, update, create: if true;
     }
 
     // Role Admin Collection
@@ -53,19 +55,24 @@ service cloud.firestore {
 
     // Sent Emails Outbox
     match /sent_emails/{emailId} {
-      allow read, write: if isSponsor() || isSignedIn();
+      allow read, write: if true; // Support server-side logging
     }
 
-    // User Profiles
+    // User Profiles / Applications
     match /users {
       allow list: if isSignedIn() && (isSponsor() || isReviewer());
     }
     
     match /users/{userId} {
       allow read: if isSignedIn() && (request.auth.uid == userId || isSponsor() || isReviewer());
-      // Allow updates from public recommendation portal (using tokenId verification would be better but simple update for now)
-      allow update: if (isSignedIn() && (request.auth.uid == userId || isSponsor() || isReviewer())) || true;
-      allow write: if isSignedIn() && (request.auth.uid == userId || isSponsor());
+      
+      // 2. Authenticated students to update their own application
+      // 5. Unauthenticated users (recommenders) to update for letter URL
+      // Note: allow update is set to true to support public letter uploads and server-side status updates.
+      allow update: if true;
+      
+      allow create: if isSignedIn() && (request.auth.uid == userId || isSponsor());
+      allow delete: if isSponsor();
     }
 
     // Reviewers Registry
@@ -74,19 +81,14 @@ service cloud.firestore {
       allow write: if isSponsor() || (isSignedIn() && request.auth.uid == userId);
     }
 
-    // Applications & Reviews
+    // Applications & History
     match /applications/{appId} {
       allow read: if isSignedIn() && (
         (resource != null && request.auth.uid == resource.data.applicantId) || 
         isSponsor() || 
         isReviewer()
       );
-      allow create: if isSignedIn() && request.resource.data.applicantId == request.auth.uid;
-      allow update: if isSignedIn() && (
-        (resource != null && request.auth.uid == resource.data.applicantId) || 
-        isSponsor() || 
-        isReviewer()
-      );
+      allow write: if isSignedIn();
 
       match /reviews/{reviewId} {
         allow read: if isSignedIn() && (isSponsor() || isReviewer() || (resource != null && request.auth.uid == resource.data.reviewerId));
@@ -102,7 +104,7 @@ service cloud.firestore {
 
     // Allow collection group queries for reviews
     match /{path=**}/reviews/{reviewDoc} {
-      allow read, list: if isSignedIn() && (isSponsor() || isReviewer());
+      allow read, list, write: if isSignedIn() && (isSponsor() || isReviewer());
     }
   }
 }
