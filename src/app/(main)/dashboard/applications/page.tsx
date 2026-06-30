@@ -16,6 +16,7 @@ import { useState, useEffect, Suspense, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Loader2, FileText, ExternalLink, Clock, CheckCircle, FileEdit } from 'lucide-react';
 import Link from 'next/link';
+import { cn } from '@/lib/utils';
 
 const getStatusVariant = (status?: string): 'default' | 'secondary' | 'destructive' | 'outline' => {
   if (!status) return 'outline';
