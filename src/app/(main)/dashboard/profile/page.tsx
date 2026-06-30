@@ -514,7 +514,9 @@ export default function ProfilePage() {
           <Card className={cn(isAlreadySubmitted && "opacity-80")}>
             <CardHeader className="p-4 md:p-6 border-b bg-muted/20">
               <CardTitle className="text-lg md:text-xl">External Endorsements</CardTitle>
-              <CardDescription className="text-xs md:text-sm">Two professional recommendation letters are required.</CardDescription>
+              <CardDescription className="text-xs md:text-sm">
+                Two professional recommendation letters are required. The system automatically enforces a 24-hour waiting period between reminders to ensure a professional and respectful communication flow.
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6 p-4 md:p-6">
               {[1, 2].map((i) => {
