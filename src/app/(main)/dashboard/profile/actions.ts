@@ -1,11 +1,11 @@
 'use server';
 
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { getFirestore, doc, setDoc, getDoc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, getDoc, collection, addDoc, serverTimestamp, query, where, getDocs, limit, updateDoc } from 'firebase/firestore';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { Applicant, ApplicantSchema } from '@/types/applicant';
 import { firebaseConfig } from '@/firebase/config';
-import { sendSubmissionConfirmation, sendNotification } from '@/app/lib/notifications';
+import { sendSubmissionConfirmation, sendNotification, sendRecommendationReminderEmail } from '@/app/lib/notifications';
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 const db = getFirestore(app);
@@ -89,7 +89,7 @@ export async function sendRecommendationRequest(params: {
 
     const tokenLink = `${params.origin}/recommend/${tokenRef.id}`;
 
-    await sendNotification({
+    const emailResult = await sendNotification({
       to: params.recommenderEmail,
       subject: `Recommendation Request for ${params.studentName}`,
       type: 'Recommendation Request',
@@ -102,7 +102,68 @@ export async function sendRecommendationRequest(params: {
       updatedAt: serverTimestamp(),
     }, { merge: true });
 
-    return { success: true };
+    return { success: true, deliveryMethod: emailResult.method };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}
+
+export async function sendRecommendationReminder(params: {
+  applicationId: string;
+  requestIndex: number;
+  origin: string;
+}) {
+  try {
+    // 1. Find the original token
+    const tokensRef = collection(db, 'recommendationTokens');
+    const q = query(
+      tokensRef, 
+      where('applicationId', '==', params.applicationId),
+      where('requestIndex', '==', params.requestIndex),
+      where('used', '==', false),
+      limit(1)
+    );
+    
+    const querySnapshot = await getDocs(q);
+    if (querySnapshot.empty) {
+      return { success: false, error: "Active invitation not found or already used." };
+    }
+
+    const tokenDoc = querySnapshot.docs[0];
+    const tokenData = tokenDoc.data();
+    
+    // 2. Security Checks (Expiry)
+    const now = new Date();
+    const expiresAt = tokenData.expiresAt?.toDate ? tokenData.expiresAt.toDate() : new Date(tokenData.expiresAt);
+    if (now > expiresAt) {
+      return { success: false, error: "The recommendation link has expired." };
+    }
+
+    // 3. Send Email
+    const tokenLink = `${params.origin}/recommend/${tokenDoc.id}`;
+    const emailResult = await sendRecommendationReminderEmail({
+      email: tokenData.recommenderEmail,
+      studentName: tokenData.studentName || 'A Student',
+      recommenderName: tokenData.recommenderName,
+      tokenLink: tokenLink
+    });
+
+    if (!emailResult.success) {
+      throw new Error(emailResult.error);
+    }
+
+    // 4. Update Token Tracking
+    await updateDoc(doc(db, 'recommendationTokens', tokenDoc.id), {
+      lastReminderSentAt: serverTimestamp()
+    });
+
+    // 5. Update Student Record
+    await updateDoc(doc(db, 'users', params.applicationId), {
+      [`recommendationLastReminder${params.requestIndex}`]: new Date().toISOString(),
+      updatedAt: serverTimestamp()
+    });
+
+    return { success: true, method: emailResult.method };
   } catch (error: any) {
     return { success: false, error: error.message };
   }

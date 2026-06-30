@@ -20,6 +20,7 @@ export type NotificationType =
   | 'Welcome' 
   | 'Recommendation Request' 
   | 'Recommendation Received' 
+  | 'Recommendation Reminder'
   | 'Submission Confirmed' 
   | 'Status Changed';
 
@@ -96,5 +97,20 @@ export async function sendStatusUpdate(email: string, name: string, status: stri
     type: 'Status Changed',
     text: `Hello ${name}, your application status has been updated to: ${status}.`,
     html: `<h1>Decision Update</h1><p>Hello ${name},</p><p>There has been an update to your scholarship application status. Your new status is: <strong>${status}</strong>.</p><p>Log in to your dashboard for more details.</p>`
+  });
+}
+
+export async function sendRecommendationReminderEmail(params: {
+  email: string;
+  studentName: string;
+  recommenderName: string;
+  tokenLink: string;
+}) {
+  return sendNotification({
+    to: params.email,
+    subject: `Reminder: ${params.studentName} is waiting for your recommendation letter`,
+    type: 'Recommendation Reminder',
+    text: `Hello ${params.recommenderName}, this is a reminder that ${params.studentName} has requested a recommendation. Please upload it via this secure link: ${params.tokenLink}`,
+    html: `<h1>Recommendation Reminder</h1><p>Hello ${params.recommenderName},</p><p>This is a follow-up regarding the recommendation request for <strong>${params.studentName}</strong>.</p><p>Please upload your letter via this secure link: <a href="${params.tokenLink}">${params.tokenLink}</a></p>`
   });
 }

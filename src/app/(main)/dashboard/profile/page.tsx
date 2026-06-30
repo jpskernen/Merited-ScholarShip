@@ -15,7 +15,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Applicant, ApplicantSchema } from '@/types/applicant';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
-import { saveApplicantData, sendRecommendationRequest } from './actions';
+import { saveApplicantData, sendRecommendationRequest, sendRecommendationReminder } from './actions';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { Separator } from '@/components/ui/separator';
 import { useDoc, useFirebase, useMemoFirebase } from '@/firebase';
@@ -35,12 +35,14 @@ import {
   UserPlus,
   Mail,
   Clock,
-  Lock
+  Lock,
+  Bell
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
+import { formatDistanceToNow } from 'date-fns';
 
 export default function ProfilePage() {
   const { toast } = useToast();
@@ -53,6 +55,7 @@ export default function ProfilePage() {
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
   const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
   const [isRequestingRec, setIsRequestingRec] = useState<Record<number, boolean>>({});
+  const [isRemindingRec, setIsRemindingRec] = useState<Record<number, boolean>>({});
   const [recErrors, setRecErrors] = useState<Record<number, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   
@@ -223,6 +226,36 @@ export default function ProfilePage() {
     }
   };
 
+  const handleSendReminder = async (index: number) => {
+    if (!user) return;
+
+    setIsRemindingRec(prev => ({ ...prev, [index]: true }));
+    try {
+      const result = await sendRecommendationReminder({
+        applicationId: user.uid,
+        requestIndex: index,
+        origin: window.location.origin
+      });
+
+      if (result.success) {
+        toast({
+          title: "Reminder Sent",
+          description: `A nudge has been sent to your recommender via ${result.method}.`,
+        });
+      } else {
+        throw new Error(result.error);
+      }
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: "Reminder Failed",
+        description: error.message,
+      });
+    } finally {
+      setIsRemindingRec(prev => ({ ...prev, [index]: false }));
+    }
+  };
+
   const performAutoSave = useCallback(async () => {
     if (!user || !firestore || !isDirty || applicantData?.status === 'Submitted' || applicantData?.status === 'In Review') {
       return;
@@ -299,6 +332,15 @@ export default function ProfilePage() {
     { id: 2, label: 'Essays' },
     { id: 3, label: 'Verified Endorsements' },
   ];
+
+  const checkReminderCooldown = (index: number) => {
+    const lastReminder = (applicantData as any)?.[`recommendationLastReminder${index}`];
+    if (!lastReminder) return true;
+    const lastDate = new Date(lastReminder);
+    const now = new Date();
+    const diffHours = (now.getTime() - lastDate.getTime()) / (1000 * 60 * 60);
+    return diffHours >= 24;
+  };
 
   return (
     <form ref={formRef} className="space-y-6 md:space-y-8" noValidate>
@@ -477,6 +519,9 @@ export default function ProfilePage() {
             <CardContent className="space-y-6 p-4 md:p-6">
               {[1, 2].map((i) => {
                 const status = (applicantData as any)?.[`recommendationStatus${i}`] || 'Not Requested';
+                const lastReminder = (applicantData as any)?.[`recommendationLastReminder${i}`];
+                const canRemind = checkReminderCooldown(i);
+                
                 return (
                   <div key={i} className="rounded-xl border p-5 space-y-5 bg-muted/5 transition-colors hover:bg-muted/10">
                     <div className="flex items-center justify-between gap-2">
@@ -515,18 +560,41 @@ export default function ProfilePage() {
                       </Alert>
                     )}
 
-                    {status === 'Not Requested' && !isAlreadySubmitted && (
-                      <Button 
-                        type="button" 
-                        size="sm" 
-                        className="w-full h-10 text-xs font-bold" 
-                        onClick={() => handleSendRecommendationRequest(i)}
-                        disabled={isRequestingRec[i]}
-                      >
-                        {isRequestingRec[i] ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Mail className="h-4 w-4 mr-2" />}
-                        Send Secure Invitation
-                      </Button>
-                    )}
+                    <div className="flex flex-col gap-3">
+                      {status === 'Not Requested' && !isAlreadySubmitted && (
+                        <Button 
+                          type="button" 
+                          size="sm" 
+                          className="w-full h-10 text-xs font-bold" 
+                          onClick={() => handleSendRecommendationRequest(i)}
+                          disabled={isRequestingRec[i]}
+                        >
+                          {isRequestingRec[i] ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Mail className="h-4 w-4 mr-2" />}
+                          Send Secure Invitation
+                        </Button>
+                      )}
+
+                      {status === 'Pending' && !isAlreadySubmitted && (
+                        <div className="space-y-2">
+                           <Button 
+                            type="button" 
+                            size="sm" 
+                            variant="outline"
+                            className="w-full h-10 text-xs font-bold border-primary/20 hover:bg-primary/5" 
+                            onClick={() => handleSendReminder(i)}
+                            disabled={isRemindingRec[i] || !canRemind}
+                          >
+                            {isRemindingRec[i] ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Bell className="h-4 w-4 mr-2" />}
+                            {canRemind ? 'Send Reminder' : 'Reminder Sent Recently'}
+                          </Button>
+                          {lastReminder && (
+                            <p className="text-[9px] text-muted-foreground text-center font-medium italic">
+                              Last reminder sent {formatDistanceToNow(new Date(lastReminder))} ago. Available again in 24 hours.
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
                     
                     {status === 'Received' && (
                       <div className="flex items-center gap-2 p-3 rounded-lg bg-green-50 border border-green-200 text-[11px] text-green-700 font-black uppercase tracking-wider">
