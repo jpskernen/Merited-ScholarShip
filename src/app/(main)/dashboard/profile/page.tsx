@@ -1,4 +1,3 @@
-
 'use client';
 
 import { Button } from '@/components/ui/button';
@@ -121,8 +120,47 @@ export default function ProfilePage() {
     }
   }, [user, applicantData, isUserLoading, setValue, reset]);
 
+  const finishUpload = async (downloadURL: string, fileName: string, field: string, promptId?: string) => {
+    if (!userDocRef) return;
+    
+    console.log('6. Firestore update started', Date.now());
+
+    if (promptId) {
+      await updateDoc(userDocRef, {
+        essays: arrayUnion({
+          promptId,
+          fileUrl: downloadURL,
+          fileName: fileName,
+          uploadedAt: serverTimestamp()
+        }),
+        updatedAt: serverTimestamp()
+      });
+    } else {
+      const updateObj: any = { [field]: downloadURL, updatedAt: serverTimestamp() };
+      if (field === 'transcripts') {
+        updateObj.documents = arrayUnion(downloadURL);
+      }
+      await updateDoc(userDocRef, updateObj);
+    }
+
+    console.log('7. Firestore update complete', Date.now());
+
+    setUploadStatus(prev => ({ ...prev, [field]: "Upload complete!" }));
+    setUploadProgress(prev => {
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+    
+    toast({ title: "Success", description: "File attached." });
+  };
+
   const handleFileUpload = useCallback(async (file: File, field: string, promptId?: string) => {
+    console.log('1. Upload function called', Date.now());
+    
     if (!user || !file || !storage) return;
+
+    console.log('2. Auth check complete', Date.now());
 
     // Fast client-side validation
     if (file.type !== 'application/pdf') {
@@ -146,13 +184,16 @@ export default function ProfilePage() {
       : `applications/${user.uid}/${field}.pdf`;
     
     const storageRef = ref(storage, path);
+    console.log('3. Storage ref created', Date.now());
 
     try {
+      console.log('4. Upload started', Date.now());
       // Optimization: For small files, use direct upload to skip resumable session overhead
       if (file.size < 1 * 1024 * 1024) {
         setUploadStatus(prev => ({ ...prev, [field]: "Uploading..." }));
         const result = await uploadBytes(storageRef, file);
         const downloadURL = await getDownloadURL(result.ref);
+        console.log('5. Upload complete', Date.now());
         await finishUpload(downloadURL, file.name, field, promptId);
       } else {
         // Use resumable for larger files with progress tracking
@@ -172,45 +213,16 @@ export default function ProfilePage() {
           }, 
           async () => {
             const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+            console.log('5. Upload complete', Date.now());
             await finishUpload(downloadURL, file.name, field, promptId);
           }
         );
       }
     } catch (err) {
+      console.error('Upload error:', err);
       setUploadErrors(prev => ({ ...prev, [field]: "Connection error." }));
     }
   }, [user, storage, firestore]);
-
-  const finishUpload = async (downloadURL: string, fileName: string, field: string, promptId?: string) => {
-    if (!userDocRef) return;
-
-    if (promptId) {
-      await updateDoc(userDocRef, {
-        essays: arrayUnion({
-          promptId,
-          fileUrl: downloadURL,
-          fileName: fileName,
-          uploadedAt: serverTimestamp()
-        }),
-        updatedAt: serverTimestamp()
-      });
-    } else {
-      const updateObj: any = { [field]: downloadURL, updatedAt: serverTimestamp() };
-      if (field === 'transcripts') {
-        updateObj.documents = arrayUnion(downloadURL);
-      }
-      await updateDoc(userDocRef, updateObj);
-    }
-
-    setUploadStatus(prev => ({ ...prev, [field]: "Upload complete!" }));
-    setUploadProgress(prev => {
-      const next = { ...prev };
-      delete next[field];
-      return next;
-    });
-    
-    toast({ title: "Success", description: "File attached." });
-  };
 
   const handleSendRecommendationRequest = async (index: number) => {
     if (!user) return;
