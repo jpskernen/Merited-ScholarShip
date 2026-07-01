@@ -144,35 +144,26 @@ export default function ProfilePage() {
     }
 
     console.log('7. Firestore update complete', Date.now());
-
-    setUploadStatus(prev => ({ ...prev, [field]: "Upload complete!" }));
-    setUploadProgress(prev => {
-      const next = { ...prev };
-      delete next[field];
-      return next;
-    });
-    
-    toast({ title: "Success", description: "File attached." });
   };
 
   const handleFileUpload = useCallback(async (file: File, field: string, promptId?: string) => {
     console.log('1. Upload function called', Date.now());
     
-    if (!user || !file || !storage) return;
+    if (!user || !file || !storage || !firestore) return;
 
     console.log('2. Auth check complete', Date.now());
 
     // Fast client-side validation
     if (file.type !== 'application/pdf') {
-      setUploadErrors(prev => ({ ...prev, [field]: "PDF files only." }));
+      setUploadErrors(prev => ({ ...prev, [field]: "Only PDF documents are accepted." }));
       return;
     }
     if (file.size > 10 * 1024 * 1024) {
-      setUploadErrors(prev => ({ ...prev, [field]: "Limit: 10MB." }));
+      setUploadErrors(prev => ({ ...prev, [field]: "File too large. Please upload a PDF under 10MB." }));
       return;
     }
 
-    setUploadStatus(prev => ({ ...prev, [field]: "Preparing..." }));
+    setUploadStatus(prev => ({ ...prev, [field]: 'uploading' }));
     setUploadErrors(prev => {
       const next = { ...prev };
       delete next[field];
@@ -188,41 +179,40 @@ export default function ProfilePage() {
 
     try {
       console.log('4. Upload started', Date.now());
-      // Optimization: For small files, use direct upload to skip resumable session overhead
-      if (file.size < 1 * 1024 * 1024) {
-        setUploadStatus(prev => ({ ...prev, [field]: "Uploading..." }));
-        const result = await uploadBytes(storageRef, file);
-        const downloadURL = await getDownloadURL(result.ref);
-        console.log('5. Upload complete', Date.now());
-        await finishUpload(downloadURL, file.name, field, promptId);
-      } else {
-        // Use resumable for larger files with progress tracking
-        const uploadTask = uploadBytesResumable(storageRef, file);
-        uploadTask.on('state_changed', 
-          (snapshot) => {
-            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-            // Throttle progress updates slightly to prevent excessive re-renders
-            if (Math.round(progress) % 5 === 0) {
-               setUploadProgress(prev => ({ ...prev, [field]: progress }));
-               setUploadStatus(prev => ({ ...prev, [field]: `Uploading... ${Math.round(progress)}%` }));
-            }
-          }, 
-          (error) => {
-            setUploadErrors(prev => ({ ...prev, [field]: "Failed. Try again." }));
-            setUploadStatus(prev => ({ ...prev, [field]: "" }));
-          }, 
-          async () => {
-            const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-            console.log('5. Upload complete', Date.now());
-            await finishUpload(downloadURL, file.name, field, promptId);
-          }
-        );
-      }
+      const uploadTask = uploadBytesResumable(storageRef, file);
+
+      uploadTask.on('state_changed', 
+        (snapshot) => {
+          const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+          setUploadProgress(prev => ({ ...prev, [field]: progress }));
+        }, 
+        (error) => {
+          console.error('Upload error:', error);
+          setUploadStatus(prev => ({ ...prev, [field]: 'error' }));
+          setUploadErrors(prev => ({ ...prev, [field]: "Upload failed. Please try again." }));
+        }, 
+        async () => {
+          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+          console.log('5. Upload complete', Date.now());
+          
+          await finishUpload(downloadURL, file.name, field, promptId);
+
+          setUploadStatus(prev => ({ ...prev, [field]: 'complete' }));
+          setUploadProgress(prev => {
+            const next = { ...prev };
+            delete next[field];
+            return next;
+          });
+          
+          toast({ title: "Success", description: "File attached." });
+        }
+      );
     } catch (err) {
-      console.error('Upload error:', err);
+      console.error('Upload catch error:', err);
+      setUploadStatus(prev => ({ ...prev, [field]: 'error' }));
       setUploadErrors(prev => ({ ...prev, [field]: "Connection error." }));
     }
-  }, [user, storage, firestore]);
+  }, [user, storage, firestore, toast]);
 
   const handleSendRecommendationRequest = async (index: number) => {
     if (!user) return;
@@ -432,17 +422,97 @@ export default function ProfilePage() {
               <div className="space-y-4">
                 <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Official Academic Records (PDF)</Label>
                 <div className="flex flex-col gap-3">
-                  {!isAlreadySubmitted && (
+                  {(!isAlreadySubmitted && uploadStatus.transcripts !== 'complete' && !applicantData?.transcripts) && (
                     <div className="space-y-2">
-                      <Input type="file" accept=".pdf" onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], 'transcripts')} disabled={!!uploadStatus.transcripts} className="h-10 text-xs cursor-pointer" />
-                      {uploadErrors.transcripts && <p className="text-[10px] text-destructive font-bold">{uploadErrors.transcripts}</p>}
-                      {uploadStatus.transcripts && <p className="text-[10px] text-primary font-bold animate-pulse">{uploadStatus.transcripts}</p>}
+                      {uploadStatus.transcripts === 'uploading' ? (
+                        <div className="space-y-3 p-4 border rounded-lg bg-muted/5">
+                           <div className="flex justify-between text-[10px] font-black uppercase text-primary">
+                             <span>Uploading Transcript...</span>
+                             <span>{uploadProgress.transcripts || 0}%</span>
+                           </div>
+                           <Progress value={uploadProgress.transcripts || 0} className="h-2" />
+                        </div>
+                      ) : uploadStatus.transcripts === 'error' ? (
+                        <div className="space-y-2">
+                          <p className="text-sm text-destructive font-bold flex items-center gap-2">
+                            <AlertCircle className="h-4 w-4" /> {uploadErrors.transcripts}
+                          </p>
+                          <Button 
+                            type="button" 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={() => {
+                              const input = document.getElementById('transcript-input') as HTMLInputElement;
+                              input?.click();
+                            }}
+                          >
+                            Retry Upload
+                          </Button>
+                          <input 
+                            id="transcript-input"
+                            type="file" 
+                            accept=".pdf" 
+                            className="hidden" 
+                            onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], 'transcripts')} 
+                          />
+                        </div>
+                      ) : (
+                        <div className="relative">
+                          <Button 
+                            type="button" 
+                            variant="outline" 
+                            className="w-full h-12 border-dashed border-2 hover:bg-primary/5 hover:border-primary transition-all font-bold"
+                            onClick={() => {
+                              const input = document.getElementById('transcript-input') as HTMLInputElement;
+                              input?.click();
+                            }}
+                          >
+                            <Upload className="h-4 w-4 mr-2" /> Upload Transcript (Optional)
+                          </Button>
+                          <input 
+                            id="transcript-input"
+                            type="file" 
+                            accept=".pdf" 
+                            className="hidden" 
+                            onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], 'transcripts')} 
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
-                  {applicantData?.transcripts && !uploadProgress.transcripts && (
-                    <div className="p-3 rounded-lg border bg-primary/5 flex items-center justify-between animate-in fade-in">
-                      <div className="flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /><span className="text-xs font-medium">Official_Transcript.pdf</span></div>
-                      <Button variant="ghost" size="sm" className="h-7 text-[10px]" asChild><a href={applicantData.transcripts as string} target="_blank">View File</a></Button>
+
+                  {(applicantData?.transcripts || uploadStatus.transcripts === 'complete') && (
+                    <div className="p-4 rounded-xl border border-green-200 bg-green-50/50 flex items-center justify-between animate-in fade-in duration-500">
+                      <div className="flex items-center gap-3">
+                        <div className="h-8 w-8 rounded-full bg-green-100 flex items-center justify-center">
+                          <CheckCircle className="h-5 w-5 text-green-600" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-black uppercase text-green-700">Transcript uploaded successfully</p>
+                          <p className="text-[10px] text-green-600/70 font-medium">Official Academic Record Attached</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                         <Button variant="ghost" size="sm" className="h-8 text-[10px] font-bold text-green-700 hover:bg-green-100" asChild>
+                           <a href={(applicantData?.transcripts || uploadStatus.transcripts === 'complete') ? (applicantData?.transcripts as string) : '#'} target="_blank">View File</a>
+                         </Button>
+                         {!isAlreadySubmitted && (
+                           <Button 
+                             variant="ghost" 
+                             size="sm" 
+                             className="h-8 text-[10px] font-bold text-destructive hover:bg-destructive/10"
+                             onClick={() => {
+                                setUploadStatus(prev => ({ ...prev, transcripts: 'idle' }));
+                                // Reset the transcript URL in local state if needed to trigger a new upload
+                                if (applicantData) {
+                                   applicantData.transcripts = null;
+                                }
+                             }}
+                           >
+                             Replace
+                           </Button>
+                         )}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -550,7 +620,7 @@ export default function ProfilePage() {
             <CardHeader className="p-4 md:p-6 bg-muted/10 border-b"><CardTitle className="text-base md:text-lg flex items-center gap-2"><CheckCircle className="h-5 w-5 text-primary" /> Submission Checklist</CardTitle></CardHeader>
             <CardContent className="space-y-4 text-xs md:text-sm p-4 md:p-6">
               <div className="flex items-center gap-3"><div className={cn("h-6 w-6 rounded-full flex items-center justify-center border-2 text-[10px] font-bold", getValues('name') ? "bg-primary text-primary-foreground border-primary" : "border-muted text-muted-foreground")}>{getValues('name') ? '✓' : '1'}</div><span className={cn("font-medium", !getValues('name') && "text-muted-foreground")}>Personal Details</span></div>
-              <div className="flex items-center gap-3"><div className={cn("h-6 w-6 rounded-full flex items-center justify-center border-2 text-[10px] font-bold", applicantData?.transcripts ? "bg-primary text-primary-foreground border-primary" : "border-muted text-muted-foreground")}>{applicantData?.transcripts ? '✓' : '2'}</div><span className={cn("font-medium", !applicantData?.transcripts && "text-muted-foreground")}>Official Transcripts</span></div>
+              <div className="flex items-center gap-3"><div className={cn("h-6 w-6 rounded-full flex items-center justify-center border-2 text-[10px] font-bold", (applicantData?.transcripts || uploadStatus.transcripts === 'complete') ? "bg-primary text-primary-foreground border-primary" : "border-muted text-muted-foreground")}>{(applicantData?.transcripts || uploadStatus.transcripts === 'complete') ? '✓' : '2'}</div><span className={cn("font-medium", !(applicantData?.transcripts || uploadStatus.transcripts === 'complete') && "text-muted-foreground")}>Official Transcripts</span></div>
               <div className="flex items-center gap-3"><div className={cn("h-6 w-6 rounded-full flex items-center justify-center border-2 text-[10px] font-bold", (watch('essay') || applicantData?.essays?.some(e => e.promptId === 'personal-statement')) ? "bg-primary text-primary-foreground border-primary" : "border-muted-foreground/30 text-muted-foreground")}>{(watch('essay') || applicantData?.essays?.some(e => e.promptId === 'personal-statement')) ? '✓' : '3'}</div><span className={cn("font-medium", !(watch('essay') || applicantData?.essays?.some(e => e.promptId === 'personal-statement')) && "text-muted-foreground")}>Personal Statement</span></div>
               <div className="flex items-center gap-3"><div className={cn("h-6 w-6 rounded-full flex items-center justify-center border-2 text-[10px] font-bold", ((applicantData as any)?.recommendationStatus1 === 'Pending' || (applicantData as any)?.recommendationStatus1 === 'Received') ? "bg-primary text-primary-foreground border-primary" : "border-muted text-muted-foreground")}>{((applicantData as any)?.recommendationStatus1 === 'Pending' || (applicantData as any)?.recommendationStatus1 === 'Received') ? '✓' : '4'}</div><span className={cn("font-medium", !((applicantData as any)?.recommendationStatus1 === 'Pending' || (applicantData as any)?.recommendationStatus1 === 'Received') && "text-muted-foreground")}>Endorsement Verified</span></div>
               {!isAlreadySubmitted && <div className="mt-6 p-4 rounded-lg bg-amber-50 border border-amber-200"><p className="text-[10px] font-bold text-amber-700 leading-relaxed uppercase tracking-tighter">Important: Once submitted, you will no longer be able to modify your portfolio or upload documents.</p></div>}
