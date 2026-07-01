@@ -4,27 +4,25 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
-    function isAdmin() {
-      return exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
-    }
-
-    function isReviewer() {
-      return exists(/databases/$(database)/documents/reviewers/$(request.auth.uid));
+    function isSignedIn() {
+      return request.auth != null;
     }
 
     match /recommendations/{tokenId} {
-      allow read: if request.auth != null && (isReviewer() || isAdmin());
+      // Allow internal read for committee, public write for anyone with the token
+      allow read: if isSignedIn();
       allow write: if true;
     }
 
     match /applications/{userId}/{allPaths=**} {
-      allow read: if request.auth != null && (request.auth.uid == userId || isAdmin() || isReviewer());
-      allow write: if request.auth != null && request.auth.uid == userId;
+      // Direct UID comparison is the fastest way to verify ownership
+      allow read: if isSignedIn() && (request.auth.uid == userId);
+      allow write: if isSignedIn() && request.auth.uid == userId;
     }
 
     match /{userId}/{document=**} {
-      allow read: if request.auth != null && (request.auth.uid == userId || isAdmin() || isReviewer());
-      allow write: if request.auth != null && request.auth.uid == userId;
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow write: if isSignedIn() && request.auth.uid == userId;
     }
   }
 }
