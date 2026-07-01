@@ -1,0 +1,18 @@
+[
+  {
+    "origin": [
+      "https://studio--scholarship-hib4j.us-central1.hosted.app",
+      "https://scholarship-hib4j.web.app",
+      "https://scholarship-hib4j.firebaseapp.com",
+      "http://localhost:3000"
+    ],
+    "method": ["GET", "POST", "PUT", "DELETE", "HEAD"],
+    "maxAgeSeconds": 3600,
+    "responseHeader": [
+      "Content-Type",
+      "Authorization",
+      "Content-Length",
+      "User-Agent"
+    ]
+  }
+]
