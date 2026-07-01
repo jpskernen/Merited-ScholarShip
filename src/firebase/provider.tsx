@@ -5,6 +5,7 @@ import { FirebaseApp } from 'firebase/app';
 import { Firestore, doc, getDoc } from 'firebase/firestore';
 import { Auth, User, onAuthStateChanged } from 'firebase/auth';
 import { Functions } from 'firebase/functions';
+import { FirebaseStorage } from 'firebase/storage';
 import { FirebaseErrorListener } from '@/components/FirebaseErrorListener';
 
 interface FirebaseProviderProps {
@@ -13,6 +14,7 @@ interface FirebaseProviderProps {
   firestore: Firestore | null;
   auth: Auth | null;
   functions: Functions | null;
+  storage: FirebaseStorage | null;
 }
 
 interface UserAuthState {
@@ -29,6 +31,7 @@ export interface FirebaseContextState {
   firestore: Firestore | null;
   auth: Auth | null;
   functions: Functions | null;
+  storage: FirebaseStorage | null;
   user: User | null;
   role: string | null;
   userData: any | null;
@@ -41,6 +44,7 @@ export interface FirebaseServicesAndUser {
   firestore: Firestore | null;
   auth: Auth | null;
   functions: Functions | null;
+  storage: FirebaseStorage | null;
   user: User | null;
   role: string | null;
   userData: any | null;
@@ -64,6 +68,7 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
   firestore,
   auth,
   functions,
+  storage,
 }) => {
   const [userAuthState, setUserAuthState] = useState<UserAuthState>({
     user: null,
@@ -102,7 +107,6 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
 
           const dbUserData = userDoc.exists() ? userDoc.data() : null;
           
-          // Role Detection Priority: 1. Admin Registry, 2. Reviewer Registry, 3. Profile Role, 4. Default Applicant
           let role = 'Applicant';
           
           if (adminDoc.exists() || firebaseUser.email === 'peyton.vandenbemden@gmail.com') {
@@ -110,7 +114,6 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
           } else if (reviewerDoc.exists() || dbUserData?.role?.toLowerCase() === 'reviewer') {
             role = 'Reviewer';
           } else if (dbUserData?.role) {
-            // Capitalize for consistency (Admin, Reviewer, Applicant)
             role = dbUserData.role.charAt(0).toUpperCase() + dbUserData.role.slice(1).toLowerCase();
             if (role === 'Student') role = 'Applicant';
           }
@@ -140,20 +143,21 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
   }, [auth, firestore]);
 
   const contextValue = useMemo((): FirebaseContextState => {
-    const servicesAvailable = !!(firebaseApp && firestore && auth);
+    const servicesAvailable = !!(firebaseApp && firestore && auth && storage);
     return {
       areServicesAvailable: servicesAvailable,
       firebaseApp,
       firestore,
       auth,
       functions,
+      storage,
       user: userAuthState.user,
       role: userAuthState.role,
       userData: userAuthState.userData,
       isUserLoading: userAuthState.isUserLoading,
       userError: userAuthState.userError,
     };
-  }, [firebaseApp, firestore, auth, functions, userAuthState]);
+  }, [firebaseApp, firestore, auth, functions, storage, userAuthState]);
 
   return (
     <FirebaseContext.Provider value={contextValue}>
@@ -171,6 +175,7 @@ export const useFirebase = (): FirebaseServicesAndUser => {
     firestore: context.firestore,
     auth: context.auth,
     functions: context.functions,
+    storage: context.storage,
     user: context.user,
     role: context.role,
     userData: context.userData,
@@ -183,6 +188,7 @@ export const useAuth = () => useFirebase().auth;
 export const useFirestore = () => useFirebase().firestore;
 export const useFirebaseApp = () => useFirebase().firebaseApp;
 export const useFunctions = () => useFirebase().functions;
+export const useStorage = () => useFirebase().storage;
 
 export function useMemoFirebase<T>(factory: () => T, deps: DependencyList): T & {__memo?: boolean} {
   const memoized = useMemo(factory, deps) as any;

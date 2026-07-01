@@ -7,10 +7,6 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    /**
-     * @description High-security check for administrative privileges.
-     * Checks for specific email or entry in roles_admin collection.
-     */
     function isSponsor() {
       return isSignedIn() && (
         (exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid)) &&
@@ -19,10 +15,6 @@ service cloud.firestore {
       );
     }
 
-    /**
-     * @description Check for reviewer registry or specific user role.
-     * Includes the authorized test account for cycle verification.
-     */
     function isReviewer() {
       return isSignedIn() && (
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
@@ -39,66 +31,49 @@ service cloud.firestore {
       );
     }
 
-    // Recommendation Tokens
     match /recommendationTokens/{tokenId} {
-      // 1. Authenticated students to create tokens (Server Actions run unauthenticated in this context)
-      // 3. Unauthenticated recommenders can READ the token details
-      // 4. Unauthenticated recommenders can UPDATE to mark as used
       allow read, update, create: if true;
     }
 
-    // Role Admin Collection
     match /roles_admin/{userId} {
       allow read: if isSignedIn() && (request.auth.uid == userId || isSponsor());
       allow write: if false; 
     }
 
-    // Reviewer Invites
     match /invites/{inviteId} {
       allow read: if true;
       allow write: if isSponsor();
     }
 
-    // Admin Invites
     match /admin_invites/{inviteId} {
       allow read: if true;
       allow write: if isSponsor();
     }
 
-    // Sent Emails & Audit Logs
     match /sent_emails/{emailId} {
-      allow read, write: if true; // Support server-side logging for transparency
+      allow read, write: if true;
     }
     
     match /auditLog/{logId} {
       allow read: if isSponsor();
-      allow write: if true; // Support administrative action logging
+      allow write: if true;
     }
 
-    // User Profiles / Applications
     match /users {
       allow list: if isSignedIn() && (isSponsor() || isReviewer());
     }
     
     match /users/{userId} {
       allow read: if isSignedIn() && (request.auth.uid == userId || isSponsor() || isReviewer());
-      
-      // 2. Authenticated students to update their own application
-      // 5. Unauthenticated users (recommenders) to update for letter URL
-      // Broad update access is granted here to support the public portal and server-side status management.
-      allow update: if true;
-      
-      allow create: if isSignedIn() && (request.auth.uid == userId || isSponsor());
+      allow update, create: if isSignedIn() && (request.auth.uid == userId || isSponsor());
       allow delete: if isSponsor();
     }
 
-    // Reviewers Registry
     match /reviewers/{userId} {
       allow read: if isSignedIn() && (request.auth.uid == userId || isSponsor());
       allow write: if isSponsor() || (isSignedIn() && request.auth.uid == userId);
     }
 
-    // Applications & History
     match /applications/{appId} {
       allow read: if isSignedIn() && (
         (resource != null && request.auth.uid == resource.data.applicantId) || 
@@ -113,13 +88,11 @@ service cloud.firestore {
       }
     }
 
-    // Programs are public for viewing
     match /programs/{programId} {
       allow read: if true;
       allow write: if isSponsor();
     }
 
-    // Allow collection group queries for reviews
     match /{path=**}/reviews/{reviewDoc} {
       allow read, list, write: if isSignedIn() && (isSponsor() || isReviewer());
     }

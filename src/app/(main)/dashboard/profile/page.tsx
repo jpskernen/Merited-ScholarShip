@@ -20,7 +20,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { Separator } from '@/components/ui/separator';
 import { useDoc, useFirebase, useMemoFirebase } from '@/firebase';
 import { doc, setDoc, serverTimestamp, updateDoc, arrayUnion } from 'firebase/firestore';
-import { ref, uploadBytesResumable, getDownloadURL, getStorage } from 'firebase/storage';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { 
   CheckCircle, 
   Send, 
@@ -59,8 +59,7 @@ import {
 
 export default function ProfilePage() {
   const { toast } = useToast();
-  const { user, isUserLoading, firestore } = useFirebase();
-  const storage = getStorage();
+  const { user, isUserLoading, firestore, storage } = useFirebase();
   
   const [isSaving, setIsSaving] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -126,25 +125,24 @@ export default function ProfilePage() {
   }, [user, applicantData, isUserLoading, setValue, reset]);
 
   const handleFileUpload = async (file: File, field: string, promptId?: string) => {
-    if (!user || !file) return;
+    if (!user || !file || !storage) return;
 
-    setUploadErrors(prev => {
-      const next = { ...prev };
-      delete next[field];
-      return next;
-    });
-
-    // 1. Validation
+    // Fast local validation
     if (file.type !== 'application/pdf') {
       setUploadErrors(prev => ({ ...prev, [field]: "Please upload a PDF file." }));
       return;
     }
     if (file.size > 10 * 1024 * 1024) {
-      setUploadErrors(prev => ({ ...prev, [field]: "File too large. Please upload a PDF under 10MB." }));
+      setUploadErrors(prev => ({ ...prev, [field]: "File too large (Max 10MB)." }));
       return;
     }
 
-    setUploadStatus(prev => ({ ...prev, [field]: "Preparing file..." }));
+    setUploadStatus(prev => ({ ...prev, [field]: "Uploading..." }));
+    setUploadErrors(prev => {
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
 
     const path = promptId 
       ? `applications/${user.uid}/essays/${promptId}.pdf`
@@ -157,16 +155,10 @@ export default function ProfilePage() {
       (snapshot) => {
         const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
         setUploadProgress(prev => ({ ...prev, [field]: progress }));
-        setUploadStatus(prev => ({ ...prev, [field]: `Uploading... ${Math.round(progress)}%` }));
       }, 
       (error) => {
-        setUploadErrors(prev => ({ ...prev, [field]: "Upload failed. Please try again." }));
+        setUploadErrors(prev => ({ ...prev, [field]: "Upload failed. Try again." }));
         setUploadStatus(prev => {
-          const next = { ...prev };
-          delete next[field];
-          return next;
-        });
-        setUploadProgress(prev => {
           const next = { ...prev };
           delete next[field];
           return next;
@@ -176,7 +168,7 @@ export default function ProfilePage() {
         const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
         
         if (promptId) {
-          await updateDoc(userDocRef!, {
+          updateDoc(userDocRef!, {
             essays: arrayUnion({
               promptId,
               fileUrl: downloadURL,
@@ -190,24 +182,21 @@ export default function ProfilePage() {
           if (field === 'transcripts') {
             updateObj.documents = arrayUnion(downloadURL);
           }
-          await updateDoc(userDocRef!, updateObj);
+          updateDoc(userDocRef!, updateObj);
         }
 
-        setUploadStatus(prev => ({ ...prev, [field]: "Upload complete!" }));
-        setTimeout(() => {
-          setUploadStatus(prev => {
-            const next = { ...prev };
-            delete next[field];
-            return next;
-          });
-          setUploadProgress(prev => {
-            const next = { ...prev };
-            delete next[field];
-            return next;
-          });
-        }, 2000);
-
-        toast({ title: "Upload Success", description: `${field} has been attached to your profile.` });
+        setUploadStatus(prev => {
+          const next = { ...prev };
+          delete next[field];
+          return next;
+        });
+        setUploadProgress(prev => {
+          const next = { ...prev };
+          delete next[field];
+          return next;
+        });
+        
+        toast({ title: "Upload Success", description: "File attached successfully." });
       }
     );
   };
@@ -244,10 +233,8 @@ export default function ProfilePage() {
 
       if (result.success) {
         toast({ 
-          title: result.deliveryMethod === 'SendGrid' ? "Request Sent" : "Request Logged", 
-          description: result.deliveryMethod === 'SendGrid' 
-            ? `Invitation dispatched to ${name} via SendGrid.`
-            : `Token generated. Link available in Admin System Outbox for testing.`
+          title: "Request Dispatched", 
+          description: `Invitation sent to ${name}.`
         });
       } else {
         throw new Error(result.error);
@@ -273,7 +260,7 @@ export default function ProfilePage() {
       if (result.success) {
         toast({
           title: "Reminder Sent",
-          description: `A nudge has been sent to your recommender via ${result.method}.`,
+          description: `Nudge dispatched via ${result.method}.`,
         });
       } else {
         throw new Error(result.error);
@@ -302,7 +289,7 @@ export default function ProfilePage() {
       if (result.success) {
         toast({
           title: "Recommender Removed",
-          description: "Previous invitation deactivated. You can now invite someone else.",
+          description: "Invitation deactivated.",
         });
       } else {
         throw new Error(result.error);
@@ -360,7 +347,7 @@ export default function ProfilePage() {
       if (result.success) {
         toast({
             title: submit ? 'Portfolio Finalized' : 'Draft Saved',
-            description: submit ? 'Your scholarship application has been sent for committee review.' : 'Your progress has been stored securely.',
+            description: submit ? 'Submitted for review.' : 'Progress stored.',
         });
         setSaveStatus('saved');
       } else {
@@ -506,7 +493,7 @@ export default function ProfilePage() {
                   {uploadProgress.transcripts !== undefined && (
                     <div className="space-y-2">
                       <div className="flex justify-between text-[10px] font-bold text-primary">
-                        <span>{uploadStatus.transcripts}</span>
+                        <span>{uploadStatus.transcripts || 'Uploading...'}</span>
                         <span>{Math.round(uploadProgress.transcripts)}%</span>
                       </div>
                       <Progress value={uploadProgress.transcripts} className="h-1.5" />

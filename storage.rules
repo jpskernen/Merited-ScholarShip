@@ -4,41 +4,24 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
-    /**
-     * @description Checks if the user has admin privileges by checking for their UID in the /roles_admin collection.
-     * @return {boolean} True if the user is an admin, false otherwise.
-     */
     function isAdmin() {
       return exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
     }
 
-    /**
-     * @description Checks if the user is a reviewer by checking for their UID in the /reviewers collection.
-     * @return {boolean} True if the user is a reviewer, false otherwise.
-     */
     function isReviewer() {
       return exists(/databases/$(database)/documents/reviewers/$(request.auth.uid));
     }
 
-    // Public recommendations path
     match /recommendations/{tokenId} {
       allow read: if request.auth != null && (isReviewer() || isAdmin());
-      allow write: if true; // Allow public uploads from the recommendation portal
+      allow write: if true;
     }
 
-    // Optimized match for student applications
-    // We match specific paths to avoid unnecessary rule overhead
     match /applications/{userId}/{allPaths=**} {
-      // Grant read access to the file owner, admins, or reviewers.
-      // Firestore lookups (isAdmin/isReviewer) are only performed on read
       allow read: if request.auth != null && (request.auth.uid == userId || isAdmin() || isReviewer());
-      
-      // Grant write access only to the file owner. 
-      // No Firestore lookup for writes to keep them ultra-fast.
       allow write: if request.auth != null && request.auth.uid == userId;
     }
 
-    // Fallback for root segments
     match /{userId}/{document=**} {
       allow read: if request.auth != null && (request.auth.uid == userId || isAdmin() || isReviewer());
       allow write: if request.auth != null && request.auth.uid == userId;
