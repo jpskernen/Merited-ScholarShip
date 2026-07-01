@@ -33,7 +33,7 @@ export default function DashboardPage() {
   // Calculate completion percentage based on core fields
   const calculateProgress = (data: Applicant | null) => {
     if (!data) return 0;
-    const fields: (keyof Applicant)[] = ['name', 'address', 'gpa', 'major', 'school', 'essay', 'qualificationStatement', 'transcripts', 'recommendationLetter1'];
+    const fields: (keyof Applicant)[] = ['name', 'address', 'gpa', 'major', 'school', 'essay', 'qualificationStatement', 'recommendationLetter1'];
     const completedFields = fields.filter(field => !!data[field]);
     return Math.round((completedFields.length / fields.length) * 100);
   };
@@ -86,7 +86,7 @@ export default function DashboardPage() {
       </div>
 
       {isPeyton && !isAlreadyAdmin && (
-        <Card className="border-amber-500 bg-amber-500/5 shadow-lg">
+        <Card className="border-amber-500 bg-amber-50/5 shadow-lg">
           <CardHeader>
             <CardTitle className="text-amber-600 flex items-center gap-2">
               <ShieldCheck className="h-5 w-5" /> Authorized System Elevation
@@ -195,8 +195,8 @@ export default function DashboardPage() {
            <div className="flex items-start gap-3 rounded-lg border p-4">
              <div className="rounded-full bg-primary/10 p-2"><FileText className="h-4 w-4 text-primary" /></div>
              <div>
-               <p className="font-semibold">Transcripts</p>
-               <p className="text-xs text-muted-foreground">Request your official HS transcript.</p>
+               <p className="font-semibold">Narrative Essays</p>
+               <p className="text-xs text-muted-foreground">Draft your personal statement early.</p>
              </div>
            </div>
            <div className="flex items-start gap-3 rounded-lg border p-4">
