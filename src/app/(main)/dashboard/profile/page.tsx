@@ -20,7 +20,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { Separator } from '@/components/ui/separator';
 import { useDoc, useFirebase, useMemoFirebase } from '@/firebase';
 import { doc, setDoc, serverTimestamp, updateDoc, arrayUnion } from 'firebase/firestore';
-import { ref, uploadBytesResumable, getDownloadURL, uploadBytes } from 'firebase/storage';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { 
   CheckCircle, 
   Send, 
@@ -125,75 +125,101 @@ export default function ProfilePage() {
     
     console.log('6. Firestore update started', Date.now());
 
-    if (promptId) {
-      await updateDoc(userDocRef, {
-        essays: arrayUnion({
-          promptId,
-          fileUrl: downloadURL,
-          fileName: fileName,
-          uploadedAt: serverTimestamp()
-        }),
-        updatedAt: serverTimestamp()
-      });
-    } else {
-      const updateObj: any = { [field]: downloadURL, updatedAt: serverTimestamp() };
-      if (field === 'transcripts') {
-        updateObj.documents = arrayUnion(downloadURL);
+    try {
+      if (promptId) {
+        await updateDoc(userDocRef, {
+          essays: arrayUnion({
+            promptId,
+            fileUrl: downloadURL,
+            fileName: fileName,
+            uploadedAt: serverTimestamp()
+          }),
+          updatedAt: serverTimestamp()
+        });
+      } else {
+        const updateObj: any = { [field]: downloadURL, updatedAt: serverTimestamp() };
+        if (field === 'transcripts') {
+          updateObj.documents = arrayUnion(downloadURL);
+        }
+        await updateDoc(userDocRef, updateObj);
       }
-      await updateDoc(userDocRef, updateObj);
+      console.log('7. Firestore update complete', Date.now());
+    } catch (err: any) {
+      console.error('Firestore update failed:', err.message);
+      throw err;
     }
-
-    console.log('7. Firestore update complete', Date.now());
   };
 
   const handleFileUpload = useCallback(async (file: File, field: string, promptId?: string) => {
-    console.log('1. Upload function called', Date.now());
+    console.log('1. Upload button clicked', Date.now());
     
-    if (!user || !file || !storage || !firestore) return;
-
-    console.log('2. Auth check complete', Date.now());
-
-    // Fast client-side validation
-    if (file.type !== 'application/pdf') {
-      setUploadErrors(prev => ({ ...prev, [field]: "Only PDF documents are accepted." }));
+    if (!file) {
+      console.error('No file selected');
       return;
     }
-    if (file.size > 10 * 1024 * 1024) {
-      setUploadErrors(prev => ({ ...prev, [field]: "File too large. Please upload a PDF under 10MB." }));
+    
+    console.log('File selected: ' + file.name + ' ' + file.size + ' bytes');
+
+    if (!user) {
+      console.error('User not authenticated at time of upload');
+      setUploadErrors(prev => ({ ...prev, [field]: "You must be logged in to upload files." }));
       return;
     }
-
-    setUploadStatus(prev => ({ ...prev, [field]: 'uploading' }));
-    setUploadErrors(prev => {
-      const next = { ...prev };
-      delete next[field];
-      return next;
-    });
-
-    const path = promptId 
-      ? `applications/${user.uid}/essays/${promptId}.pdf`
-      : `applications/${user.uid}/${field}.pdf`;
     
-    const storageRef = ref(storage, path);
-    console.log('3. Storage ref created', Date.now());
+    console.log('Auth user: ' + user.uid);
+    console.log('Application ID (user.uid): ' + user.uid);
+
+    if (!storage || !firestore) {
+      console.error('Firebase services not initialized');
+      return;
+    }
 
     try {
+      // Fast client-side validation
+      if (file.type !== 'application/pdf') {
+        console.error('Validation failed: Non-PDF file');
+        setUploadErrors(prev => ({ ...prev, [field]: "Only PDF documents are accepted." }));
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        console.error('Validation failed: File size ' + file.size);
+        setUploadErrors(prev => ({ ...prev, [field]: "File too large. Please upload a PDF under 10MB." }));
+        return;
+      }
+
+      setUploadStatus(prev => ({ ...prev, [field]: 'uploading' }));
+      setUploadErrors(prev => {
+        const next = { ...prev };
+        delete next[field];
+        return next;
+      });
+
+      const path = promptId 
+        ? `applications/${user.uid}/essays/${promptId}.pdf`
+        : `applications/${user.uid}/${field}.pdf`;
+      
+      const storageRef = ref(storage, path);
+      console.log('Storage ref path: ' + storageRef.fullPath);
+      console.log('3. Storage ref created', Date.now());
+
       console.log('4. Upload started', Date.now());
       const uploadTask = uploadBytesResumable(storageRef, file);
 
       uploadTask.on('state_changed', 
         (snapshot) => {
           const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+          console.log('Upload progress: ' + progress + '%');
           setUploadProgress(prev => ({ ...prev, [field]: progress }));
         }, 
         (error) => {
-          console.error('Upload error:', error);
+          console.error('Upload failed at step (Storage Task):', error.code, error.message);
           setUploadStatus(prev => ({ ...prev, [field]: 'error' }));
-          setUploadErrors(prev => ({ ...prev, [field]: "Upload failed. Please try again." }));
+          setUploadErrors(prev => ({ ...prev, [field]: `Upload failed: ${error.message}` }));
         }, 
         async () => {
+          console.log('Upload complete, getting download URL', Date.now());
           const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-          console.log('5. Upload complete', Date.now());
+          console.log('5. Download URL obtained: ' + downloadURL.substring(0, 30) + '...');
           
           await finishUpload(downloadURL, file.name, field, promptId);
 
@@ -207,10 +233,10 @@ export default function ProfilePage() {
           toast({ title: "Success", description: "File attached." });
         }
       );
-    } catch (err) {
-      console.error('Upload catch error:', err);
+    } catch (err: any) {
+      console.error('Upload failed at step (Outer Catch):', err.code || 'unknown', err.message);
       setUploadStatus(prev => ({ ...prev, [field]: 'error' }));
-      setUploadErrors(prev => ({ ...prev, [field]: "Connection error." }));
+      setUploadErrors(prev => ({ ...prev, [field]: "An unexpected error occurred during upload." }));
     }
   }, [user, storage, firestore, toast]);
 
@@ -434,9 +460,12 @@ export default function ProfilePage() {
                         </div>
                       ) : uploadStatus.transcripts === 'error' ? (
                         <div className="space-y-2">
-                          <p className="text-sm text-destructive font-bold flex items-center gap-2">
-                            <AlertCircle className="h-4 w-4" /> {uploadErrors.transcripts}
-                          </p>
+                          <Alert variant="destructive" className="py-2 px-3">
+                            <AlertCircle className="h-4 w-4" />
+                            <AlertDescription className="text-[10px] font-bold">
+                              {uploadErrors.transcripts || "Upload failed. Please try again."}
+                            </AlertDescription>
+                          </Alert>
                           <Button 
                             type="button" 
                             variant="outline" 
