@@ -17,9 +17,6 @@ service cloud.firestore {
 
     function isReviewer() {
       return isSignedIn() && (
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Reviewer') ||
-        exists(/databases/$(database)/documents/reviewers/$(request.auth.uid)) ||
         request.auth.token.email in [
           'hello@merited.com', 
           'hellow@meritedapp.com', 
@@ -27,6 +24,9 @@ service cloud.firestore {
           'kernenpm@gmail.com', 
           'reviewer@test.com'
         ] ||
+        exists(/databases/$(database)/documents/reviewers/$(request.auth.uid)) ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Reviewer') ||
         isSponsor()
       );
     }
@@ -93,6 +93,7 @@ service cloud.firestore {
       allow write: if isSponsor();
     }
 
+    // Support collectionGroup queries for reviews
     match /{path=**}/reviews/{reviewDoc} {
       allow read, list, write: if isSignedIn() && (isSponsor() || isReviewer());
     }
