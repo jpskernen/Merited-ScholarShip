@@ -38,18 +38,19 @@ export default function LoginPage() {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user && isSigningIn) {
         try {
-          const [userDoc, adminDoc] = await Promise.all([
+          const [userDoc, adminDoc, reviewerDoc] = await Promise.all([
             getDoc(doc(firestore, 'users', user.uid)),
-            getDoc(doc(firestore, 'roles_admin', user.uid))
+            getDoc(doc(firestore, 'roles_admin', user.uid)),
+            getDoc(doc(firestore, 'reviewers', user.uid))
           ]);
           
           const userData = userDoc.exists() ? userDoc.data() : null;
           const isAdmin = adminDoc.exists() || user.email === 'peyton.vandenbemden@gmail.com';
-          const role = isAdmin ? 'admin' : (userData?.role?.toLowerCase() || 'student');
-
-          if (role === 'admin') {
+          const isReviewer = reviewerDoc.exists() || userData?.role?.toLowerCase() === 'reviewer' || user.email === 'reviewer@test.com';
+          
+          if (isAdmin) {
             router.push('/admin');
-          } else if (role === 'reviewer') {
+          } else if (isReviewer) {
             router.push('/reviewer/dashboard');
           } else {
             router.push('/dashboard');

@@ -109,9 +109,12 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
           
           let role = 'Applicant';
           
-          if (adminDoc.exists() || firebaseUser.email === 'peyton.vandenbemden@gmail.com') {
+          const isHardcodedAdmin = firebaseUser.email === 'peyton.vandenbemden@gmail.com';
+          const isHardcodedReviewer = firebaseUser.email === 'reviewer@test.com' || firebaseUser.email === 'peyton.vandenbemden@gmail.com';
+
+          if (adminDoc.exists() || isHardcodedAdmin) {
             role = 'Admin';
-          } else if (reviewerDoc.exists() || dbUserData?.role?.toLowerCase() === 'reviewer') {
+          } else if (reviewerDoc.exists() || dbUserData?.role?.toLowerCase() === 'reviewer' || isHardcodedReviewer) {
             role = 'Reviewer';
           } else if (dbUserData?.role) {
             role = dbUserData.role.charAt(0).toUpperCase() + dbUserData.role.slice(1).toLowerCase();
