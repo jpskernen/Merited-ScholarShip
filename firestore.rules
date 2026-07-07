@@ -7,84 +7,52 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
     function isSponsor() {
       return isSignedIn() && (
         (exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid)) &&
-         get(/databases/$(database)/documents/roles_admin/$(request.auth.uid)).data.role in ['sponsor', 'Admin', 'Sponsor']) ||
+         get(/databases/$(database)/documents/roles_admin/$(request.auth.uid)).data.role in ['Admin', 'Sponsor']) ||
         request.auth.token.email == 'peyton.vandenbemden@gmail.com'
       );
     }
 
     function isReviewer() {
       return isSignedIn() && (
-        request.auth.token.email in [
-          'hello@merited.com', 
-          'hellow@meritedapp.com', 
-          'hello@meritedapp.com', 
-          'kernenpm@gmail.com', 
-          'reviewer@test.com'
-        ] ||
-        exists(/databases/$(database)/documents/reviewers/$(request.auth.uid)) ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Reviewer') ||
+        request.auth.token.email in ['reviewer@test.com', 'peyton.vandenbemden@gmail.com'] ||
+        getUserData().role == 'Reviewer' ||
         isSponsor()
       );
     }
 
-    match /recommendationTokens/{tokenId} {
-      allow read, update, create: if true;
-    }
-
-    match /roles_admin/{userId} {
-      allow read: if isSignedIn() && (request.auth.uid == userId || isSponsor());
-      allow write: if false; 
-    }
-
-    match /invites/{inviteId} {
-      allow read: if true;
-      allow write: if isSponsor();
-    }
-
-    match /admin_invites/{inviteId} {
-      allow read: if true;
-      allow write: if isSponsor();
-    }
-
-    match /sent_emails/{emailId} {
-      allow read, write: if true;
-    }
-    
-    match /auditLog/{logId} {
-      allow read: if isSponsor();
-      allow write: if true;
-    }
-
-    match /users {
-      allow list: if isSignedIn() && (isSponsor() || isReviewer());
-    }
-    
     match /users/{userId} {
       allow read: if isSignedIn() && (request.auth.uid == userId || isSponsor() || isReviewer());
-      allow update, create: if isSignedIn() && (request.auth.uid == userId || isSponsor());
-      allow delete: if isSponsor();
+      allow write: if isSignedIn() && (request.auth.uid == userId || isSponsor());
     }
 
-    match /reviewers/{userId} {
-      allow read: if isSignedIn() && (request.auth.uid == userId || isSponsor());
-      allow write: if isSponsor() || (isSignedIn() && request.auth.uid == userId);
-    }
+    match /organizations/{orgId} {
+      allow read: if isSignedIn();
+      allow write: if isSponsor();
 
-    match /applications/{appId} {
-      allow read: if isSignedIn() && (
-        (resource != null && request.auth.uid == resource.data.applicantId) || 
-        isSponsor() || 
-        isReviewer()
-      );
-      allow write: if isSignedIn();
+      match /scholarships/{scholarshipId} {
+        allow read: if isSignedIn();
+        allow write: if isSponsor();
 
-      match /reviews/{reviewId} {
-        allow read: if isSignedIn() && (isSponsor() || isReviewer() || (resource != null && request.auth.uid == resource.data.reviewerId));
-        allow write: if isSignedIn() && (isSponsor() || isReviewer());
+        match /applications/{appId} {
+          allow read: if isSignedIn() && (
+            request.auth.uid == appId || 
+            isReviewer() || 
+            isSponsor()
+          );
+          allow write: if isSignedIn() && (request.auth.uid == appId || isSponsor());
+          
+          match /reviews/{reviewId} {
+            allow read: if isSignedIn() && (isReviewer() || isSponsor());
+            allow write: if isSignedIn() && (isReviewer() || isSponsor());
+          }
+        }
       }
     }
 
@@ -93,9 +61,9 @@ service cloud.firestore {
       allow write: if isSponsor();
     }
 
-    // Support collectionGroup queries for reviews
-    match /{path=**}/reviews/{reviewDoc} {
-      allow read, list, write: if isSignedIn() && (isSponsor() || isReviewer());
-    }
+    match /invites/{inviteId} { allow read, write: if true; }
+    match /admin_invites/{inviteId} { allow read, write: if true; }
+    match /sent_emails/{emailId} { allow read, write: if true; }
+    match /auditLog/{logId} { allow read, write: if true; }
   }
 }

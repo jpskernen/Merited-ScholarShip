@@ -12,7 +12,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { 
   ArrowRight, 
   Loader2,
@@ -22,233 +22,193 @@ import {
   UserCheck,
   CheckCircle2,
   FileEdit,
-  AlertCircle
+  AlertCircle,
+  ChevronRight,
+  GraduationCap
 } from 'lucide-react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useCollection, useFirebase, useMemoFirebase } from '@/firebase';
-import { collection, query, where, collectionGroup } from 'firebase/firestore';
+import { collection, query, where, doc, getDocs } from 'firebase/firestore';
 
 function ReviewerDashboardContent() {
-  const { firestore, user } = useFirebase();
+  const { firestore, user, userData, isUserLoading } = useFirebase();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [mounted, setMounted] = useState(false);
+  const [selectedScholarshipId, setSelectedScholarshipId] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  const filter = searchParams.get('status') || 'all';
+  const organizationId = userData?.organizationId || userData?.schoolId;
 
-  // 1. Query applications specifically assigned to this reviewer
-  const assignedApplicantsQuery = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
+  // 1. Fetch Assigned Scholarships (Specific Query)
+  const scholarshipsQuery = useMemoFirebase(() => {
+    if (!firestore || !organizationId || !user) return null;
     return query(
-      collection(firestore, 'users'), 
-      where('role', '==', 'Applicant'),
-      where('status', 'in', ['Submitted', 'In Review']),
+      collection(firestore, 'programs'), // Fallback for legacy
+      where('organizationId', '==', organizationId),
       where('reviewerIds', 'array-contains', user.uid)
     );
-  }, [firestore, user]);
+  }, [firestore, organizationId, user]);
 
-  const { data: assignments, isLoading: isAssignmentsLoading } = useCollection(assignedApplicantsQuery);
+  const { data: scholarships, isLoading: isScholarshipsLoading } = useCollection(scholarshipsQuery);
 
-  // 2. Query all reviews made by this specific reviewer
-  const myReviewsQuery = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
-    return query(collectionGroup(firestore, 'reviews'), where('reviewerId', '==', user.uid));
-  }, [firestore, user]);
+  useEffect(() => {
+    if (scholarships && scholarships.length > 0 && !selectedScholarshipId) {
+      setSelectedScholarshipId(scholarships[0].id);
+    }
+  }, [scholarships, selectedScholarshipId]);
 
-  const { data: myReviews, isLoading: isReviewsLoading } = useCollection(myReviewsQuery);
+  // 2. Fetch Applications for the Selected Scholarship (Very Specific Query)
+  const applicationsQuery = useMemoFirebase(() => {
+    if (!firestore || !organizationId || !selectedScholarshipId) return null;
+    return query(
+      collection(firestore, 'organizations', organizationId, 'scholarships', selectedScholarshipId, 'applications'),
+      where('status', '==', 'Submitted')
+    );
+  }, [firestore, organizationId, selectedScholarshipId]);
 
-  const processedAssignments = useMemo(() => {
-    if (!assignments || !myReviews) return [];
+  const { data: applications, isLoading: isAppsLoading } = useCollection(applicationsQuery);
 
-    return assignments.map(app => {
-      // Find the specific review for this applicant by this reviewer
-      const review = myReviews.find(r => r.applicationId === app.id);
-      
-      let evalStatus = 'Not Started';
-      if (review?.status === 'Submitted') evalStatus = 'Evaluated';
-      else if (review?.status === 'Draft') evalStatus = 'Draft';
-
-      return {
-        ...app,
-        evalStatus,
-        isFlagged: review?.markForDiscussion || false,
-        lastUpdated: review?.updatedAt?.seconds ? new Date(review.updatedAt.seconds * 1000) : null
-      };
-    });
-  }, [assignments, myReviews]);
-
-  const filteredAssignments = useMemo(() => {
-    if (filter === 'all') return processedAssignments;
-    return processedAssignments.filter(app => {
-      if (filter === 'pending') return app.evalStatus !== 'Evaluated';
-      if (filter === 'completed') return app.evalStatus === 'Evaluated';
-      if (filter === 'flagged') return app.isFlagged;
-      return true;
-    });
-  }, [processedAssignments, filter]);
-
-  const stats = useMemo(() => {
-    const total = processedAssignments.length;
-    const completed = processedAssignments.filter(a => a.evalStatus === 'Evaluated').length;
-    const drafts = processedAssignments.filter(a => a.evalStatus === 'Draft').length;
-    const flagged = processedAssignments.filter(a => a.isFlagged).length;
-    return { total, completed, drafts, flagged };
-  }, [processedAssignments]);
-
-  if (isAssignmentsLoading || isReviewsLoading || !mounted) {
+  if (isUserLoading || isScholarshipsLoading || !mounted) {
     return (
       <div className="flex h-64 flex-col items-center justify-center gap-4">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="text-muted-foreground animate-pulse font-medium">Syncing Evaluation Queue...</p>
+        <p className="text-muted-foreground animate-pulse font-medium">Syncing Command Center...</p>
       </div>
     );
   }
 
+  if (!organizationId) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center">
+        <AlertCircle className="h-12 w-12 text-destructive mb-4" />
+        <h2 className="text-xl font-bold">Profile Incomplete</h2>
+        <p className="text-muted-foreground">Your account is not associated with an organization.</p>
+      </div>
+    );
+  }
+
+  const activeScholarship = scholarships?.find(s => s.id === selectedScholarshipId);
+
   return (
     <div className="space-y-8">
-      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-2">
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Reviewer Command Center</h1>
-          <p className="text-muted-foreground italic flex items-center gap-2">
-            <Lock className="h-4 w-4" /> Secure access to assigned candidate portfolios only.
+      <div className="flex flex-col gap-4">
+        <h1 className="text-3xl font-bold tracking-tight">Reviewer Command Center</h1>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="bg-primary/5 px-2 py-0.5 text-[10px] font-black uppercase">
+            Org: {organizationId}
+          </Badge>
+          <p className="text-sm text-muted-foreground">
+            Secure, specific access to assigned portfolios.
           </p>
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="bg-primary/5 border-primary/20">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-primary/10 rounded-lg">
-                <UserCheck className="h-5 w-5 text-primary" />
-              </div>
-              <div className="flex flex-col">
-                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Assigned</span>
-                <span className="text-2xl font-black">{stats.total}</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-green-500/5 border-green-500/20">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-green-500/10 rounded-lg">
-                <CheckCircle2 className="h-5 w-5 text-green-600" />
-              </div>
-              <div className="flex flex-col">
-                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Finalized</span>
-                <span className="text-2xl font-black text-green-600">{stats.completed}</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-amber-500/5 border-amber-500/20">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-amber-500/10 rounded-lg">
-                <FileEdit className="h-5 w-5 text-amber-600" />
-              </div>
-              <div className="flex flex-col">
-                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Drafts</span>
-                <span className="text-2xl font-black text-amber-600">{stats.drafts}</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-red-500/5 border-red-500/20">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-red-500/10 rounded-lg">
-                <AlertCircle className="h-5 w-5 text-red-600" />
-              </div>
-              <div className="flex flex-col">
-                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Flagged</span>
-                <span className="text-2xl font-black text-red-600">{stats.flagged}</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="flex flex-wrap gap-2 border-b pb-4">
-        <Button variant={filter === 'all' ? 'secondary' : 'ghost'} size="sm" asChild>
-          <Link href="/reviewer/dashboard">All Portfolios</Link>
-        </Button>
-        <Button variant={filter === 'pending' ? 'secondary' : 'ghost'} size="sm" asChild>
-          <Link href="/reviewer/dashboard?status=pending">🆕 To Do</Link>
-        </Button>
-        <Button variant={filter === 'completed' ? 'secondary' : 'ghost'} size="sm" asChild>
-          <Link href="/reviewer/dashboard?status=completed">✅ Finished</Link>
-        </Button>
-        <Button variant={filter === 'flagged' ? 'secondary' : 'ghost'} size="sm" asChild className="text-red-500 hover:text-red-600">
-          <Link href="/reviewer/dashboard?status=flagged">🚩 Flagged</Link>
-        </Button>
-      </div>
-
-      {filteredAssignments.length > 0 ? (
-        <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted/50">
-                <TableHead className="font-bold">Candidate Identifier</TableHead>
-                <TableHead className="font-bold">Last Activity</TableHead>
-                <TableHead className="font-bold">Status</TableHead>
-                <TableHead className="text-right font-bold">Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredAssignments.map((app) => (
-                <TableRow key={app.id} className="hover:bg-muted/30 transition-colors">
-                  <TableCell>
-                    <div className="flex flex-col">
-                      <span className="font-bold flex items-center gap-2">
-                        Applicant {app.id.substring(0, 6).toUpperCase()}
-                        {app.isFlagged && <Badge variant="destructive" className="h-5 text-[9px] uppercase">Flagged</Badge>}
-                      </span>
-                      <span className="text-[10px] text-muted-foreground uppercase flex items-center gap-1 mt-1">
-                        <Clock className="h-2 w-2" /> Submitted: {app.submissionDate ? new Date(app.submissionDate).toLocaleDateString() : 'N/A'}
-                      </span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <span className="text-xs text-muted-foreground font-medium">
-                      {app.lastUpdated ? app.lastUpdated.toLocaleString() : '---'}
+      <div className="grid gap-6 lg:grid-cols-12">
+        {/* Sidebar: Programs */}
+        <div className="lg:col-span-4 space-y-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg">Assigned Programs</CardTitle>
+              <CardDescription>Select a scholarship to view assignments.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {scholarships?.map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => setSelectedScholarshipId(s.id)}
+                  className={`w-full text-left p-3 rounded-lg border transition-all flex items-center justify-between group ${
+                    selectedScholarshipId === s.id 
+                    ? 'bg-primary text-primary-foreground border-primary' 
+                    : 'hover:bg-muted border-transparent'
+                  }`}
+                >
+                  <div className="flex flex-col">
+                    <span className="text-sm font-bold truncate max-w-[180px]">{s.name}</span>
+                    <span className={`text-[10px] uppercase font-black tracking-tighter ${selectedScholarshipId === s.id ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
+                      {s.amount} • {s.deadline}
                     </span>
-                  </TableCell>
-                  <TableCell>
-                    <Badge 
-                      variant={app.evalStatus === 'Evaluated' ? 'default' : app.evalStatus === 'Draft' ? 'secondary' : 'outline'}
-                      className={app.evalStatus === 'Draft' ? 'bg-amber-100 text-amber-800 hover:bg-amber-100' : ''}
-                    >
-                      {app.evalStatus}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button variant={app.evalStatus === 'Not Started' ? 'default' : 'outline'} size="sm" asChild className="font-bold">
-                      <Link href={`/reviewer/applications/${app.id}`}>
-                        {app.evalStatus === 'Not Started' ? 'Begin Review' : app.evalStatus === 'Draft' ? 'Resume' : 'View/Edit'} 
-                        <ArrowRight className="h-4 w-4 ml-2" />
-                      </Link>
-                    </Button>
-                  </TableCell>
-                </TableRow>
+                  </div>
+                  <ChevronRight className={`h-4 w-4 transition-transform ${selectedScholarshipId === s.id ? 'translate-x-1' : 'opacity-0'}`} />
+                </button>
               ))}
-            </TableBody>
-          </Table>
+              {(!scholarships || scholarships.length === 0) && (
+                <p className="text-xs text-muted-foreground italic p-4 text-center">No active assignments found.</p>
+              )}
+            </CardContent>
+          </Card>
         </div>
-      ) : (
-        <div className="flex flex-col items-center justify-center py-24 bg-muted/10 rounded-2xl border-2 border-dashed">
-          <Inbox className="h-12 w-12 text-muted-foreground mb-4 opacity-20" />
-          <p className="text-lg font-bold text-muted-foreground">Queue Empty</p>
-          <p className="text-sm text-muted-foreground max-w-sm text-center mt-1">
-            No portfolios currently match your active filters.
-          </p>
+
+        {/* Main: Applicants */}
+        <div className="lg:col-span-8 space-y-4">
+          {selectedScholarshipId ? (
+            <Card className="border-primary/10">
+              <CardHeader className="bg-muted/30 border-b">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <CardTitle className="text-xl flex items-center gap-2">
+                      <GraduationCap className="h-5 w-5 text-primary" /> 
+                      {activeScholarship?.name || 'Review Queue'}
+                    </CardTitle>
+                    <CardDescription>Targeted application stream for this program.</CardDescription>
+                  </div>
+                  <Badge className="bg-green-600">{applications?.length || 0} Pending</Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                {isAppsLoading ? (
+                  <div className="flex justify-center py-20"><Loader2 className="animate-spin text-primary" /></div>
+                ) : applications && applications.length > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="pl-6">Candidate</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right pr-6">Action</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {applications.map((app) => (
+                        <TableRow key={app.id}>
+                          <TableCell className="pl-6">
+                            <span className="font-bold">Applicant {app.id.substring(0, 6).toUpperCase()}</span>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="secondary">Ready for Review</Badge>
+                          </TableCell>
+                          <TableCell className="text-right pr-6">
+                            <Button variant="outline" size="sm" asChild>
+                              <Link href={`/reviewer/applications/${app.id}`}>
+                                Evaluate <ArrowRight className="ml-2 h-4 w-4" />
+                              </Link>
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <div className="text-center py-20">
+                    <Inbox className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-20" />
+                    <p className="text-sm font-medium text-muted-foreground">The queue for this scholarship is empty.</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="h-full flex items-center justify-center border-2 border-dashed rounded-xl bg-muted/10 p-20 text-center">
+               <div className="space-y-2">
+                  <Lock className="h-8 w-8 text-muted-foreground mx-auto opacity-20" />
+                  <p className="text-muted-foreground font-medium">Select a program to begin evaluating portfolios.</p>
+               </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

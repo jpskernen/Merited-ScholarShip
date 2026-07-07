@@ -10,9 +10,9 @@
         "email": { "type": "string", "format": "email" },
         "status": { "type": "string", "enum": ["Pending", "Accepted", "Expired"] },
         "createdAt": { "type": "string", "format": "date-time" },
-        "schoolId": { "type": "string" }
+        "organizationId": { "type": "string" }
       },
-      "required": ["id", "email", "status", "createdAt", "schoolId"]
+      "required": ["id", "email", "status", "createdAt", "organizationId"]
     },
     "AdminInvite": {
       "title": "AdminInvite",
@@ -23,9 +23,9 @@
         "email": { "type": "string", "format": "email" },
         "status": { "type": "string", "enum": ["Pending", "Accepted", "Expired"] },
         "createdAt": { "type": "string", "format": "date-time" },
-        "schoolId": { "type": "string" }
+        "organizationId": { "type": "string" }
       },
-      "required": ["id", "email", "status", "createdAt", "schoolId"]
+      "required": ["id", "email", "status", "createdAt", "organizationId"]
     },
     "SentEmail": {
       "title": "SentEmail",
@@ -43,7 +43,7 @@
     },
     "Scholarship": {
       "title": "Scholarship",
-      "description": "Represents a scholarship program managed by a school.",
+      "description": "Represents a scholarship program managed by an organization.",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
@@ -52,161 +52,77 @@
         "deadline": { "type": "string" },
         "description": { "type": "string" },
         "tags": { "type": "array", "items": { "type": "string" } },
-        "schoolId": { "type": "string" },
-        "reviewerIds": { "type": "array", "items": { "type": "string" }, "description": "List of UIDs for reviewers assigned to this program." },
+        "organizationId": { "type": "string" },
+        "reviewerIds": { "type": "array", "items": { "type": "string" } },
         "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["name", "amount", "deadline", "description", "schoolId"]
+      "required": ["name", "amount", "deadline", "description", "organizationId"]
     },
-    "RecommendationToken": {
-      "title": "RecommendationToken",
-      "description": "A secure token allowing a recommender to upload a letter for a student.",
+    "Application": {
+      "title": "Application",
+      "description": "A student's submission for a specific scholarship.",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
-        "applicationId": { "type": "string" },
-        "studentName": { "type": "string" },
-        "recommenderName": { "type": "string" },
-        "recommenderEmail": { "type": "string" },
-        "scholarshipTitle": { "type": "string" },
+        "studentId": { "type": "string" },
+        "scholarshipId": { "type": "string" },
         "organizationId": { "type": "string" },
-        "requestIndex": { "type": "number" },
-        "used": { "type": "boolean" },
-        "expiresAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string" },
+        "data": { "type": "object" },
+        "submittedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Organization": {
+      "title": "Organization",
+      "type": "object",
+      "description": "Represents a tenant (school or foundation).",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["applicationId", "studentName", "recommenderName", "recommenderEmail", "used"]
-    },
-    "School": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "School",
-      "type": "object",
-      "description": "Represents a tenant in the multi-tenant SaaS application, corresponding to an educational institution.",
-      "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the School entity."
-        },
-        "name": {
-          "type": "string",
-          "description": "The official name of the school or institution."
-        },
-        "logoUrl": {
-          "type": "string",
-          "description": "URL to the school's logo, displayed in their portal.",
-          "format": "uri"
-        },
-        "customDomain": {
-          "type": "string",
-          "description": "Optional custom domain for the school's dedicated portal access.",
-          "format": "uri"
-        },
-        "createdAt": {
-          "type": "string",
-          "description": "Timestamp when the school record was created.",
-          "format": "date-time"
-        },
-        "updatedAt": {
-          "type": "string",
-          "description": "Timestamp when the school record was last updated.",
-          "format": "date-time"
-        }
-      },
-      "required": [
-        "id",
-        "name",
-        "createdAt",
-        "updatedAt"
-      ]
+      "required": ["id", "name", "createdAt"]
     },
     "User": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "User",
       "type": "object",
-      "description": "Represents a user account within the system, belonging to a specific school and having a designated role.",
+      "description": "User account data.",
       "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the User entity."
-        },
-        "schoolId": {
-          "type": "string",
-          "description": "Reference to the School this user belongs to. (Relationship: School 1:N User)"
-        },
-        "email": {
-          "type": "string",
-          "description": "The user's email address, used for login and notifications.",
-          "format": "email"
-        },
-        "firstName": {
-          "type": "string",
-          "description": "The user's first name."
-        },
-        "lastName": {
-          "type": "string",
-          "description": "The user's last name."
-        },
-        "role": {
-          "type": "string",
-          "description": "The role of the user within the system (e.g., 'Applicant', 'Admin', 'Reviewer')."
-        },
-        "createdAt": {
-          "type": "string",
-          "description": "Timestamp when the user account was created.",
-          "format": "date-time"
-        },
-        "updatedAt": {
-          "type": "string",
-          "description": "Timestamp when the user account was last updated.",
-          "format": "date-time"
-        }
-      },
-      "required": [
-        "id",
-        "schoolId",
-        "email",
-        "firstName",
-        "lastName",
-        "role",
-        "createdAt",
-        "updatedAt"
-      ]
+        "id": { "type": "string" },
+        "organizationId": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "name": { "type": "string" },
+        "role": { "type": "string" }
+      }
     }
   },
   "auth": {
-    "providers": [
-      "password",
-      "anonymous"
-    ]
+    "providers": ["password", "anonymous"]
   },
   "firestore": {
-    "/recommendationTokens/{tokenId}": {
-      "schema": "#/backend/entities/RecommendationToken",
-      "description": "Tokens for secure recommendation letter uploads."
+    "/organizations/{orgId}": {
+      "schema": "#/backend/entities/Organization",
+      "description": "Organization data."
     },
-    "/invites/{inviteId}": {
-      "schema": "#/backend/entities/ReviewerInvite",
-      "description": "Secure invitations for new reviewers."
+    "/organizations/{orgId}/scholarships/{scholarshipId}": {
+      "schema": "#/backend/entities/Scholarship",
+      "description": "Scholarship programs within an organization."
     },
-    "/admin_invites/{inviteId}": {
-      "schema": "#/backend/entities/AdminInvite",
-      "description": "Secure invitations for new administrators."
-    },
-    "/sent_emails/{emailId}": {
-      "schema": "#/backend/entities/SentEmail",
-      "description": "Simulated outbox for system notifications."
-    },
-    "/schools/{schoolId}": {
-      "schema": "#/backend/entities/School",
-      "description": "Top-level collection for each school."
+    "/organizations/{orgId}/scholarships/{scholarshipId}/applications/{appId}": {
+      "schema": "#/backend/entities/Application",
+      "description": "Applications for a specific scholarship."
     },
     "/users/{userId}": {
       "schema": "#/backend/entities/User",
-      "description": "User profile data."
+      "description": "User profiles."
     },
-    "/programs/{programId}": {
-      "schema": "#/backend/entities/Scholarship",
-      "description": "Active scholarship programs."
+    "/invites/{inviteId}": {
+      "schema": "#/backend/entities/ReviewerInvite",
+      "description": "Reviewer invitations."
+    },
+    "/admin_invites/{inviteId}": {
+      "schema": "#/backend/entities/AdminInvite",
+      "description": "Admin invitations."
     }
   }
 }

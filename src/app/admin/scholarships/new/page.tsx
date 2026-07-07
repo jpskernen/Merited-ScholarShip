@@ -1,9 +1,10 @@
+
 'use client';
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useFirebase } from '@/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { useFirebase, useUser } from '@/firebase';
+import { collection, addDoc, serverTimestamp, doc, setDoc } from 'firebase/firestore';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ScholarshipSchema, type Scholarship } from '@/types/scholarship';
@@ -19,9 +20,12 @@ import { Badge } from '@/components/ui/badge';
 
 export default function NewScholarshipPage() {
   const { firestore } = useFirebase();
+  const { userData } = useUser();
   const router = useRouter();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const organizationId = userData?.organizationId || userData?.schoolId || 'scholarship-hib4j';
 
   const {
     register,
@@ -66,12 +70,19 @@ export default function NewScholarshipPage() {
 
     setIsSubmitting(true);
     try {
-      await addDoc(collection(firestore, 'programs'), {
+      const scholarshipData = {
         ...data,
-        schoolId: 'scholarship-hib4j',
+        organizationId: organizationId,
+        schoolId: organizationId,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-      });
+      };
+
+      // 1. Legacy save
+      const docRef = await addDoc(collection(firestore, 'programs'), scholarshipData);
+
+      // 2. Hierarchical save
+      await setDoc(doc(firestore, 'organizations', organizationId, 'scholarships', docRef.id), scholarshipData);
 
       toast({ title: "Scholarship Published", description: "Program is now live for applicants." });
       router.push('/admin/scholarships');

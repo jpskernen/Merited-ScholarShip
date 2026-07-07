@@ -1,3 +1,4 @@
+
 'use server';
 
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -37,9 +38,24 @@ export async function saveApplicantData(userId: string, formData: FormData, isSu
         }
     }
 
+    const organizationId = dataToSave.organizationId || dataToSave.schoolId || 'scholarship-hib4j';
+    
     if (isSubmit) {
       dataToSave.status = 'Submitted';
       dataToSave.submissionDate = new Date().toISOString();
+      
+      // Create a specific application record in the hierarchical sub-collection
+      const scholarshipId = 'general-portfolio'; // Default if not specified
+      const appRef = doc(db, 'organizations', organizationId, 'scholarships', scholarshipId, 'applications', userId);
+      await setDoc(appRef, {
+        id: userId,
+        studentId: userId,
+        organizationId: organizationId,
+        scholarshipId: scholarshipId,
+        status: 'Submitted',
+        data: dataToSave,
+        submittedAt: serverTimestamp()
+      });
     } else if (!dataToSave.status) {
       dataToSave.status = 'Draft';
     }
