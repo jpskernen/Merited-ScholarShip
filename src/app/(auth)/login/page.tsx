@@ -12,56 +12,34 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useAuth, initiateEmailSignIn, useFirestore } from '@/firebase';
+import { useAuth, initiateEmailSignIn, useUser } from '@/firebase';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
-import { useToast } from '@/hooks/use-toast';
-import { Eye, EyeOff, Loader2, AlertCircle } from 'lucide-react';
-import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export default function LoginPage() {
   const auth = useAuth();
-  const firestore = useFirestore();
+  const { user, role, isUserLoading } = useUser();
   const router = useRouter();
-  const { toast } = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Redirection Logic after authentication
+  // Redirection Logic after role is determined
   useEffect(() => {
-    if (!auth || !firestore) return;
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user && isSigningIn) {
-        try {
-          const [userDoc, adminDoc, reviewerDoc] = await Promise.all([
-            getDoc(doc(firestore, 'users', user.uid)),
-            getDoc(doc(firestore, 'roles_admin', user.uid)),
-            getDoc(doc(firestore, 'reviewers', user.uid))
-          ]);
-          
-          const userData = userDoc.exists() ? userDoc.data() : null;
-          const isAdmin = adminDoc.exists() || user.email === 'peyton.vandenbemden@gmail.com';
-          const isReviewer = reviewerDoc.exists() || userData?.role?.toLowerCase() === 'reviewer' || user.email === 'reviewer@test.com';
-          
-          if (isAdmin) {
-            router.push('/admin');
-          } else if (isReviewer) {
-            router.push('/reviewer/dashboard');
-          } else {
-            router.push('/dashboard');
-          }
-        } catch (error) {
-          router.push('/dashboard');
-        }
+    if (user && role && !isUserLoading && isSigningIn) {
+      if (role === 'Admin') {
+        router.push('/admin');
+      } else if (role === 'Reviewer') {
+        router.push('/reviewer/dashboard');
+      } else {
+        router.push('/dashboard');
       }
-    });
-    return () => unsubscribe();
-  }, [auth, firestore, isSigningIn, router]);
+    }
+  }, [user, role, isUserLoading, isSigningIn, router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,6 +48,7 @@ export default function LoginPage() {
     setError(null);
     try {
       await initiateEmailSignIn(auth, email, password);
+      // Redirection is handled by the useEffect above once the Provider resolves the role
     } catch (error: any) {
       let message = 'Please check your credentials and try again.';
       if (

@@ -24,10 +24,12 @@ import {
   Award,
   FileSearch,
   ShieldCheck,
-  Loader2
+  Loader2,
+  History,
+  FlaskConical
 } from 'lucide-react';
 import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useUser } from '@/firebase';
 import { useEffect, useState, Suspense } from 'react';
 
@@ -40,13 +42,16 @@ const applicantNav = [
 
 const reviewerNav = [
   { href: '/reviewer/dashboard', label: 'Review Center', icon: LayoutDashboard },
-  { href: '/reviewer/dashboard?status=pending', label: 'New Assignments', icon: FileSearch },
+  { href: '/reviewer/dashboard?status=pending', label: 'Assignments', icon: FileSearch },
 ];
 
 const adminNav = [
   { href: '/admin', label: 'Admin Panel', icon: LayoutDashboard },
   { href: '/admin/applicants', label: 'Committee Results', icon: Users },
+  { href: '/admin/reviewers', label: 'Manage Reviewers', icon: Award },
   { href: '/admin/scholarships', label: 'Programs', icon: Award },
+  { href: '/admin/audit-log', label: 'Audit Log', icon: History },
+  { href: '/admin/test-utils', label: 'Dev Utils', icon: FlaskConical },
 ];
 
 function DashboardLayoutContent({
@@ -55,7 +60,6 @@ function DashboardLayoutContent({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const router = useRouter();
   const { user, role, isUserLoading } = useUser();
   const [mounted, setMounted] = useState(false);
@@ -64,6 +68,7 @@ function DashboardLayoutContent({
     setMounted(true);
   }, []);
 
+  // Access Control Enforcement
   useEffect(() => {
     if (mounted && !isUserLoading) {
       if (!user) {
@@ -73,39 +78,38 @@ function DashboardLayoutContent({
         return;
       }
 
-      const userRole = role?.toLowerCase();
-      const isAdmin = userRole === 'admin';
-      const isReviewer = userRole === 'reviewer' || isAdmin;
-      const isApplicant = userRole === 'applicant' || isAdmin;
+      const isAdmin = role === 'Admin';
+      const isReviewer = role === 'Reviewer';
+      const isApplicant = role === 'Applicant';
 
-      // Access Control Redirection
-      if (pathname.startsWith('/admin') && !isAdmin) {
-        router.push('/unauthorized');
-      } else if (pathname.startsWith('/reviewer') && !isReviewer) {
-        router.push('/unauthorized');
-      } else if (pathname.startsWith('/dashboard') && !isApplicant) {
-        // Reviewers should be sent to their portal if they try to access student portal
-        router.push(isReviewer ? '/reviewer/dashboard' : '/login');
+      // 1. Redirect Reviewers trying to access Student/Admin portals
+      if (isReviewer) {
+        if (pathname.startsWith('/dashboard') || pathname.startsWith('/admin')) {
+          router.push('/reviewer/dashboard');
+        }
+      } 
+      // 2. Redirect Admins to root admin if lost
+      else if (isAdmin) {
+        if (pathname === '/dashboard') {
+          router.push('/admin');
+        }
+      }
+      // 3. Redirect Applicants trying to access restricted areas
+      else if (isApplicant) {
+        if (pathname.startsWith('/admin') || pathname.startsWith('/reviewer')) {
+          router.push('/dashboard');
+        }
       }
     }
   }, [mounted, user, role, isUserLoading, pathname, router]);
 
   const isActive = (href: string) => {
-    const searchParamsString = searchParams.toString();
-    const currentFull = pathname + (searchParamsString ? `?${searchParamsString}` : '');
-    if (currentFull === href) return true;
-    if (!searchParamsString && pathname === href) return true;
-    const cleanHref = href.split('?')[0];
-    if (href !== '/dashboard' && href !== '/admin' && href !== '/reviewer/dashboard' && pathname.startsWith(cleanHref)) {
-      return true;
-    }
-    return false;
+    return pathname === href || (href !== '/dashboard' && href !== '/admin' && href !== '/reviewer/dashboard' && pathname.startsWith(href));
   };
   
   const getNavItems = () => {
-    const userRole = role?.toLowerCase();
-    if (userRole === 'admin') return adminNav;
-    if (userRole === 'reviewer') return reviewerNav;
+    if (role === 'Admin') return adminNav;
+    if (role === 'Reviewer') return reviewerNav;
     return applicantNav;
   };
 
@@ -124,22 +128,11 @@ function DashboardLayoutContent({
   }
   
   if (!user && shouldShowLayout) return null;
-
-  const userRole = role?.toLowerCase();
-  const isAdmin = userRole === 'admin';
-  const isReviewer = userRole === 'reviewer' || isAdmin;
-  const isApplicant = userRole === 'applicant' || isAdmin;
-  
-  // Final safeguard before render
-  if (pathname.startsWith('/admin') && !isAdmin) return null;
-  if (pathname.startsWith('/reviewer') && !isReviewer) return null;
-  if (pathname.startsWith('/dashboard') && !isApplicant) return null;
-
   if (!shouldShowLayout) return <>{children}</>;
 
   const getPortalLabel = () => {
-    if (isAdmin) return 'Sponsor/Admin';
-    if (isReviewer) return 'Committee';
+    if (role === 'Admin') return 'Sponsor/Admin';
+    if (role === 'Reviewer') return 'Committee';
     return 'Applicant';
   };
 
@@ -172,7 +165,7 @@ function DashboardLayoutContent({
             </SidebarGroup>
           </SidebarContent>
           <div className="mt-auto p-4">
-             {isAdmin && (
+             {role === 'Admin' && (
                <Badge variant="outline" className="w-full justify-center gap-1.5 py-1 text-[10px] font-bold tracking-tight">
                  <ShieldCheck className="h-3 w-3" /> System Admin Verified
                </Badge>

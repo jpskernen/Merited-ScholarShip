@@ -99,6 +99,7 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
         }
 
         try {
+          // Perform parallel lookups to determine role
           const [userDoc, adminDoc, reviewerDoc] = await Promise.all([
             getDoc(doc(firestore, 'users', firebaseUser.uid)),
             getDoc(doc(firestore, 'roles_admin', firebaseUser.uid)),
@@ -110,15 +111,24 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
           let role = 'Applicant';
           
           const isHardcodedAdmin = firebaseUser.email === 'peyton.vandenbemden@gmail.com';
-          const isHardcodedReviewer = firebaseUser.email === 'reviewer@test.com' || firebaseUser.email === 'peyton.vandenbemden@gmail.com';
+          const isHardcodedReviewer = firebaseUser.email === 'reviewer@test.com' || firebaseUser.uid === 'vj3d8Nz7O5QA1XXlK5QtCj03OZF2';
 
           if (adminDoc.exists() || isHardcodedAdmin) {
             role = 'Admin';
           } else if (reviewerDoc.exists() || dbUserData?.role?.toLowerCase() === 'reviewer' || isHardcodedReviewer) {
             role = 'Reviewer';
           } else if (dbUserData?.role) {
-            role = dbUserData.role.charAt(0).toUpperCase() + dbUserData.role.slice(1).toLowerCase();
-            if (role === 'Student') role = 'Applicant';
+            // Standardize role casing
+            const rawRole = dbUserData.role.toLowerCase();
+            if (rawRole === 'admin') role = 'Admin';
+            else if (rawRole === 'reviewer') role = 'Reviewer';
+            else role = 'Applicant';
+          }
+
+          // Force Organization ID for test reviewer if missing
+          if (firebaseUser.uid === 'vj3d8Nz7O5QA1XXlK5QtCj03OZF2' && dbUserData && !dbUserData.organizationId) {
+             dbUserData.organizationId = 'scholarship-hib4j';
+             dbUserData.schoolId = 'scholarship-hib4j';
           }
 
           setUserAuthState({
@@ -129,6 +139,7 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
             userError: null,
           });
         } catch (error: any) {
+          console.error("Role resolution error:", error);
           setUserAuthState({
             user: firebaseUser,
             role: 'Applicant',
