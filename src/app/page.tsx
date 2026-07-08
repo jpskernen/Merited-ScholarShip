@@ -27,6 +27,30 @@ export default function Home() {
     setMounted(true);
   }, []);
 
+  const showConfigWarning = useMemo(() => {
+    if (!mounted) return false;
+    
+    // Only show the warning in development mode, never in production.
+    if (process.env.NODE_ENV !== 'development') return false;
+
+    // Check for all 6 required environment variables.
+    const requiredVars = [
+      process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+      process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+      process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+      process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+      process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+      process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+    ];
+
+    const allVarsPresent = requiredVars.every(v => !!v && !v.includes('your_'));
+    
+    // If all variables are present and defined, do not show the warning at all.
+    if (allVarsPresent && areServicesAvailable) return false;
+
+    return true;
+  }, [mounted, areServicesAvailable]);
+
   const scholarshipsQuery = useMemoFirebase(() => {
     if (!firestore) return null;
     return collection(firestore, 'programs');
@@ -78,7 +102,7 @@ export default function Home() {
       </header>
 
       <main className="flex-1">
-        {!areServicesAvailable && mounted && (
+        {showConfigWarning && (
           <div className="bg-amber-500/10 border-b border-amber-500/20 py-2">
             <div className="container mx-auto px-4 flex items-center gap-2 text-amber-600 text-xs font-medium">
               <AlertCircle className="h-4 w-4" />
