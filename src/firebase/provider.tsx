@@ -145,7 +145,7 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
 
           setUserAuthState({
             user: firebaseUser,
-            role: role,
+            role: role.toLowerCase(),
             userData: dbUserData,
             isUserLoading: false,
             userError: null,

@@ -48,7 +48,7 @@ export default function ReviewerLoginPage() {
           if (isAdmin) {
             router.push('/admin');
           } else if (isReviewer) {
-            router.push('/review');
+            router.push('/reviewer/dashboard');
           } else {
             router.push('/dashboard');
           }

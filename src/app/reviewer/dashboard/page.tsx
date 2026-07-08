@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useMemo, useState, useEffect, Suspense } from 'react';
@@ -48,7 +47,7 @@ function ReviewerDashboardContent() {
   const scholarshipsQuery = useMemoFirebase(() => {
     if (!firestore || !organizationId || !user) return null;
     return query(
-      collection(firestore, 'programs'), // Fallback for legacy
+      collection(firestore, 'programs'),
       where('organizationId', '==', organizationId),
       where('reviewerIds', 'array-contains', user.uid)
     );
@@ -62,12 +61,12 @@ function ReviewerDashboardContent() {
     }
   }, [scholarships, selectedScholarshipId]);
 
-  // 2. Fetch Applications for the Selected Scholarship (Very Specific Query)
+  // 2. Fetch Applications for the Selected Scholarship (Hierarchical Query)
   const applicationsQuery = useMemoFirebase(() => {
     if (!firestore || !organizationId || !selectedScholarshipId) return null;
     return query(
       collection(firestore, 'organizations', organizationId, 'scholarships', selectedScholarshipId, 'applications'),
-      where('status', '==', 'Submitted')
+      where('status', 'in', ['Submitted', 'submitted'])
     );
   }, [firestore, organizationId, selectedScholarshipId]);
 

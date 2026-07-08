@@ -62,13 +62,13 @@ export default function AdminApplicantsPage() {
     setIsDataLoading(true);
     const q = query(
       collection(firestore, 'users'),
-      where('role', '==', 'Applicant'),
+      where('role', '==', 'applicant'),
       where('schoolId', '==', schoolId)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setApplications(docs.filter((app: any) => app.status !== 'Draft'));
+      setApplications(docs.filter((app: any) => app.status?.toLowerCase() !== 'draft'));
       setIsDataLoading(false);
     });
 
@@ -104,7 +104,7 @@ export default function AdminApplicantsPage() {
     });
 
     if (statusFilter !== 'all') {
-      data = data.filter(item => item.status === statusFilter);
+      data = data.filter(item => item.status?.toLowerCase() === statusFilter.toLowerCase());
     }
 
     return data;

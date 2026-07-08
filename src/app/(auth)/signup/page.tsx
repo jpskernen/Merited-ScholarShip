@@ -50,7 +50,7 @@ export default function SignupPage() {
       if (user && isSigningUp) {
         try {
           await updateProfile(user, { displayName: name });
-          const role = user.email === 'peyton.vandenbemden@gmail.com' ? 'Admin' : 'Applicant';
+          const role = user.email === 'peyton.vandenbemden@gmail.com' ? 'admin' : 'applicant';
           
           await setDoc(doc(firestore, 'users', user.uid), {
             id: user.uid,
@@ -62,15 +62,15 @@ export default function SignupPage() {
             updatedAt: serverTimestamp(),
           }, { merge: true });
 
-          if (role === 'Admin') {
-            await setDoc(doc(firestore, 'roles_admin', user.uid), { id: user.uid, role: 'Admin', grantedAt: serverTimestamp() });
+          if (role === 'admin') {
+            await setDoc(doc(firestore, 'roles_admin', user.uid), { id: user.uid, role: 'admin', grantedAt: serverTimestamp() });
           }
 
           // Trigger Welcome Email
           await sendWelcomeEmail(user.email!, name);
 
           toast({ title: "Account Created", description: "Welcome to Merited." });
-          router.push(role === 'Admin' ? '/admin' : '/dashboard');
+          router.push(role === 'admin' ? '/admin' : '/dashboard');
         } catch (err) {
           setIsSigningUp(false);
         }
