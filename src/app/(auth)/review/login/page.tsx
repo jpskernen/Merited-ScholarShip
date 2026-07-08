@@ -43,7 +43,7 @@ export default function ReviewerLoginPage() {
           
           const isAdmin = adminDoc.exists() || user.email === 'peyton.vandenbemden@gmail.com';
           const userData = userDoc.exists() ? userDoc.data() : null;
-          const isReviewer = userData?.role === 'Reviewer';
+          const isReviewer = userData?.role?.toLowerCase() === 'reviewer';
 
           if (isAdmin) {
             router.push('/admin');

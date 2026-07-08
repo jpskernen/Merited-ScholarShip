@@ -78,9 +78,9 @@ function DashboardLayoutContent({
         return;
       }
 
-      const isAdmin = role === 'Admin';
-      const isReviewer = role === 'Reviewer';
-      const isApplicant = role === 'Applicant';
+      const isAdmin = role?.toLowerCase() === 'admin';
+      const isReviewer = role?.toLowerCase() === 'reviewer';
+      const isApplicant = role?.toLowerCase() === 'applicant';
 
       // 1. Redirect Reviewers trying to access Student/Admin portals
       if (isReviewer) {
@@ -108,8 +108,9 @@ function DashboardLayoutContent({
   };
   
   const getNavItems = () => {
-    if (role === 'Admin') return adminNav;
-    if (role === 'Reviewer') return reviewerNav;
+    const normalizedRole = role?.toLowerCase();
+    if (normalizedRole === 'admin') return adminNav;
+    if (normalizedRole === 'reviewer') return reviewerNav;
     return applicantNav;
   };
 
@@ -131,8 +132,9 @@ function DashboardLayoutContent({
   if (!shouldShowLayout) return <>{children}</>;
 
   const getPortalLabel = () => {
-    if (role === 'Admin') return 'Sponsor/Admin';
-    if (role === 'Reviewer') return 'Committee';
+    const normalizedRole = role?.toLowerCase();
+    if (normalizedRole === 'admin') return 'Sponsor/Admin';
+    if (normalizedRole === 'reviewer') return 'Committee';
     return 'Applicant';
   };
 
@@ -165,7 +167,7 @@ function DashboardLayoutContent({
             </SidebarGroup>
           </SidebarContent>
           <div className="mt-auto p-4">
-             {role === 'Admin' && (
+             {role?.toLowerCase() === 'admin' && (
                <Badge variant="outline" className="w-full justify-center gap-1.5 py-1 text-[10px] font-bold tracking-tight">
                  <ShieldCheck className="h-3 w-3" /> System Admin Verified
                </Badge>

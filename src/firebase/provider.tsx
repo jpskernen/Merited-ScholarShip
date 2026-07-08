@@ -106,8 +106,8 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
           if (isHardcodedAdmin) {
             setUserAuthState({
               user: firebaseUser,
-              role: 'Admin',
-              userData: { role: 'Admin', organizationId: 'scholarship-hib4j' },
+              role: 'admin',
+              userData: { role: 'admin', organizationId: 'scholarship-hib4j' },
               isUserLoading: false,
               userError: null,
             });
@@ -117,8 +117,8 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
           if (isHardcodedReviewer) {
             setUserAuthState({
               user: firebaseUser,
-              role: 'Reviewer',
-              userData: { role: 'Reviewer', organizationId: 'scholarship-hib4j', schoolId: 'scholarship-hib4j' },
+              role: 'reviewer',
+              userData: { role: 'reviewer', organizationId: 'scholarship-hib4j', schoolId: 'scholarship-hib4j' },
               isUserLoading: false,
               userError: null,
             });
@@ -133,17 +133,14 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
           ]);
 
           const dbUserData = userDoc.exists() ? userDoc.data() : null;
-          let role = 'Applicant';
+          let role = 'applicant';
 
           if (adminDoc.exists()) {
-            role = 'Admin';
+            role = 'admin';
           } else if (reviewerDoc.exists() || dbUserData?.role?.toLowerCase() === 'reviewer') {
-            role = 'Reviewer';
+            role = 'reviewer';
           } else if (dbUserData?.role) {
-            const rawRole = dbUserData.role.toLowerCase();
-            if (rawRole === 'admin') role = 'Admin';
-            else if (rawRole === 'reviewer') role = 'Reviewer';
-            else role = 'Applicant';
+            role = dbUserData.role.toLowerCase();
           }
 
           setUserAuthState({
@@ -157,7 +154,7 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
           console.error("Role resolution error:", error);
           setUserAuthState({
             user: firebaseUser,
-            role: 'Applicant',
+            role: 'applicant',
             userData: null,
             isUserLoading: false,
             userError: error,

@@ -32,9 +32,10 @@ export default function LoginPage() {
   useEffect(() => {
     if (user && role && !isUserLoading && isSigningIn) {
       console.log('Login Redirect triggered for role:', role);
-      if (role === 'Admin') {
+      const normalizedRole = role.toLowerCase();
+      if (normalizedRole === 'admin') {
         router.push('/admin');
-      } else if (role === 'Reviewer') {
+      } else if (normalizedRole === 'reviewer') {
         router.push('/reviewer/dashboard');
       } else {
         router.push('/dashboard');
