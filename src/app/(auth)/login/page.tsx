@@ -31,6 +31,7 @@ export default function LoginPage() {
   // Redirection Logic after role is determined
   useEffect(() => {
     if (user && role && !isUserLoading && isSigningIn) {
+      console.log('Login Redirect triggered for role:', role);
       if (role === 'Admin') {
         router.push('/admin');
       } else if (role === 'Reviewer') {

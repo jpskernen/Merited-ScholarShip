@@ -99,7 +99,33 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
         }
 
         try {
-          // Perform parallel lookups to determine role
+          // CRITICAL: High-priority bypass for test accounts
+          const isHardcodedAdmin = firebaseUser.email === 'peyton.vandenbemden@gmail.com';
+          const isHardcodedReviewer = firebaseUser.email === 'reviewer@test.com' || firebaseUser.uid === 'vj3d8Nz7O5QA1XXlK5QtCj03OZF2';
+
+          if (isHardcodedAdmin) {
+            setUserAuthState({
+              user: firebaseUser,
+              role: 'Admin',
+              userData: { role: 'Admin', organizationId: 'scholarship-hib4j' },
+              isUserLoading: false,
+              userError: null,
+            });
+            return;
+          }
+
+          if (isHardcodedReviewer) {
+            setUserAuthState({
+              user: firebaseUser,
+              role: 'Reviewer',
+              userData: { role: 'Reviewer', organizationId: 'scholarship-hib4j', schoolId: 'scholarship-hib4j' },
+              isUserLoading: false,
+              userError: null,
+            });
+            return;
+          }
+
+          // Perform parallel lookups for production accounts
           const [userDoc, adminDoc, reviewerDoc] = await Promise.all([
             getDoc(doc(firestore, 'users', firebaseUser.uid)),
             getDoc(doc(firestore, 'roles_admin', firebaseUser.uid)),
@@ -107,28 +133,17 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
           ]);
 
           const dbUserData = userDoc.exists() ? userDoc.data() : null;
-          
           let role = 'Applicant';
-          
-          const isHardcodedAdmin = firebaseUser.email === 'peyton.vandenbemden@gmail.com';
-          const isHardcodedReviewer = firebaseUser.email === 'reviewer@test.com' || firebaseUser.uid === 'vj3d8Nz7O5QA1XXlK5QtCj03OZF2';
 
-          if (adminDoc.exists() || isHardcodedAdmin) {
+          if (adminDoc.exists()) {
             role = 'Admin';
-          } else if (reviewerDoc.exists() || dbUserData?.role?.toLowerCase() === 'reviewer' || isHardcodedReviewer) {
+          } else if (reviewerDoc.exists() || dbUserData?.role?.toLowerCase() === 'reviewer') {
             role = 'Reviewer';
           } else if (dbUserData?.role) {
-            // Standardize role casing
             const rawRole = dbUserData.role.toLowerCase();
             if (rawRole === 'admin') role = 'Admin';
             else if (rawRole === 'reviewer') role = 'Reviewer';
             else role = 'Applicant';
-          }
-
-          // Force Organization ID for test reviewer if missing
-          if (firebaseUser.uid === 'vj3d8Nz7O5QA1XXlK5QtCj03OZF2' && dbUserData && !dbUserData.organizationId) {
-             dbUserData.organizationId = 'scholarship-hib4j';
-             dbUserData.schoolId = 'scholarship-hib4j';
           }
 
           setUserAuthState({
