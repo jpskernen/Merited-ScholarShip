@@ -1,21 +1,42 @@
-
 'use client';
 
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useFirebase } from '@/firebase';
+import { useFirebase, useAuth, initiatePasswordReset } from '@/firebase';
 import { collection, addDoc, serverTimestamp, doc, setDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { Check, Copy, ExternalLink, Loader2, FlaskConical, Users } from 'lucide-react';
+import { Check, Copy, ExternalLink, Loader2, FlaskConical, Users, ShieldAlert, Mail } from 'lucide-react';
 import Link from 'next/link';
 
 export default function TestUtilsPage() {
   const { firestore } = useFirebase();
+  const auth = useAuth();
   const { toast } = useToast();
   const [isCreating, setIsCreating] = useState(false);
   const [isSeeding, setIsSeeding] = useState(false);
+  const [isResetting, setIsResetting] = useState<Record<string, boolean>>({});
   const [createdToken, setCreatedToken] = useState<string | null>(null);
+
+  const handlePasswordReset = async (email: string) => {
+    if (!auth) return;
+    setIsResetting(prev => ({ ...prev, [email]: true }));
+    try {
+      await initiatePasswordReset(auth, email);
+      toast({
+        title: "Reset Link Dispatched",
+        description: `Official Firebase recovery email sent to ${email}.`,
+      });
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: "Reset Failed",
+        description: err.message,
+      });
+    } finally {
+      setIsResetting(prev => ({ ...prev, [email]: false }));
+    }
+  };
 
   const createTestToken = async () => {
     if (!firestore) return;
@@ -163,10 +184,10 @@ export default function TestUtilsPage() {
         // Also add to primary users collection to satisfy dashboard queries
         await addDoc(collection(firestore, 'users'), {
           ...appData,
-          role: 'Applicant',
+          role: 'applicant',
           name: student.name,
           email: student.email,
-          status: 'Submitted'
+          status: 'submitted'
         });
       }
 
@@ -195,15 +216,15 @@ export default function TestUtilsPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-bold">Development Utilities</h1>
+        <h1 className="text-3xl font-bold">Platform Utilities</h1>
         <p className="text-muted-foreground italic flex items-center gap-2">
           <FlaskConical className="h-4 w-4 text-primary" />
-          Internal tools for verifying platform workflows and data structures.
+          Internal tools for verifying platform workflows and credential integrity.
         </p>
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
-        <Card className="border-dashed border-primary/20 bg-primary/5">
+        <Card className="border-primary/20 bg-primary/5">
           <CardHeader>
             <CardTitle className="text-lg">Recommendation Portal</CardTitle>
             <CardDescription>
@@ -238,24 +259,14 @@ export default function TestUtilsPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-dashed border-blue-200 bg-blue-50/5">
+        <Card className="border-blue-200 bg-blue-50/5">
           <CardHeader>
-            <CardTitle className="text-lg">Reviewer Portal Demo Seeding</CardTitle>
+            <CardTitle className="text-lg">Demo Application Seeding</CardTitle>
             <CardDescription>
-              Populate the database with 5 realistic student applications assigned to the test reviewer.
+              Populate the database with realistic student applications for reviewer testing.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="rounded-md bg-muted p-4 space-y-2">
-              <h4 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Preview Population</h4>
-              <ul className="text-[10px] space-y-1 text-muted-foreground">
-                <li>• Maya Rodriguez (GPA 3.85)</li>
-                <li>• James Washington (GPA 3.42)</li>
-                <li>• Priya Patel (GPA 3.98)</li>
-                <li>• Connor Murphy (GPA 3.25)</li>
-                <li>• Aaliyah Johnson (GPA 3.67)</li>
-              </ul>
-            </div>
             <Button onClick={seedDemoApplications} disabled={isSeeding} variant="secondary" className="w-full border-blue-200 bg-blue-100 hover:bg-blue-200 text-blue-700">
               {isSeeding ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Users className="mr-2 h-4 w-4" />}
               {isSeeding ? 'Seeding Database...' : 'Seed 5 Demo Applications'}
@@ -263,6 +274,52 @@ export default function TestUtilsPage() {
             <p className="text-[9px] text-muted-foreground text-center italic">
               Apps will be assigned to: vj3d8Nz7O5QA1XXlK5QtCj03OZF2
             </p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-amber-200 bg-amber-50/30 md:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <ShieldAlert className="h-5 w-5 text-amber-600" />
+              Test Account Management
+            </CardTitle>
+            <CardDescription>
+              Trigger official Firebase recovery workflows for standard test accounts.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4 sm:grid-cols-2">
+            <div className="p-4 rounded-xl border bg-card flex flex-col justify-between gap-4">
+              <div>
+                <p className="text-sm font-bold">Reviewer Test Account</p>
+                <code className="text-[10px] bg-muted px-1.5 py-0.5 rounded">reviewer@test.com</code>
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="w-fit"
+                disabled={isResetting['reviewer@test.com']}
+                onClick={() => handlePasswordReset('reviewer@test.com')}
+              >
+                {isResetting['reviewer@test.com'] ? <Loader2 className="h-3 w-3 mr-2 animate-spin" /> : <Mail className="h-3 w-3 mr-2 text-amber-600" />}
+                Send Reset Link
+              </Button>
+            </div>
+            <div className="p-4 rounded-xl border bg-card flex flex-col justify-between gap-4">
+              <div>
+                <p className="text-sm font-bold">Admin Test Account</p>
+                <code className="text-[10px] bg-muted px-1.5 py-0.5 rounded">admin@test.com</code>
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="w-fit"
+                disabled={isResetting['admin@test.com']}
+                onClick={() => handlePasswordReset('admin@test.com')}
+              >
+                {isResetting['admin@test.com'] ? <Loader2 className="h-3 w-3 mr-2 animate-spin" /> : <Mail className="h-3 w-3 mr-2 text-amber-600" />}
+                Send Reset Link
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>

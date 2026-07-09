@@ -99,15 +99,16 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
         }
 
         try {
-          // CRITICAL: High-priority bypass for test accounts
-          const isHardcodedAdmin = firebaseUser.email === 'peyton.vandenbemden@gmail.com';
-          const isHardcodedReviewer = firebaseUser.email === 'reviewer@test.com' || firebaseUser.uid === 'vj3d8Nz7O5QA1XXlK5QtCj03OZF2';
+          // CRITICAL: High-priority bypass for test accounts (Case-Insensitive)
+          const email = firebaseUser.email?.toLowerCase();
+          const isHardcodedAdmin = email === 'peyton.vandenbemden@gmail.com' || email === 'admin@test.com';
+          const isHardcodedReviewer = email === 'reviewer@test.com' || firebaseUser.uid === 'vj3d8Nz7O5QA1XXlK5QtCj03OZF2';
 
           if (isHardcodedAdmin) {
             setUserAuthState({
               user: firebaseUser,
               role: 'admin',
-              userData: { role: 'admin', organizationId: 'scholarship-hib4j' },
+              userData: { role: 'admin', organizationId: 'scholarship-hib4j', schoolId: 'scholarship-hib4j' },
               isUserLoading: false,
               userError: null,
             });

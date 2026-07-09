@@ -15,6 +15,8 @@ import Link from 'next/link';
 import { useCollection, useFirebase, useMemoFirebase } from '@/firebase';
 import { collection } from 'firebase/firestore';
 import type { Scholarship } from '@/types/scholarship';
+import { useMemo } from 'react';
+import scholarshipsData from '@/data/scholarships.json';
 
 export default function ScholarshipsPage() {
   const { firestore } = useFirebase();
@@ -24,7 +26,12 @@ export default function ScholarshipsPage() {
     return collection(firestore, 'programs');
   }, [firestore]);
 
-  const { data: scholarships, isLoading } = useCollection<Scholarship>(scholarshipsQuery);
+  const { data: dbScholarships, isLoading } = useCollection<Scholarship>(scholarshipsQuery);
+
+  const scholarships = useMemo(() => {
+    if (dbScholarships && dbScholarships.length > 0) return dbScholarships;
+    return scholarshipsData as any[];
+  }, [dbScholarships]);
 
   if (isLoading) {
     return (
@@ -37,9 +44,9 @@ export default function ScholarshipsPage() {
   return (
     <div className="space-y-6 md:space-y-8">
       <div>
-        <h1 className="text-2xl md:text-3xl font-bold">Find Scholarships</h1>
+        <h1 className="text-2xl md:text-3xl font-bold">Available Opportunities</h1>
         <p className="text-sm md:text-base text-muted-foreground">
-          Browse and apply for scholarships that match your profile.
+          Browse institutional programs and track matching criteria for your profile.
         </p>
       </div>
 
@@ -49,27 +56,27 @@ export default function ScholarshipsPage() {
             <CardHeader className="p-4 md:p-6">
               <div className="flex justify-between items-start">
                   <div className="max-w-[70%]">
-                    <CardTitle className="text-base md:text-lg">{scholarship.name}</CardTitle>
+                    <CardTitle className="text-base md:text-lg leading-tight">{scholarship.name}</CardTitle>
                   </div>
-                  <Badge variant="secondary" className="whitespace-nowrap text-[10px] md:text-xs">{scholarship.amount}</Badge>
+                  <Badge variant="secondary" className="whitespace-nowrap text-[10px] md:text-xs bg-primary/10 text-primary border-none">{scholarship.amount}</Badge>
               </div>
             </CardHeader>
             <CardContent className="flex-grow p-4 md:p-6 pt-0 md:pt-0">
-              <p className="text-xs md:text-sm text-muted-foreground mb-4 line-clamp-3">{scholarship.description}</p>
+              <p className="text-xs md:text-sm text-muted-foreground mb-4 line-clamp-3 leading-relaxed">{scholarship.description}</p>
               <div className="flex flex-wrap gap-2">
                 {Array.isArray(scholarship.tags) && scholarship.tags.map(tag => (
-                  <Badge key={tag} variant="outline" className="text-[9px] md:text-[10px]">{tag}</Badge>
+                  <Badge key={tag} variant="outline" className="text-[9px] md:text-[10px] font-bold uppercase tracking-widest">{tag}</Badge>
                 ))}
               </div>
             </CardContent>
             <CardFooter className="flex justify-between items-center border-t p-4 md:p-6">
               <div className="text-[10px] md:text-xs text-muted-foreground">
-                <p className="font-medium text-foreground">Deadline</p>
+                <p className="font-bold text-foreground">Deadline</p>
                 <p>{scholarship.deadline}</p>
               </div>
-              <Button asChild size="sm">
+              <Button asChild size="sm" className="font-bold">
                 <Link href="/dashboard/profile">
-                  Apply <ArrowRight className="ml-2 h-4 w-4" />
+                  View Form <ArrowRight className="ml-2 h-3 w-3" />
                 </Link>
               </Button>
             </CardFooter>
@@ -78,8 +85,8 @@ export default function ScholarshipsPage() {
       </div>
 
       {(!scholarships || scholarships.length === 0) && (
-        <div className="text-center py-16 md:py-20 bg-muted/10 rounded-xl border-2 border-dashed">
-          <p className="text-sm md:text-base text-muted-foreground">Check back soon! New scholarships are added periodically.</p>
+        <div className="text-center py-24 bg-muted/5 rounded-xl border-2 border-dashed">
+          <p className="text-sm md:text-base text-muted-foreground italic">New scholarship opportunities are posted periodically. Check back soon!</p>
         </div>
       )}
     </div>

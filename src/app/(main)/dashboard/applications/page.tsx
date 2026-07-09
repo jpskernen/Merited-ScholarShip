@@ -21,15 +21,16 @@ import { cn } from '@/lib/utils';
 const getStatusVariant = (status?: string): 'default' | 'secondary' | 'destructive' | 'outline' => {
   if (!status) return 'outline';
   
-  switch (status) {
-    case 'Awarded':
+  const s = status.toLowerCase();
+  switch (s) {
+    case 'awarded':
       return 'default';
-    case 'In Review':
-    case 'Submitted':
+    case 'in review':
+    case 'submitted':
       return 'secondary';
-    case 'Not Awarded':
+    case 'not awarded':
       return 'destructive';
-    case 'Draft':
+    case 'draft':
       return 'outline';
     default:
       return 'outline';
@@ -64,11 +65,12 @@ function ApplicationsPageContent() {
   const { data: historyApplications, isLoading: isHistoryLoading } = useCollection(applicationsQuery);
 
   const applications = useMemo(() => {
+    if (!mounted) return [];
     const apps = historyApplications ? [...historyApplications] : [];
     
     // Add the current active portfolio if it's not already in history (e.g. if it's a draft)
-    if (mainProfile && mainProfile.status === 'Draft') {
-      const exists = apps.some(a => a.status === 'Draft');
+    if (mainProfile && (mainProfile.status === 'Draft' || mainProfile.status === 'draft')) {
+      const exists = apps.some(a => a.status?.toLowerCase() === 'draft');
       if (!exists) {
         apps.unshift({
           id: 'current-draft',
@@ -81,7 +83,7 @@ function ApplicationsPageContent() {
 
     if (filter === 'all') return apps;
     return apps.filter(app => app.status?.toLowerCase() === filter.toLowerCase());
-  }, [historyApplications, mainProfile, filter]);
+  }, [historyApplications, mainProfile, filter, mounted]);
 
   if (isProfileLoading || isHistoryLoading || !mounted) {
     return (
@@ -95,8 +97,11 @@ function ApplicationsPageContent() {
   const formatDate = (dateValue: any) => {
     if (!dateValue) return 'N/A';
     try {
-      const date = typeof dateValue === 'string' ? new Date(dateValue) : dateValue.toDate?.() || new Date(dateValue);
-      if (isNaN(date.getTime())) return 'Invalid Date';
+      if (typeof dateValue === 'object' && dateValue.seconds) {
+        return new Date(dateValue.seconds * 1000).toLocaleDateString();
+      }
+      const date = new Date(dateValue);
+      if (isNaN(date.getTime())) return 'N/A';
       return date.toLocaleDateString();
     } catch (e) {
       return 'N/A';
@@ -127,7 +132,7 @@ function ApplicationsPageContent() {
               <TableRow key={app.id} className="hover:bg-muted/30 transition-colors">
                 <TableCell className="font-semibold">
                   <div className="flex items-center gap-2">
-                    {app.status === 'Submitted' ? <CheckCircle className="h-4 w-4 text-green-500" /> : <FileEdit className="h-4 w-4 text-primary opacity-40" />}
+                    {app.status?.toLowerCase() === 'submitted' ? <CheckCircle className="h-4 w-4 text-green-500" /> : <FileEdit className="h-4 w-4 text-primary opacity-40" />}
                     {app.scholarshipName || 'General Portfolio'}
                   </div>
                 </TableCell>
@@ -139,8 +144,8 @@ function ApplicationsPageContent() {
                     variant={getStatusVariant(app.status)} 
                     className={cn(
                       "font-bold px-3",
-                      app.status === 'Awarded' ? 'bg-green-600 text-white' : 
-                      app.status === 'Draft' ? 'border-primary/20 text-primary bg-primary/5' : ''
+                      app.status?.toLowerCase() === 'awarded' ? 'bg-green-600 text-white' : 
+                      app.status?.toLowerCase() === 'draft' ? 'border-primary/20 text-primary bg-primary/5' : ''
                     )}
                   >
                     {app.status || 'Pending'}
@@ -149,7 +154,7 @@ function ApplicationsPageContent() {
                 <TableCell className="text-right">
                   <Button variant="outline" size="sm" asChild className="font-bold">
                     <Link href="/dashboard/profile">
-                      {app.status === 'Draft' ? 'Continue' : 'View Details'} <ExternalLink className="ml-2 h-3 w-3" />
+                      {app.status?.toLowerCase() === 'draft' ? 'Continue' : 'View Details'} <ExternalLink className="ml-2 h-3 w-3" />
                     </Link>
                   </Button>
                 </TableCell>
