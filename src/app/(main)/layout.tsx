@@ -1,3 +1,4 @@
+
 'use client';
 
 import {
@@ -26,7 +27,8 @@ import {
   ShieldCheck,
   Loader2,
   History,
-  FlaskConical
+  FlaskConical,
+  Settings
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -42,7 +44,6 @@ const applicantNav = [
 
 const reviewerNav = [
   { href: '/reviewer/dashboard', label: 'Review Center', icon: LayoutDashboard },
-  { href: '/reviewer/dashboard?status=pending', label: 'Assignments', icon: FileSearch },
 ];
 
 const adminNav = [
@@ -72,29 +73,29 @@ function DashboardLayoutContent({
   useEffect(() => {
     if (mounted && !isUserLoading) {
       if (!user) {
-        if (pathname.startsWith('/dashboard') || pathname.startsWith('/admin') || pathname.startsWith('/reviewer')) {
+        if (pathname.startsWith('/dashboard') || pathname.startsWith('/admin') || pathname.startsWith('/reviewer') || pathname === '/settings') {
           router.push('/login');
         }
         return;
       }
 
+      // Allow access to the shared settings page for everyone
+      if (pathname === '/settings') return;
+
       const isAdmin = role?.toLowerCase() === 'admin';
       const isReviewer = role?.toLowerCase() === 'reviewer';
       const isApplicant = role?.toLowerCase() === 'applicant';
 
-      // 1. Redirect Reviewers trying to access Student/Admin portals
       if (isReviewer) {
         if (pathname.startsWith('/dashboard') || pathname.startsWith('/admin')) {
           router.push('/reviewer/dashboard');
         }
       } 
-      // 2. Redirect Admins to root admin if lost
       else if (isAdmin) {
         if (pathname === '/dashboard') {
           router.push('/admin');
         }
       }
-      // 3. Redirect Applicants trying to access restricted areas
       else if (isApplicant) {
         if (pathname.startsWith('/admin') || pathname.startsWith('/reviewer')) {
           router.push('/dashboard');
@@ -115,7 +116,8 @@ function DashboardLayoutContent({
   };
 
   const currentNav = getNavItems();
-  const shouldShowLayout = pathname.startsWith('/dashboard') || pathname.startsWith('/admin') || pathname.startsWith('/reviewer');
+  const isSettingsActive = pathname === '/settings';
+  const shouldShowLayout = pathname.startsWith('/dashboard') || pathname.startsWith('/admin') || pathname.startsWith('/reviewer') || pathname === '/settings';
 
   if (!mounted || isUserLoading) {
     return (
@@ -163,6 +165,15 @@ function DashboardLayoutContent({
                     </Link>
                   </SidebarMenuItem>
                 ))}
+                <Separator className="my-2" />
+                <SidebarMenuItem>
+                  <Link href="/settings" className="w-full">
+                    <SidebarMenuButton isActive={isSettingsActive} tooltip="Account Settings">
+                      <Settings className="h-4 w-4" />
+                      <span>Settings</span>
+                    </SidebarMenuButton>
+                  </Link>
+                </SidebarMenuItem>
               </SidebarMenu>
             </SidebarGroup>
           </SidebarContent>

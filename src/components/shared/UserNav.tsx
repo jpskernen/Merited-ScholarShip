@@ -1,9 +1,10 @@
+
 'use client';
 
 import {
   Avatar,
-  AvatarFallback,
   AvatarImage,
+  AvatarFallback,
 } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -19,10 +20,10 @@ import Link from 'next/link';
 import { useUser, useAuth } from '@/firebase';
 import { signOut } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
-import { Settings, User, LogOut } from 'lucide-react';
+import { Settings, User, LogOut, LayoutDashboard } from 'lucide-react';
 
 export function UserNav() {
-  const { user, isUserLoading } = useUser();
+  const { user, role, isUserLoading } = useUser();
   const auth = useAuth();
   const router = useRouter();
 
@@ -53,6 +54,13 @@ export function UserNav() {
     return name.substring(0, 2).toUpperCase();
   };
 
+  const getDashboardLink = () => {
+    const r = role?.toLowerCase();
+    if (r === 'admin') return '/admin';
+    if (r === 'reviewer') return '/reviewer/dashboard';
+    return '/dashboard';
+  };
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -75,12 +83,12 @@ export function UserNav() {
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
           <DropdownMenuItem asChild className="cursor-pointer">
-            <Link href="/dashboard/profile">
-              <User className="mr-2 h-4 w-4" /> Profile Portfolio
+            <Link href={getDashboardLink()}>
+              <LayoutDashboard className="mr-2 h-4 w-4" /> Dashboard
             </Link>
           </DropdownMenuItem>
           <DropdownMenuItem asChild className="cursor-pointer">
-            <Link href="/dashboard/settings">
+            <Link href="/settings">
               <Settings className="mr-2 h-4 w-4" /> Account Settings
             </Link>
           </DropdownMenuItem>
