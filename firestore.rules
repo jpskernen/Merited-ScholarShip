@@ -14,15 +14,15 @@ service cloud.firestore {
     function isSponsor() {
       return isSignedIn() && (
         (exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid)) &&
-         get(/databases/$(database)/documents/roles_admin/$(request.auth.uid)).data.role in ['Admin', 'Sponsor']) ||
-        request.auth.token.email == 'peyton.vandenbemden@gmail.com'
+         get(/databases/$(database)/documents/roles_admin/$(request.auth.uid)).data.role.lower() in ['admin', 'sponsor']) ||
+        request.auth.token.email.lower() in ['peyton.vandenbemden@gmail.com', 'admin@test.com', 'hello@meritedapp.com']
       );
     }
 
     function isReviewer() {
       return isSignedIn() && (
-        request.auth.token.email in ['reviewer@test.com', 'peyton.vandenbemden@gmail.com'] ||
-        getUserData().role == 'Reviewer' ||
+        request.auth.token.email.lower() in ['reviewer@test.com', 'peyton.vandenbemden@gmail.com', 'hello@meritedapp.com'] ||
+        getUserData().role.lower() == 'reviewer' ||
         isSponsor()
       );
     }
@@ -30,6 +30,12 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isSignedIn() && (request.auth.uid == userId || isSponsor() || isReviewer());
       allow write: if isSignedIn() && (request.auth.uid == userId || isSponsor());
+
+      // Allow access to subcollections like 'applications' and 'reviews'
+      match /{allSubcollections=**} {
+        allow read: if isSignedIn() && (request.auth.uid == userId || isSponsor() || isReviewer());
+        allow write: if isSignedIn() && (request.auth.uid == userId || isSponsor());
+      }
     }
 
     match /organizations/{orgId} {
@@ -65,5 +71,6 @@ service cloud.firestore {
     match /admin_invites/{inviteId} { allow read, write: if true; }
     match /sent_emails/{emailId} { allow read, write: if true; }
     match /auditLog/{logId} { allow read, write: if true; }
+    match /recommendationTokens/{tokenId} { allow read, write: if true; }
   }
 }
