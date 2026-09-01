@@ -1,0 +1,128 @@
+
+{
+  "entities": {
+    "ReviewerInvite": {
+      "title": "ReviewerInvite",
+      "description": "Represents an invitation sent to a potential reviewer.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "status": { "type": "string", "enum": ["Pending", "Accepted", "Expired"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "organizationId": { "type": "string" }
+      },
+      "required": ["id", "email", "status", "createdAt", "organizationId"]
+    },
+    "AdminInvite": {
+      "title": "AdminInvite",
+      "description": "Represents an invitation sent to a potential administrator.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "status": { "type": "string", "enum": ["Pending", "Accepted", "Expired"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "organizationId": { "type": "string" }
+      },
+      "required": ["id", "email", "status", "createdAt", "organizationId"]
+    },
+    "SentEmail": {
+      "title": "SentEmail",
+      "description": "A record of a simulated email sent by the system.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "recipient": { "type": "string" },
+        "subject": { "type": "string" },
+        "body": { "type": "string" },
+        "type": { "type": "string" },
+        "sentAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["recipient", "subject", "body", "type", "sentAt"]
+    },
+    "Scholarship": {
+      "title": "Scholarship",
+      "description": "Represents a scholarship program managed by an organization.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "amount": { "type": "string" },
+        "deadline": { "type": "string" },
+        "description": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "organizationId": { "type": "string" },
+        "reviewerIds": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "amount", "deadline", "description", "organizationId"]
+    },
+    "Application": {
+      "title": "Application",
+      "description": "A student's submission for a specific scholarship.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "scholarshipId": { "type": "string" },
+        "organizationId": { "type": "string" },
+        "status": { "type": "string" },
+        "data": { "type": "object" },
+        "submittedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Organization": {
+      "title": "Organization",
+      "type": "object",
+      "description": "Represents a tenant (school or foundation).",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "createdAt"]
+    },
+    "User": {
+      "title": "User",
+      "type": "object",
+      "description": "User account data.",
+      "properties": {
+        "id": { "type": "string" },
+        "organizationId": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "name": { "type": "string" },
+        "role": { "type": "string" }
+      }
+    }
+  },
+  "auth": {
+    "providers": ["password", "anonymous"]
+  },
+  "firestore": {
+    "/organizations/{orgId}": {
+      "schema": "#/backend/entities/Organization",
+      "description": "Organization data."
+    },
+    "/organizations/{orgId}/scholarships/{scholarshipId}": {
+      "schema": "#/backend/entities/Scholarship",
+      "description": "Scholarship programs within an organization."
+    },
+    "/organizations/{orgId}/scholarships/{scholarshipId}/applications/{appId}": {
+      "schema": "#/backend/entities/Application",
+      "description": "Applications for a specific scholarship."
+    },
+    "/users/{userId}": {
+      "schema": "#/backend/entities/User",
+      "description": "User profiles."
+    },
+    "/invites/{inviteId}": {
+      "schema": "#/backend/entities/ReviewerInvite",
+      "description": "Reviewer invitations."
+    },
+    "/admin_invites/{inviteId}": {
+      "schema": "#/backend/entities/AdminInvite",
+      "description": "Admin invitations."
+    }
+  }
+}

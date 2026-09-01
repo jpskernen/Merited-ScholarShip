@@ -1,0 +1,28 @@
+
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    match /recommendations/{tokenId} {
+      // Allow internal read for committee, public write for anyone with the token
+      allow read: if isSignedIn();
+      allow write: if true;
+    }
+
+    match /applications/{userId}/{allPaths=**} {
+      // Direct UID comparison is the fastest way to verify ownership
+      allow read: if isSignedIn() && (request.auth.uid == userId);
+      allow write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    match /{userId}/{document=**} {
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow write: if isSignedIn() && request.auth.uid == userId;
+    }
+  }
+}

@@ -1,0 +1,80 @@
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isSponsor() {
+      return isSignedIn() && (
+        (exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/roles_admin/$(request.auth.uid)).data.role.lower() in ['admin', 'sponsor']) ||
+        request.auth.token.email.lower() in ['peyton.vandenbemden@gmail.com', 'admin@test.com', 'hello@meritedapp.com', 'hello@merited.app']
+      );
+    }
+
+    function isReviewer() {
+      return isSignedIn() && (
+        request.auth.token.email.lower() in ['reviewer@test.com', 'peyton.vandenbemden@gmail.com', 'hello@meritedapp.com', 'hello@merited.app'] ||
+        getUserData().role.lower() == 'reviewer' ||
+        exists(/databases/$(database)/documents/reviewers/$(request.auth.uid)) ||
+        isSponsor()
+      );
+    }
+
+    match /users/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isSponsor() || isReviewer());
+      allow list: if isSponsor() || isReviewer();
+      allow write: if isSignedIn() && (request.auth.uid == userId || isSponsor());
+
+      match /{allSubcollections=**} {
+        allow read: if isSignedIn() && (request.auth.uid == userId || isSponsor() || isReviewer());
+        allow list: if isSponsor() || isReviewer();
+        allow write: if isSignedIn() && (request.auth.uid == userId || isSponsor());
+      }
+    }
+
+    match /organizations/{orgId} {
+      allow read: if isSignedIn();
+      allow write: if isSponsor();
+
+      match /scholarships/{scholarshipId} {
+        allow read: if isSignedIn();
+        allow write: if isSponsor();
+
+        match /applications/{appId} {
+          allow read: if isSignedIn() && (
+            request.auth.uid == appId || 
+            isReviewer() || 
+            isSponsor()
+          );
+          allow write: if isSignedIn() && (request.auth.uid == appId || isSponsor());
+          
+          match /reviews/{reviewId} {
+            allow read: if isSignedIn() && (isReviewer() || isSponsor());
+            allow write: if isSignedIn() && (isReviewer() || isSponsor());
+          }
+        }
+      }
+    }
+
+    match /programs/{programId} {
+      allow read: if true;
+      allow write: if isSponsor();
+    }
+
+    match /invites/{inviteId} { allow read, write: if true; }
+    match /admin_invites/{inviteId} { allow read, write: if true; }
+    match /sent_emails/{emailId} { allow read, write: if true; }
+    match /auditLog/{logId} { allow read, write: if true; }
+    match /recommendationTokens/{tokenId} { allow read, write: if true; }
+    match /reviewers/{reviewerId} { allow read: if isSignedIn(); allow write: if isSponsor(); }
+    match /roles_admin/{adminId} { allow read: if isSignedIn(); allow write: if isSponsor(); }
+  }
+}

@@ -1,0 +1,67 @@
+
+[
+  {
+    "id": "academic-excellence",
+    "name": "Academic Excellence Scholarship",
+    "amount": "$5,000",
+    "deadline": "May 01",
+    "tags": ["Academics", "Merit"],
+    "description": "Awarded to students with a minimum 3.8 GPA who have demonstrated exceptional academic performance throughout high school."
+  },
+  {
+    "id": "stem-innovation",
+    "name": "STEM Innovation Grant",
+    "amount": "$7,500",
+    "deadline": "May 01",
+    "tags": ["STEM", "Technology"],
+    "description": "For students pursuing degrees in Science, Technology, Engineering, or Mathematics with a focus on innovative problem solving."
+  },
+  {
+    "id": "community-leadership",
+    "name": "Community Leadership Award",
+    "amount": "$3,000",
+    "deadline": "May 01",
+    "tags": ["Leadership", "Service"],
+    "description": "Recognizing students who have led significant community service initiatives and demonstrated strong leadership qualities."
+  },
+  {
+    "id": "arts-and-humanities",
+    "name": "Arts & Humanities Foundation Scholarship",
+    "amount": "$2,500",
+    "deadline": "May 01",
+    "tags": ["Arts", "Humanities"],
+    "description": "Supporting students who show outstanding promise in the visual or performing arts, or the study of human culture."
+  },
+  {
+    "id": "first-generation-success",
+    "name": "First-Generation Success Scholarship",
+    "amount": "$10,000",
+    "deadline": "May 01",
+    "tags": ["First-Gen", "Need-Based"],
+    "description": "Designed for students who are the first in their family to attend college and show high potential for success."
+  },
+  {
+    "id": "future-educators",
+    "name": "Future Educators Scholarship",
+    "amount": "$4,000",
+    "deadline": "May 01",
+    "tags": ["Education", "Teaching"],
+    "description": "For high-achieving students planning to pursue a career in K-12 education."
+  },
+  {
+    "id": "athletic-scholar-award",
+    "name": "Varsity Scholar-Athlete Award",
+    "amount": "$2,000",
+    "deadline": "May 01",
+    "tags": ["Athletics", "Academics"],
+    "description": "Awarded to a student-athlete who maintains a balance between high-level sports participation and academic achievement."
+  },
+  {
+    "id": "entrepreneurial-spirit",
+    "name": "Entrepreneurial Spirit Scholarship",
+    "amount": "$1,500",
+    "deadline": "May 01",
+    "tags": ["Business", "Innovation"],
+    "description": "Recognizing students who have started their own small business or demonstrated significant entrepreneurial initiative."
+  }
+]
