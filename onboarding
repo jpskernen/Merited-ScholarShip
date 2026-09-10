@@ -1,0 +1,973 @@
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import Papa from "papaparse";
+import {
+  Upload, Users, Award, BarChart3, Plus, Trash2, Check, ChevronRight,
+  ChevronLeft, AlertCircle, X, Pencil, ClipboardList, LayoutDashboard,
+  FileText, ArrowRight, Building2, Mail, Shield, UserCog, Sparkles,
+  CircleCheck, CircleAlert,
+} from "lucide-react";
+
+/* ----------------------------- design tokens ----------------------------- */
+const C = {
+  navy: "#0f2a3d",
+  navyDeep: "#0a1e2c",
+  ink: "#16262f",
+  paper: "#f6f5f1",
+  paperDim: "#ece9e2",
+  line: "#dcd8cd",
+  blue: "#5fb0d6",
+  blueDeep: "#2f7ea8",
+  gold: "#c99a3e",
+  good: "#3f8f6f",
+  bad: "#b5533e",
+  white: "#ffffff",
+};
+
+const serif = { fontFamily: "'Iowan Old Style','Palatino Linotype',Georgia,serif" };
+const sans = { fontFamily: "'Inter',system-ui,-apple-system,sans-serif" };
+
+/* ------------------------------- constants -------------------------------- */
+const STORAGE_KEY = "merited-org-data";
+
+const DEFAULT_CRITERIA = [
+  { id: "c1", name: "Academic Achievement", weight: 30 },
+  { id: "c2", name: "Financial Need", weight: 25 },
+  { id: "c3", name: "Essay Quality", weight: 20 },
+  { id: "c4", name: "Extracurricular Involvement", weight: 15 },
+  { id: "c5", name: "Letters of Recommendation", weight: 10 },
+];
+
+const USER_FIELDS = [
+  { key: "name", label: "Name", required: true, aliases: ["name", "full name", "fullname", "reviewer name"] },
+  { key: "email", label: "Email", required: true, aliases: ["email", "e-mail", "email address"] },
+  { key: "role", label: "Role", required: true, aliases: ["role", "title", "type", "user type", "access"] },
+];
+
+const SCHOLARSHIP_FIELDS = [
+  { key: "name", label: "Scholarship Name", required: true, aliases: ["name", "scholarship", "scholarship name", "title"] },
+  { key: "amount", label: "Award Amount", required: false, aliases: ["amount", "award", "value", "award amount"] },
+  { key: "deadline", label: "Deadline", required: false, aliases: ["deadline", "due date", "close date", "closes"] },
+  { key: "description", label: "Description", required: false, aliases: ["description", "summary", "details", "about"] },
+  { key: "eligibility", label: "Eligibility Criteria", required: false, aliases: ["eligibility", "criteria", "requirements", "who can apply"] },
+];
+
+const ROLE_ALIASES = {
+  admin: ["admin", "administrator", "owner", "manager"],
+  reviewer: ["reviewer", "review", "judge", "panelist", "committee"],
+};
+
+/* -------------------------------- helpers --------------------------------- */
+let _id = 0;
+const uid = (p = "id") => `${p}_${Date.now().toString(36)}_${(_id++).toString(36)}`;
+
+const norm = (s) => (s || "").toString().trim().toLowerCase();
+
+function guessMapping(headers, fieldConfig) {
+  const mapping = {};
+  fieldConfig.forEach((f) => {
+    const hit = headers.find((h) => {
+      const nh = norm(h);
+      return f.aliases.some((a) => nh === a || nh.includes(a));
+    });
+    mapping[f.key] = hit || "";
+  });
+  return mapping;
+}
+
+function normalizeRole(raw) {
+  const v = norm(raw);
+  if (ROLE_ALIASES.admin.some((a) => v.includes(a))) return { role: "admin", guessed: false };
+  if (ROLE_ALIASES.reviewer.some((a) => v.includes(a))) return { role: "reviewer", guessed: false };
+  return { role: "reviewer", guessed: true };
+}
+
+function parseCSVText(text) {
+  const result = Papa.parse(text.trim(), { header: true, skipEmptyLines: true });
+  const headers = result.meta && result.meta.fields ? result.meta.fields : [];
+  const rows = result.data || [];
+  return { headers, rows };
+}
+
+async function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("Could not read file"));
+    reader.readAsText(file);
+  });
+}
+
+const emptyOrgData = () => ({
+  onboarded: false,
+  orgName: "",
+  users: [],
+  scholarships: [],
+  matrices: [{ id: "default", name: "Default Scoring Matrix", isDefault: true, criteria: DEFAULT_CRITERIA.map((c) => ({ ...c })) }],
+});
+
+/* ------------------------------ small pieces ------------------------------ */
+function Badge({ role }) {
+  const isAdmin = role === "admin";
+  return (
+    <span
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 5,
+        padding: "3px 9px", borderRadius: 5, fontSize: 12, fontWeight: 600,
+        background: isAdmin ? "rgba(201,154,62,0.14)" : "rgba(95,176,214,0.14)",
+        color: isAdmin ? "#8a6a26" : C.blueDeep,
+        ...sans,
+      }}
+    >
+      {isAdmin ? <Shield size={12} /> : <UserCog size={12} />}
+      {isAdmin ? "Admin" : "Reviewer"}
+    </span>
+  );
+}
+
+function Btn({ children, onClick, variant = "primary", disabled, type = "button", style: s }) {
+  const base = {
+    padding: "9px 16px", borderRadius: 6, fontSize: 14, fontWeight: 600,
+    border: "1px solid transparent", cursor: disabled ? "not-allowed" : "pointer",
+    display: "inline-flex", alignItems: "center", gap: 7, transition: "opacity .15s",
+    opacity: disabled ? 0.5 : 1, ...sans,
+  };
+  const variants = {
+    primary: { background: C.navy, color: C.white },
+    accent: { background: C.blueDeep, color: C.white },
+    ghost: { background: "transparent", color: C.navy, border: `1px solid ${C.line}` },
+    danger: { background: "transparent", color: C.bad, border: `1px solid ${C.bad}` },
+  };
+  return (
+    <button type={type} disabled={disabled} onClick={onClick} style={{ ...base, ...variants[variant], ...s }}>
+      {children}
+    </button>
+  );
+}
+
+function Field({ label, children, hint }) {
+  return (
+    <label style={{ display: "block", marginBottom: 14 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: C.ink, marginBottom: 5, ...sans }}>{label}</div>
+      {children}
+      {hint && <div style={{ fontSize: 12, color: "#7a7568", marginTop: 4, ...sans }}>{hint}</div>}
+    </label>
+  );
+}
+
+const inputStyle = {
+  width: "100%", padding: "9px 11px", borderRadius: 6, border: `1px solid ${C.line}`,
+  fontSize: 14, background: C.white, color: C.ink, ...sans, boxSizing: "border-box",
+};
+
+function Steps({ labels, current }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", marginBottom: 34 }}>
+      {labels.map((l, i) => (
+        <React.Fragment key={l}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+            <div
+              style={{
+                width: 26, height: 26, borderRadius: "50%", display: "flex", alignItems: "center",
+                justifyContent: "center", fontSize: 12, fontWeight: 700, ...sans,
+                background: i < current ? C.good : i === current ? C.navy : C.paperDim,
+                color: i <= current ? C.white : "#9c9686",
+              }}
+            >
+              {i < current ? <Check size={13} /> : i + 1}
+            </div>
+            <span style={{ fontSize: 13, fontWeight: i === current ? 700 : 500, color: i === current ? C.ink : "#8a8577", ...sans }}>
+              {l}
+            </span>
+          </div>
+          {i < labels.length - 1 && <div style={{ flex: 1, height: 1, background: C.line, margin: "0 14px" }} />}
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
+
+/* ------------------------------ CSV importer ------------------------------ */
+function CSVDrop({ onParsed, fieldConfig, kindLabel }) {
+  const [mode, setMode] = useState("upload");
+  const [pasteText, setPasteText] = useState("");
+  const [error, setError] = useState("");
+  const fileInputRef = useRef(null);
+
+  const handleText = (text) => {
+    try {
+      const { headers, rows } = parseCSVText(text);
+      if (!headers.length || !rows.length) {
+        setError("Couldn't find any rows. Check the file has a header row plus at least one data row.");
+        return;
+      }
+      setError("");
+      onParsed({ headers, rows });
+    } catch (e) {
+      setError("Couldn't parse that as CSV.");
+    }
+  };
+
+  const handleFile = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const text = await readFileAsText(file);
+    handleText(text);
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        <button onClick={() => setMode("upload")} style={{
+          ...sans, fontSize: 13, fontWeight: 600, padding: "6px 12px", borderRadius: 6, cursor: "pointer",
+          border: `1px solid ${mode === "upload" ? C.navy : C.line}`,
+          background: mode === "upload" ? C.navy : "transparent", color: mode === "upload" ? C.white : C.ink,
+        }}>Upload file</button>
+        <button onClick={() => setMode("paste")} style={{
+          ...sans, fontSize: 13, fontWeight: 600, padding: "6px 12px", borderRadius: 6, cursor: "pointer",
+          border: `1px solid ${mode === "paste" ? C.navy : C.line}`,
+          background: mode === "paste" ? C.navy : "transparent", color: mode === "paste" ? C.white : C.ink,
+        }}>Paste CSV</button>
+      </div>
+
+      {mode === "upload" ? (
+        <div
+          onClick={() => fileInputRef.current && fileInputRef.current.click()}
+          style={{
+            border: `1.5px dashed ${C.line}`, borderRadius: 10, padding: "34px 20px", textAlign: "center",
+            cursor: "pointer", background: C.paper,
+          }}
+        >
+          <Upload size={22} color={C.blueDeep} style={{ marginBottom: 8 }} />
+          <div style={{ fontSize: 14, fontWeight: 600, color: C.ink, ...sans }}>Click to choose a CSV of your {kindLabel}</div>
+          <div style={{ fontSize: 12, color: "#8a8577", marginTop: 4, ...sans }}>Exported from your current spreadsheet or system</div>
+          <input ref={fileInputRef} type="file" accept=".csv,text/csv" onChange={handleFile} style={{ display: "none" }} />
+        </div>
+      ) : (
+        <div>
+          <textarea
+            value={pasteText}
+            onChange={(e) => setPasteText(e.target.value)}
+            placeholder={"name,email,role\nJane Diaz,jane@foundation.org,admin\nSam Lee,sam@foundation.org,reviewer"}
+            rows={7}
+            style={{ ...inputStyle, fontFamily: "monospace", fontSize: 13, resize: "vertical" }}
+          />
+          <Btn onClick={() => handleText(pasteText)} style={{ marginTop: 10 }} variant="accent">
+            Parse pasted data <ArrowRight size={14} />
+          </Btn>
+        </div>
+      )}
+      {error && (
+        <div style={{ display: "flex", gap: 7, alignItems: "flex-start", marginTop: 12, color: C.bad, fontSize: 13, ...sans }}>
+          <AlertCircle size={15} style={{ marginTop: 1, flexShrink: 0 }} /> {error}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ColumnMapper({ headers, mapping, setMapping, fieldConfig }) {
+  return (
+    <div style={{ border: `1px solid ${C.line}`, borderRadius: 8, overflow: "hidden", marginTop: 16 }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", ...sans }}>
+        <thead>
+          <tr style={{ background: C.paper }}>
+            <th style={th}>We need</th>
+            <th style={th}>Your column</th>
+          </tr>
+        </thead>
+        <tbody>
+          {fieldConfig.map((f) => (
+            <tr key={f.key} style={{ borderTop: `1px solid ${C.line}` }}>
+              <td style={td}>
+                {f.label} {f.required && <span style={{ color: C.bad }}>*</span>}
+              </td>
+              <td style={td}>
+                <select
+                  value={mapping[f.key] || ""}
+                  onChange={(e) => setMapping({ ...mapping, [f.key]: e.target.value })}
+                  style={{ ...inputStyle, padding: "6px 9px" }}
+                >
+                  <option value="">— not in file —</option>
+                  {headers.map((h) => (
+                    <option key={h} value={h}>{h}</option>
+                  ))}
+                </select>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+const th = { textAlign: "left", padding: "9px 12px", fontSize: 12, fontWeight: 700, color: "#7a7568" };
+const td = { padding: "9px 12px", fontSize: 13.5, color: C.ink, verticalAlign: "middle" };
+
+function PreviewTable({ headers, rows, columns }) {
+  return (
+    <div style={{ border: `1px solid ${C.line}`, borderRadius: 8, overflow: "auto", marginTop: 16, maxHeight: 260 }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", ...sans }}>
+        <thead>
+          <tr style={{ background: C.paper, position: "sticky", top: 0 }}>
+            {columns.map((c) => <th key={c.key} style={th}>{c.label}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i} style={{ borderTop: `1px solid ${C.line}` }}>
+              {columns.map((c) => <td key={c.key} style={td}>{c.render ? c.render(r) : r[c.key]}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* ------------------------------ scoring matrix ----------------------------- */
+function MatrixEditor({ matrix, onChange, onSaveName }) {
+  const total = matrix.criteria.reduce((s, c) => s + (Number(c.weight) || 0), 0);
+  const update = (id, patch) =>
+    onChange({ ...matrix, criteria: matrix.criteria.map((c) => (c.id === id ? { ...c, ...patch } : c)) });
+  const remove = (id) => onChange({ ...matrix, criteria: matrix.criteria.filter((c) => c.id !== id) });
+  const add = () => onChange({ ...matrix, criteria: [...matrix.criteria, { id: uid("c"), name: "New criterion", weight: 0 }] });
+
+  return (
+    <div>
+      <Field label="Matrix name">
+        <input style={inputStyle} value={matrix.name} onChange={(e) => onSaveName(e.target.value)} />
+      </Field>
+      <div style={{ border: `1px solid ${C.line}`, borderRadius: 8, overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", ...sans }}>
+          <thead>
+            <tr style={{ background: C.paper }}>
+              <th style={th}>Criterion</th>
+              <th style={{ ...th, width: 120 }}>Weight %</th>
+              <th style={{ ...th, width: 40 }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {matrix.criteria.map((c) => (
+              <tr key={c.id} style={{ borderTop: `1px solid ${C.line}` }}>
+                <td style={td}>
+                  <input style={{ ...inputStyle, padding: "6px 9px" }} value={c.name} onChange={(e) => update(c.id, { name: e.target.value })} />
+                </td>
+                <td style={td}>
+                  <input
+                    type="number" min={0} max={100} style={{ ...inputStyle, padding: "6px 9px" }}
+                    value={c.weight} onChange={(e) => update(c.id, { weight: Number(e.target.value) })}
+                  />
+                </td>
+                <td style={{ ...td, textAlign: "center" }}>
+                  <button onClick={() => remove(c.id)} style={{ background: "none", border: "none", cursor: "pointer", color: C.bad }}>
+                    <Trash2 size={15} />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12 }}>
+        <button onClick={add} style={{ ...sans, fontSize: 13, fontWeight: 600, color: C.blueDeep, background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+          <Plus size={15} /> Add criterion
+        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 700, color: total === 100 ? C.good : C.bad, ...sans }}>
+          {total === 100 ? <CircleCheck size={15} /> : <CircleAlert size={15} />}
+          Total: {total}%
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------ onboarding wizard --------------------------- */
+function OnboardingWizard({ onComplete }) {
+  const [step, setStep] = useState(0);
+  const [orgName, setOrgName] = useState("");
+
+  const [teamData, setTeamData] = useState(null); // {headers, rows}
+  const [teamMapping, setTeamMapping] = useState({});
+
+  const [schData, setSchData] = useState(null);
+  const [schMapping, setSchMapping] = useState({});
+  const [skipScholarships, setSkipScholarships] = useState(false);
+
+  const [matrixChoice, setMatrixChoice] = useState("default");
+  const [customMatrix, setCustomMatrix] = useState({ id: "default", name: "Default Scoring Matrix", criteria: DEFAULT_CRITERIA.map((c) => ({ ...c })) });
+
+  const labels = ["Organization", "Team", "Scholarships", "Scoring", "Review"];
+
+  const teamPreview = useMemo(() => {
+    if (!teamData) return [];
+    return teamData.rows.map((r) => {
+      const name = r[teamMapping.name] || "";
+      const email = r[teamMapping.email] || "";
+      const { role, guessed } = normalizeRole(r[teamMapping.role]);
+      return { name, email, role, guessed, raw: r };
+    }).filter((r) => r.email);
+  }, [teamData, teamMapping]);
+
+  const schPreview = useMemo(() => {
+    if (!schData) return [];
+    return schData.rows.map((r) => ({
+      name: r[schMapping.name] || "",
+      amount: schMapping.amount ? r[schMapping.amount] || "" : "",
+      deadline: schMapping.deadline ? r[schMapping.deadline] || "" : "",
+      description: schMapping.description ? r[schMapping.description] || "" : "",
+      eligibility: schMapping.eligibility ? r[schMapping.eligibility] || "" : "",
+    })).filter((r) => r.name);
+  }, [schData, schMapping]);
+
+  const canAdvance = () => {
+    if (step === 0) return orgName.trim().length > 0;
+    if (step === 1) return true; // team import optional
+    if (step === 2) return true; // scholarships optional
+    if (step === 3) return matrixChoice === "default" || customMatrix.criteria.reduce((s, c) => s + Number(c.weight || 0), 0) === 100;
+    return true;
+  };
+
+  const finish = () => {
+    const users = teamPreview.map((r) => ({ id: uid("u"), name: r.name, email: r.email, role: r.role }));
+    const matrixToUse = matrixChoice === "default"
+      ? { id: "default", name: "Default Scoring Matrix", isDefault: true, criteria: DEFAULT_CRITERIA.map((c) => ({ ...c })) }
+      : { ...customMatrix, id: "default", isDefault: true };
+    const scholarships = schPreview.map((r) => ({
+      id: uid("s"), name: r.name, amount: r.amount, deadline: r.deadline,
+      description: r.description, eligibility: r.eligibility, matrixId: "default", status: "active",
+    }));
+    onComplete({ onboarded: true, orgName, users, scholarships, matrices: [matrixToUse] });
+  };
+
+  return (
+    <div style={{ maxWidth: 780, margin: "0 auto", padding: "48px 24px" }}>
+      <Steps labels={labels} current={step} />
+
+      {step === 0 && (
+        <div>
+          <h2 style={h2}>Welcome to Merited</h2>
+          <p style={pText}>Let's get your foundation set up. This takes about three minutes — bring your current spreadsheet of reviewers and any scholarships you already run.</p>
+          <Field label="Organization name">
+            <input style={inputStyle} value={orgName} onChange={(e) => setOrgName(e.target.value)} placeholder="e.g. Riverside Community Foundation" />
+          </Field>
+        </div>
+      )}
+
+      {step === 1 && (
+        <div>
+          <h2 style={h2}>Import your team</h2>
+          <p style={pText}>Bring in the people who already review or administer scholarships — no need to re-add them one by one. We'll match columns automatically from your file.</p>
+          {!teamData ? (
+            <CSVDrop kindLabel="reviewers and admins" fieldConfig={USER_FIELDS} onParsed={(d) => { setTeamData(d); setTeamMapping(guessMapping(d.headers, USER_FIELDS)); }} />
+          ) : (
+            <>
+              <ColumnMapper headers={teamData.headers} mapping={teamMapping} setMapping={setTeamMapping} fieldConfig={USER_FIELDS} />
+              <PreviewTable
+                rows={teamPreview.slice(0, 8)}
+                columns={[
+                  { key: "name", label: "Name" },
+                  { key: "email", label: "Email" },
+                  { key: "role", label: "Role", render: (r) => (
+                    <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <Badge role={r.role} />
+                      {r.guessed && <span style={{ fontSize: 11, color: C.gold }}>couldn't detect — defaulted</span>}
+                    </span>
+                  ) },
+                ]}
+              />
+              <p style={{ ...pText, fontSize: 12.5, marginTop: 8 }}>{teamPreview.length} people found. {teamPreview.length > 8 ? "Showing first 8." : ""}</p>
+              <button onClick={() => { setTeamData(null); }} style={linkBtn}>Start over with a different file</button>
+            </>
+          )}
+        </div>
+      )}
+
+      {step === 2 && (
+        <div>
+          <h2 style={h2}>Import existing scholarships</h2>
+          <p style={pText}>Already running scholarships elsewhere? Upload your list once and skip the retyping.</p>
+          {!skipScholarships && !schData && (
+            <>
+              <CSVDrop kindLabel="scholarships" fieldConfig={SCHOLARSHIP_FIELDS} onParsed={(d) => { setSchData(d); setSchMapping(guessMapping(d.headers, SCHOLARSHIP_FIELDS)); }} />
+              <button onClick={() => setSkipScholarships(true)} style={linkBtn}>I'll add scholarships later</button>
+            </>
+          )}
+          {schData && (
+            <>
+              <ColumnMapper headers={schData.headers} mapping={schMapping} setMapping={setSchMapping} fieldConfig={SCHOLARSHIP_FIELDS} />
+              <PreviewTable
+                rows={schPreview.slice(0, 8)}
+                columns={[
+                  { key: "name", label: "Name" },
+                  { key: "amount", label: "Amount" },
+                  { key: "deadline", label: "Deadline" },
+                ]}
+              />
+              <p style={{ ...pText, fontSize: 12.5, marginTop: 8 }}>{schPreview.length} scholarships found. {schPreview.length > 8 ? "Showing first 8." : ""}</p>
+              <button onClick={() => { setSchData(null); }} style={linkBtn}>Start over with a different file</button>
+            </>
+          )}
+          {skipScholarships && (
+            <div style={{ ...pText, fontStyle: "italic" }}>
+              Skipping for now — you can add or import scholarships anytime from the Scholarships tab.
+              <div><button onClick={() => setSkipScholarships(false)} style={linkBtn}>Actually, let me import</button></div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {step === 3 && (
+        <div>
+          <h2 style={h2}>Set up scoring</h2>
+          <p style={pText}>Every scholarship needs a way to score applicants. Start with our default rubric, or build your own — you can always add more matrices later.</p>
+          <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
+            <button onClick={() => setMatrixChoice("default")} style={choiceCard(matrixChoice === "default")}>
+              <Sparkles size={17} color={C.blueDeep} />
+              <div style={{ fontWeight: 700, fontSize: 14, marginTop: 6 }}>Use the default matrix</div>
+              <div style={{ fontSize: 12.5, color: "#7a7568", marginTop: 3 }}>5 balanced criteria most foundations start with</div>
+            </button>
+            <button onClick={() => setMatrixChoice("custom")} style={choiceCard(matrixChoice === "custom")}>
+              <Pencil size={17} color={C.blueDeep} />
+              <div style={{ fontWeight: 700, fontSize: 14, marginTop: 6 }}>Build my own</div>
+              <div style={{ fontSize: 12.5, color: "#7a7568", marginTop: 3 }}>Define your own criteria and weights</div>
+            </button>
+          </div>
+          {matrixChoice === "default" ? (
+            <div style={{ border: `1px solid ${C.line}`, borderRadius: 8, padding: 16 }}>
+              {DEFAULT_CRITERIA.map((c) => (
+                <div key={c.id} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 13.5, ...sans }}>
+                  <span>{c.name}</span><span style={{ fontWeight: 700 }}>{c.weight}%</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <MatrixEditor matrix={customMatrix} onChange={setCustomMatrix} onSaveName={(name) => setCustomMatrix({ ...customMatrix, name })} />
+          )}
+        </div>
+      )}
+
+      {step === 4 && (
+        <div>
+          <h2 style={h2}>Review & finish</h2>
+          <p style={pText}>Here's what we'll set up for {orgName || "your organization"}.</p>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginTop: 8 }}>
+            <SummaryCard icon={<Users size={16} />} label="Team members" value={teamPreview.length} />
+            <SummaryCard icon={<Award size={16} />} label="Scholarships imported" value={schPreview.length} />
+            <SummaryCard icon={<ClipboardList size={16} />} label="Scoring matrix" value={matrixChoice === "default" ? "Default" : customMatrix.name} />
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 34 }}>
+        <Btn variant="ghost" disabled={step === 0} onClick={() => setStep(step - 1)}><ChevronLeft size={15} /> Back</Btn>
+        {step < labels.length - 1 ? (
+          <Btn variant="accent" disabled={!canAdvance()} onClick={() => setStep(step + 1)}>Continue <ChevronRight size={15} /></Btn>
+        ) : (
+          <Btn variant="primary" onClick={finish}>Finish setup <Check size={15} /></Btn>
+        )}
+      </div>
+    </div>
+  );
+}
+const h2 = { ...serif, fontSize: 26, color: C.navy, margin: "0 0 10px" };
+const pText = { ...sans, fontSize: 14.5, color: "#544f43", lineHeight: 1.55, marginBottom: 20 };
+const linkBtn = { ...sans, fontSize: 12.5, color: C.blueDeep, background: "none", border: "none", cursor: "pointer", marginTop: 10, textDecoration: "underline" };
+const choiceCard = (active) => ({
+  flex: 1, textAlign: "left", padding: 16, borderRadius: 8, cursor: "pointer",
+  border: `1.5px solid ${active ? C.blueDeep : C.line}`, background: active ? "rgba(95,176,214,0.08)" : C.white,
+});
+function SummaryCard({ icon, label, value }) {
+  return (
+    <div style={{ border: `1px solid ${C.line}`, borderRadius: 8, padding: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, color: C.blueDeep }}>{icon}<span style={{ fontSize: 12, fontWeight: 700, color: "#7a7568", ...sans }}>{label}</span></div>
+      <div style={{ fontSize: 22, fontWeight: 700, color: C.navy, marginTop: 6, ...serif }}>{value}</div>
+    </div>
+  );
+}
+
+/* --------------------------------- app shell -------------------------------- */
+function Sidebar({ tab, setTab, orgName }) {
+  const items = [
+    { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { key: "scholarships", label: "Scholarships", icon: Award },
+    { key: "matrices", label: "Scoring Matrices", icon: BarChart3 },
+    { key: "team", label: "Team", icon: Users },
+  ];
+  return (
+    <div style={{ width: 218, background: C.navy, minHeight: "100vh", padding: "22px 14px", boxSizing: "border-box", flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 8px 22px", borderBottom: "1px solid rgba(255,255,255,0.12)", marginBottom: 14 }}>
+        <Building2 size={18} color={C.blue} />
+        <div style={{ color: C.white, fontSize: 13.5, fontWeight: 700, ...sans, lineHeight: 1.25 }}>{orgName || "Merited"}</div>
+      </div>
+      {items.map((it) => (
+        <button
+          key={it.key} onClick={() => setTab(it.key)}
+          style={{
+            width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", marginBottom: 3,
+            borderRadius: 6, border: "none", cursor: "pointer", textAlign: "left", ...sans, fontSize: 13.5, fontWeight: 600,
+            background: tab === it.key ? "rgba(255,255,255,0.12)" : "transparent",
+            color: tab === it.key ? C.white : "rgba(255,255,255,0.65)",
+          }}
+        >
+          <it.icon size={16} /> {it.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Dashboard({ org }) {
+  return (
+    <div style={{ padding: 36, maxWidth: 900 }}>
+      <h1 style={{ ...serif, fontSize: 28, color: C.navy, margin: "0 0 4px" }}>Welcome back</h1>
+      <p style={{ ...sans, fontSize: 14, color: "#7a7568", marginBottom: 28 }}>{org.orgName}</p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
+        <SummaryCard icon={<Award size={16} />} label="Active scholarships" value={org.scholarships.length} />
+        <SummaryCard icon={<Users size={16} />} label="Team members" value={org.users.length} />
+        <SummaryCard icon={<BarChart3 size={16} />} label="Scoring matrices" value={org.matrices.length} />
+      </div>
+    </div>
+  );
+}
+
+function Modal({ title, onClose, children, width = 560 }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,20,25,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
+      <div style={{ background: C.white, borderRadius: 10, width, maxWidth: "92vw", maxHeight: "86vh", overflow: "auto", padding: 26 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <h3 style={{ ...serif, fontSize: 19, color: C.navy, margin: 0 }}>{title}</h3>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "#8a8577" }}><X size={18} /></button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function ScholarshipsTab({ org, save }) {
+  const [showForm, setShowForm] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [draft, setDraft] = useState({ name: "", amount: "", deadline: "", description: "", eligibility: "", matrixId: "default" });
+
+  const addOne = () => {
+    if (!draft.name.trim()) return;
+    save({ ...org, scholarships: [...org.scholarships, { id: uid("s"), status: "active", ...draft }] });
+    setDraft({ name: "", amount: "", deadline: "", description: "", eligibility: "", matrixId: "default" });
+    setShowForm(false);
+  };
+  const remove = (id) => save({ ...org, scholarships: org.scholarships.filter((s) => s.id !== id) });
+
+  return (
+    <div style={{ padding: 36, maxWidth: 960 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 22 }}>
+        <h1 style={{ ...serif, fontSize: 26, color: C.navy, margin: 0 }}>Scholarships</h1>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Btn variant="ghost" onClick={() => setShowImport(true)}><Upload size={14} /> Import CSV</Btn>
+          <Btn variant="accent" onClick={() => setShowForm(true)}><Plus size={14} /> New scholarship</Btn>
+        </div>
+      </div>
+
+      {org.scholarships.length === 0 ? (
+        <EmptyState text="No scholarships yet. Import your existing list or create the first one." />
+      ) : (
+        <div style={{ border: `1px solid ${C.line}`, borderRadius: 8, overflow: "hidden" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", ...sans }}>
+            <thead><tr style={{ background: C.paper }}>
+              <th style={th}>Name</th><th style={th}>Amount</th><th style={th}>Deadline</th><th style={th}>Matrix</th><th style={{ ...th, width: 40 }}></th>
+            </tr></thead>
+            <tbody>
+              {org.scholarships.map((s) => (
+                <tr key={s.id} style={{ borderTop: `1px solid ${C.line}` }}>
+                  <td style={td}>{s.name}</td>
+                  <td style={td}>{s.amount || "—"}</td>
+                  <td style={td}>{s.deadline || "—"}</td>
+                  <td style={td}>{org.matrices.find((m) => m.id === s.matrixId)?.name || "Default"}</td>
+                  <td style={{ ...td, textAlign: "center" }}>
+                    <button onClick={() => remove(s.id)} style={{ background: "none", border: "none", cursor: "pointer", color: C.bad }}><Trash2 size={14} /></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {showForm && (
+        <Modal title="New scholarship" onClose={() => setShowForm(false)}>
+          <Field label="Name"><input style={inputStyle} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} /></Field>
+          <Field label="Award amount"><input style={inputStyle} value={draft.amount} onChange={(e) => setDraft({ ...draft, amount: e.target.value })} placeholder="$1,000" /></Field>
+          <Field label="Deadline"><input style={inputStyle} value={draft.deadline} onChange={(e) => setDraft({ ...draft, deadline: e.target.value })} placeholder="2026-05-01" /></Field>
+          <Field label="Description"><textarea rows={3} style={inputStyle} value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} /></Field>
+          <Field label="Eligibility criteria"><textarea rows={2} style={inputStyle} value={draft.eligibility} onChange={(e) => setDraft({ ...draft, eligibility: e.target.value })} /></Field>
+          <Field label="Scoring matrix">
+            <select style={inputStyle} value={draft.matrixId} onChange={(e) => setDraft({ ...draft, matrixId: e.target.value })}>
+              {org.matrices.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          </Field>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 10 }}>
+            <Btn variant="ghost" onClick={() => setShowForm(false)}>Cancel</Btn>
+            <Btn variant="primary" onClick={addOne}>Save scholarship</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {showImport && (
+        <ImportScholarshipsModal org={org} save={save} onClose={() => setShowImport(false)} />
+      )}
+    </div>
+  );
+}
+
+function ImportScholarshipsModal({ org, save, onClose }) {
+  const [data, setData] = useState(null);
+  const [mapping, setMapping] = useState({});
+  const preview = useMemo(() => {
+    if (!data) return [];
+    return data.rows.map((r) => ({
+      name: r[mapping.name] || "", amount: mapping.amount ? r[mapping.amount] || "" : "",
+      deadline: mapping.deadline ? r[mapping.deadline] || "" : "",
+      description: mapping.description ? r[mapping.description] || "" : "",
+      eligibility: mapping.eligibility ? r[mapping.eligibility] || "" : "",
+    })).filter((r) => r.name);
+  }, [data, mapping]);
+
+  const doImport = () => {
+    const rows = preview.map((r) => ({ id: uid("s"), status: "active", matrixId: "default", ...r }));
+    save({ ...org, scholarships: [...org.scholarships, ...rows] });
+    onClose();
+  };
+
+  return (
+    <Modal title="Import scholarships from CSV" onClose={onClose} width={680}>
+      {!data ? (
+        <CSVDrop kindLabel="scholarships" fieldConfig={SCHOLARSHIP_FIELDS} onParsed={(d) => { setData(d); setMapping(guessMapping(d.headers, SCHOLARSHIP_FIELDS)); }} />
+      ) : (
+        <>
+          <ColumnMapper headers={data.headers} mapping={mapping} setMapping={setMapping} fieldConfig={SCHOLARSHIP_FIELDS} />
+          <PreviewTable rows={preview.slice(0, 6)} columns={[{ key: "name", label: "Name" }, { key: "amount", label: "Amount" }, { key: "deadline", label: "Deadline" }]} />
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 16 }}>
+            <span style={{ ...sans, fontSize: 12.5, color: "#7a7568" }}>{preview.length} scholarships ready to import</span>
+            <Btn variant="primary" onClick={doImport} disabled={!preview.length}>Import {preview.length}</Btn>
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
+function MatricesTab({ org, save }) {
+  const [editingId, setEditingId] = useState(null);
+  const matrix = org.matrices.find((m) => m.id === editingId);
+
+  const updateMatrix = (updated) => save({ ...org, matrices: org.matrices.map((m) => (m.id === updated.id ? updated : m)) });
+  const addMatrix = () => {
+    const m = { id: uid("m"), name: "New scoring matrix", criteria: DEFAULT_CRITERIA.map((c) => ({ ...c, id: uid("c") })) };
+    save({ ...org, matrices: [...org.matrices, m] });
+    setEditingId(m.id);
+  };
+  const removeMatrix = (id) => {
+    if (id === "default") return;
+    save({ ...org, matrices: org.matrices.filter((m) => m.id !== id) });
+  };
+
+  return (
+    <div style={{ padding: 36, maxWidth: 800 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 22 }}>
+        <h1 style={{ ...serif, fontSize: 26, color: C.navy, margin: 0 }}>Scoring Matrices</h1>
+        <Btn variant="accent" onClick={addMatrix}><Plus size={14} /> New matrix</Btn>
+      </div>
+
+      {!matrix ? (
+        <div style={{ display: "grid", gap: 10 }}>
+          {org.matrices.map((m) => (
+            <div key={m.id} style={{ border: `1px solid ${C.line}`, borderRadius: 8, padding: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 15, color: C.ink, ...sans }}>{m.name} {m.isDefault && <span style={{ fontSize: 11, color: C.blueDeep, marginLeft: 6 }}>DEFAULT</span>}</div>
+                <div style={{ fontSize: 12.5, color: "#8a8577", marginTop: 3, ...sans }}>{m.criteria.length} criteria</div>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <Btn variant="ghost" onClick={() => setEditingId(m.id)}><Pencil size={13} /> Edit</Btn>
+                {!m.isDefault && <Btn variant="danger" onClick={() => removeMatrix(m.id)}><Trash2 size={13} /></Btn>}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div>
+          <button onClick={() => setEditingId(null)} style={linkBtn}>← Back to matrices</button>
+          <div style={{ marginTop: 10 }}>
+            <MatrixEditor matrix={matrix} onChange={updateMatrix} onSaveName={(name) => updateMatrix({ ...matrix, name })} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TeamTab({ org, save }) {
+  const [showForm, setShowForm] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [draft, setDraft] = useState({ name: "", email: "", role: "reviewer" });
+
+  const addOne = () => {
+    if (!draft.email.trim()) return;
+    save({ ...org, users: [...org.users, { id: uid("u"), ...draft }] });
+    setDraft({ name: "", email: "", role: "reviewer" });
+    setShowForm(false);
+  };
+  const remove = (id) => save({ ...org, users: org.users.filter((u) => u.id !== id) });
+
+  return (
+    <div style={{ padding: 36, maxWidth: 800 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 22 }}>
+        <h1 style={{ ...serif, fontSize: 26, color: C.navy, margin: 0 }}>Team</h1>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Btn variant="ghost" onClick={() => setShowImport(true)}><Upload size={14} /> Import CSV</Btn>
+          <Btn variant="accent" onClick={() => setShowForm(true)}><Plus size={14} /> Add person</Btn>
+        </div>
+      </div>
+
+      {org.users.length === 0 ? (
+        <EmptyState text="No team members yet. Import your reviewer list or add someone directly." />
+      ) : (
+        <div style={{ border: `1px solid ${C.line}`, borderRadius: 8, overflow: "hidden" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", ...sans }}>
+            <thead><tr style={{ background: C.paper }}><th style={th}>Name</th><th style={th}>Email</th><th style={th}>Role</th><th style={{ ...th, width: 40 }}></th></tr></thead>
+            <tbody>
+              {org.users.map((u) => (
+                <tr key={u.id} style={{ borderTop: `1px solid ${C.line}` }}>
+                  <td style={td}>{u.name || "—"}</td>
+                  <td style={td}><span style={{ display: "flex", alignItems: "center", gap: 6 }}><Mail size={13} color="#8a8577" />{u.email}</span></td>
+                  <td style={td}><Badge role={u.role} /></td>
+                  <td style={{ ...td, textAlign: "center" }}><button onClick={() => remove(u.id)} style={{ background: "none", border: "none", cursor: "pointer", color: C.bad }}><Trash2 size={14} /></button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {showForm && (
+        <Modal title="Add team member" onClose={() => setShowForm(false)}>
+          <Field label="Name"><input style={inputStyle} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} /></Field>
+          <Field label="Email"><input style={inputStyle} value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} /></Field>
+          <Field label="Role">
+            <select style={inputStyle} value={draft.role} onChange={(e) => setDraft({ ...draft, role: e.target.value })}>
+              <option value="reviewer">Reviewer</option>
+              <option value="admin">Admin</option>
+            </select>
+          </Field>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 10 }}>
+            <Btn variant="ghost" onClick={() => setShowForm(false)}>Cancel</Btn>
+            <Btn variant="primary" onClick={addOne}>Save</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {showImport && <ImportTeamModal org={org} save={save} onClose={() => setShowImport(false)} />}
+    </div>
+  );
+}
+
+function ImportTeamModal({ org, save, onClose }) {
+  const [data, setData] = useState(null);
+  const [mapping, setMapping] = useState({});
+  const preview = useMemo(() => {
+    if (!data) return [];
+    return data.rows.map((r) => {
+      const { role } = normalizeRole(r[mapping.role]);
+      return { name: r[mapping.name] || "", email: r[mapping.email] || "", role };
+    }).filter((r) => r.email);
+  }, [data, mapping]);
+
+  const doImport = () => {
+    const rows = preview.map((r) => ({ id: uid("u"), ...r }));
+    save({ ...org, users: [...org.users, ...rows] });
+    onClose();
+  };
+
+  return (
+    <Modal title="Import team from CSV" onClose={onClose} width={680}>
+      {!data ? (
+        <CSVDrop kindLabel="team members" fieldConfig={USER_FIELDS} onParsed={(d) => { setData(d); setMapping(guessMapping(d.headers, USER_FIELDS)); }} />
+      ) : (
+        <>
+          <ColumnMapper headers={data.headers} mapping={mapping} setMapping={setMapping} fieldConfig={USER_FIELDS} />
+          <PreviewTable rows={preview.slice(0, 6)} columns={[{ key: "name", label: "Name" }, { key: "email", label: "Email" }, { key: "role", label: "Role", render: (r) => <Badge role={r.role} /> }]} />
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 16 }}>
+            <span style={{ ...sans, fontSize: 12.5, color: "#7a7568" }}>{preview.length} people ready to import</span>
+            <Btn variant="primary" onClick={doImport} disabled={!preview.length}>Import {preview.length}</Btn>
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
+function EmptyState({ text }) {
+  return (
+    <div style={{ border: `1.5px dashed ${C.line}`, borderRadius: 10, padding: "44px 20px", textAlign: "center", color: "#8a8577", fontSize: 14, ...sans }}>
+      {text}
+    </div>
+  );
+}
+
+/* ----------------------------------- root ----------------------------------- */
+export default function App() {
+  const [org, setOrg] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState("dashboard");
+  const [saveError, setSaveError] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await window.storage.get(STORAGE_KEY);
+        if (res && res.value) setOrg(JSON.parse(res.value));
+        else setOrg(emptyOrgData());
+      } catch (e) {
+        setOrg(emptyOrgData());
+      }
+      setLoading(false);
+    })();
+  }, []);
+
+  const save = async (next) => {
+    setOrg(next);
+    try {
+      const res = await window.storage.set(STORAGE_KEY, JSON.stringify(next));
+      if (!res) setSaveError(true);
+    } catch (e) {
+      setSaveError(true);
+    }
+  };
+
+  if (loading || !org) {
+    return <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", ...sans, color: "#8a8577" }}>Loading…</div>;
+  }
+
+  if (!org.onboarded) {
+    return (
+      <div style={{ minHeight: "100vh", background: C.paper }}>
+        <OnboardingWizard onComplete={(data) => save(data)} />
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", minHeight: "100vh", background: C.paper, ...sans }}>
+      <Sidebar tab={tab} setTab={setTab} orgName={org.orgName} />
+      <div style={{ flex: 1 }}>
+        {saveError && (
+          <div style={{ background: "#fbeee9", color: C.bad, padding: "8px 16px", fontSize: 12.5, ...sans }}>
+            Changes aren't saving right now — your edits may not persist after refresh.
+          </div>
+        )}
+        {tab === "dashboard" && <Dashboard org={org} />}
+        {tab === "scholarships" && <ScholarshipsTab org={org} save={save} />}
+        {tab === "matrices" && <MatricesTab org={org} save={save} />}
+        {tab === "team" && <TeamTab org={org} save={save} />}
+      </div>
+    </div>
+  );
+}
