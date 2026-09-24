@@ -5,18 +5,6 @@ import { z } from 'zod';
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB per user request
 const ACCEPTED_FILE_TYPES = ['application/pdf'];
 
-const fileSchema = z.union([
-    z.string().url().optional().nullable(),
-    z.instanceof(File).optional()
-      .refine(file => file ? file.size <= MAX_FILE_SIZE : true, `Max file size is 10MB.`)
-      .refine(
-        file => file ? ACCEPTED_FILE_TYPES.includes(file.type) : true,
-        "Only PDF files are accepted."
-      ),
-    z.literal(null),
-    z.literal(undefined),
-]).optional();
-
 export const ApplicantSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(1, 'Full name is required.'),
@@ -40,12 +28,12 @@ export const ApplicantSchema = z.object({
     uploadedAt: z.any().optional()
   })).optional().default([]),
   documents: z.array(z.string().url()).optional().default([]),
-  transcripts: z.string().url().optional().nullable(),
   resume: z.string().url().optional().nullable(),
   status: z.enum(['Draft', 'Submitted', 'In Review', 'Awarded', 'Not Awarded']).optional(),
   submissionDate: z.string().optional(),
   updatedAt: z.any().optional(),
   schoolId: z.string().optional(),
+  organizationId: z.string().optional(),
   reviewerIds: z.array(z.string()).optional().default([]),
   // Recommender fields
   recommenderName1: z.string().optional(),

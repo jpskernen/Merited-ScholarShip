@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useMemo, use, useState } from 'react';
@@ -36,7 +37,6 @@ export default function AdminApplicantDetail({ params }: { params: Promise<{ id:
   const router = useRouter();
   const { firestore } = useFirebase();
   
-  // 1. Fetch Primary Applicant Profile
   const applicantRef = useMemoFirebase(() => {
     if (!firestore || !applicantId) return null;
     return doc(firestore, 'users', applicantId);
@@ -44,7 +44,6 @@ export default function AdminApplicantDetail({ params }: { params: Promise<{ id:
 
   const { data: applicant, isLoading: isAppLoading } = useDoc<Applicant>(applicantRef);
 
-  // 2. Fetch All Committee Reviews for this student
   const reviewsQuery = useMemoFirebase(() => {
     if (!firestore || !applicantId) return null;
     return query(collection(firestore, 'users', applicantId, 'reviews'));
@@ -56,12 +55,11 @@ export default function AdminApplicantDetail({ params }: { params: Promise<{ id:
     if (!reviews || reviews.length === 0) return null;
     const total = reviews.reduce((acc, r) => acc + (r.totalScore || 0), 0);
     const avg = total / reviews.length;
-    const needsDiscussion = reviews.some(r => r.markForDiscussion);
-    return { avg, count: reviews.length, needsDiscussion };
+    return { avg, count: reviews.length };
   }, [reviews]);
 
   if (isAppLoading || isReviewsLoading) {
-    return <div className="flex h-[80vh] items-center justify-center animate-pulse font-medium text-muted-foreground">Synthesizing Submission Audit...</div>;
+    return <div className="flex h-[80vh] items-center justify-center font-medium text-muted-foreground">Syncing Submission Audit...</div>;
   }
 
   if (!applicant) {
@@ -106,7 +104,6 @@ export default function AdminApplicantDetail({ params }: { params: Promise<{ id:
       </div>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
-        {/* Left: Applicant Content */}
         <div className="lg:col-span-7 space-y-8">
           <Card>
             <CardHeader className="bg-muted/30 border-b">
@@ -142,19 +139,14 @@ export default function AdminApplicantDetail({ params }: { params: Promise<{ id:
               <div className="space-y-4">
                 <Label className="text-xs font-black uppercase tracking-tight">Evidence & Documentation</Label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {applicant.transcripts && <Button variant="outline" className="justify-start h-auto py-3" asChild><Link href={applicant.transcripts as string} target="_blank"><FileText className="h-4 w-4 mr-2" /> Academic Transcript</Link></Button>}
                   {applicant.resume && <Button variant="outline" className="justify-start h-auto py-3" asChild><Link href={applicant.resume as string} target="_blank"><FileText className="h-4 w-4 mr-2" /> Student Resume</Link></Button>}
                   {applicant.recommendationLetter1 && <Button variant="outline" className="justify-start h-auto py-3 border-green-200 bg-green-50" asChild><Link href={applicant.recommendationLetter1 as string} target="_blank"><ShieldCheck className="h-4 w-4 mr-2 text-green-600" /> Endorsement #1</Link></Button>}
-                  {applicant.essays?.map((essay, i) => (
-                    <Button key={i} variant="outline" className="justify-start h-auto py-3" asChild><Link href={essay.fileUrl} target="_blank"><FileText className="h-4 w-4 mr-2" /> Essay: {essay.fileName}</Link></Button>
-                  ))}
                 </div>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Right: Review Audit */}
         <div className="lg:col-span-5 space-y-6">
           <Card className="border-primary/20 shadow-md">
             <CardHeader className="bg-primary/5 border-b">
@@ -175,7 +167,6 @@ export default function AdminApplicantDetail({ params }: { params: Promise<{ id:
                         </div>
                         <div className="text-right">
                           <p className="text-xl font-black text-primary">{review.totalScore.toFixed(2)}</p>
-                          {review.markForDiscussion && <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-[8px] uppercase font-black">Flagged for Discussion</Badge>}
                         </div>
                       </div>
 
@@ -184,56 +175,16 @@ export default function AdminApplicantDetail({ params }: { params: Promise<{ id:
                           "{review.notes}"
                         </div>
                       )}
-
-                      <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                         {review.criteriaScores?.map((cs: any) => (
-                           <div key={cs.criteriaId} className="flex justify-between items-center">
-                             <span className="text-[10px] text-muted-foreground truncate max-w-[100px]">{cs.criteriaId}</span>
-                             <span className="text-[10px] font-bold">{cs.score}/10</span>
-                           </div>
-                         ))}
-                      </div>
-
-                      {review.aiAnalysis && (
-                        <div className="pt-2">
-                           <p className="text-[10px] font-black uppercase text-primary mb-1 flex items-center gap-1.5"><Star className="h-3 w-3" /> AI Merit Logic</p>
-                           <p className="text-[10px] text-muted-foreground leading-relaxed">{review.aiAnalysis.justification}</p>
-                        </div>
-                      )}
                     </div>
                   ))}
                   {(!reviews || reviews.length === 0) && (
                     <div className="p-12 text-center space-y-2">
                       <History className="h-8 w-8 text-muted-foreground mx-auto opacity-20" />
-                      <p className="text-sm text-muted-foreground italic">No committee evaluations have been submitted for this candidate yet.</p>
+                      <p className="text-sm text-muted-foreground italic">No committee evaluations have been submitted yet.</p>
                     </div>
                   )}
                 </div>
               </ScrollArea>
-            </CardContent>
-            {stats && (
-              <CardFooter className="bg-muted/20 border-t p-6">
-                <div className="w-full flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Activity className="h-4 w-4 text-primary" />
-                    <span className="text-xs font-bold">Consensus Score</span>
-                  </div>
-                  <span className="text-xl font-black text-primary">{stats.avg.toFixed(2)}</span>
-                </div>
-              </CardFooter>
-            )}
-          </Card>
-
-          <Card className="border-amber-200 bg-amber-50/10">
-            <CardHeader className="py-4 px-6"><CardTitle className="text-sm font-black uppercase tracking-widest flex items-center gap-2"><Award className="h-4 w-4 text-amber-600" /> Institutional Decision</CardTitle></CardHeader>
-            <CardContent className="px-6 pb-6 space-y-4">
-               <p className="text-xs text-muted-foreground leading-relaxed">
-                 Administrative decisions override individual committee scores. Updating the status here will trigger an automatic notification to the applicant.
-               </p>
-               <div className="grid grid-cols-2 gap-2">
-                  <Button variant="outline" className="font-bold border-amber-200 text-amber-700 hover:bg-amber-100">Panel Discuss</Button>
-                  <Button className="font-bold bg-green-600 hover:bg-green-700">Grant Award</Button>
-               </div>
             </CardContent>
           </Card>
         </div>
