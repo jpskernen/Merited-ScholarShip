@@ -59,7 +59,7 @@ function ApplicationsPageContent() {
   // 2. Fetch history subcollection
   const applicationsQuery = useMemoFirebase(() => {
     if (!user || !firestore) return null;
-    return query(collection(firestore, `users/${user.uid}/applications`));
+    return collection(firestore, `users/${user.uid}/applications`);
   }, [user, firestore]);
 
   const { data: historyApplications, isLoading: isHistoryLoading } = useCollection(applicationsQuery);
@@ -69,7 +69,7 @@ function ApplicationsPageContent() {
     const apps = historyApplications ? [...historyApplications] : [];
     
     // Add the current active portfolio if it's not already in history (e.g. if it's a draft)
-    if (mainProfile && (mainProfile.status === 'Draft' || mainProfile.status === 'draft')) {
+    if (mainProfile && (mainProfile.status?.toLowerCase() === 'draft')) {
       const exists = apps.some(a => a.status?.toLowerCase() === 'draft');
       if (!exists) {
         apps.unshift({
@@ -144,7 +144,7 @@ function ApplicationsPageContent() {
                     variant={getStatusVariant(app.status)} 
                     className={cn(
                       "font-bold px-3",
-                      app.status?.toLowerCase() === 'awarded' ? 'bg-green-600 text-white' : 
+                      app.status?.toLowerCase() === 'awarded' ? 'bg-green-600 text-white border-none' : 
                       app.status?.toLowerCase() === 'draft' ? 'border-primary/20 text-primary bg-primary/5' : ''
                     )}
                   >

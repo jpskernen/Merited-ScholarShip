@@ -1,9 +1,5 @@
-
 // src/types/applicant.ts
 import { z } from 'zod';
-
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB per user request
-const ACCEPTED_FILE_TYPES = ['application/pdf'];
 
 export const ApplicantSchema = z.object({
   id: z.string().optional(),
