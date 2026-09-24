@@ -12,7 +12,6 @@ import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 
 const SummarizeApplicationInputSchema = z.object({
-  transcript: z.string().describe('The applicant transcript.'),
   resume: z.string().describe('The applicant resume.'),
   essay: z.string().describe('The applicant essay.'),
   gpa: z.number().describe('The applicant GPA.'),
@@ -32,9 +31,8 @@ const summarizeApplicationPrompt = ai.definePrompt({
   name: 'summarizeApplicationPrompt',
   input: {schema: SummarizeApplicationInputSchema},
   output: {schema: SummarizeApplicationOutputSchema},
-  prompt: `You are a scholarship application summarizer. Summarize the application based on the transcript, resume, essay, and GPA.
+  prompt: `You are a scholarship application summarizer. Summarize the application based on the resume, essay, and GPA.
 
-Transcript: {{{transcript}}}
 Resume: {{{resume}}}
 Essay: {{{essay}}}
 GPA: {{{gpa}}}

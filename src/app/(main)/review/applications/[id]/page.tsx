@@ -142,8 +142,8 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
       const assignedSchoolIds = programs?.map(p => p.schoolId) || ['default-school'];
       const nextQ = query(
         collection(firestore, 'users'),
-        where('role', '==', 'Applicant'),
-        where('status', '==', 'Submitted'),
+        where('role', '==', 'applicant'),
+        where('status', '==', 'submitted'),
         where('schoolId', 'in', assignedSchoolIds),
         limit(10)
       );
@@ -273,7 +273,6 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
               <section>
                 <h3 className="text-lg font-semibold mb-4">Supporting Evidence</h3>
                 <div className="grid grid-cols-2 gap-2">
-                  {application.transcripts && <Button variant="outline" className="justify-start" asChild><Link href={application.transcripts as string} target="_blank"><FileText className="h-4 w-4 mr-2" /> Academic Transcript</Link></Button>}
                   {application.resume && <Button variant="outline" className="justify-start" asChild><Link href={application.resume as string} target="_blank"><FileText className="h-4 w-4 mr-2" /> Student Resume</Link></Button>}
                   {application.essays?.map((essay, i) => (
                     <Button key={i} variant="outline" className="justify-start" asChild><Link href={essay.fileUrl} target="_blank"><FileText className="h-4 w-4 mr-2" /> Essay: {essay.fileName}</Link></Button>

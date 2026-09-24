@@ -1,4 +1,3 @@
-// src/ai/flows/generate-scholarship-recommendations.ts
 'use server';
 
 /**
@@ -20,7 +19,6 @@ const ScholarshipRecommendationInputSchema = z.object({
   school: z.string().describe("The school the applicant attends."),
   essay: z.string().describe("The applicant's essay."),
   resume: z.string().describe("The applicant's resume as a data URI."),
-  transcripts: z.string().describe('The applicant transcripts as a data URI.'),
 });
 
 export type ScholarshipRecommendationInput = z.infer<typeof ScholarshipRecommendationInputSchema>;
@@ -60,7 +58,6 @@ const prompt = ai.definePrompt({
   Applicant Activities: {{{activities}}}
   Applicant Essay: {{{essay}}}
   Applicant Resume: {{media url=resume}}
-  Applicant Transcripts: {{media url=transcripts}}
 
   Format the output as a JSON object that contains a list of scholarship recommendations.
   `,

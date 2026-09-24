@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useMemo, useEffect, use } from 'react';
@@ -21,15 +20,11 @@ import {
   ChevronLeft, 
   Calculator, 
   Lock, 
-  MessageSquare,
   ShieldAlert,
   GraduationCap,
   CheckCircle2,
   AlertCircle,
-  Save,
-  ArrowRight,
-  Trophy,
-  Info
+  ChevronRight
 } from 'lucide-react';
 import { notFound, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -48,8 +43,6 @@ export default function ReviewerApplicationPage({ params }: { params: Promise<{ 
   const { toast } = useToast();
   const { firestore, user: reviewer } = useFirebase();
   
-  const [isFinished, setIsFinished] = useState(false);
-
   const applicantRef = useMemoFirebase(() => {
     if (!firestore || !applicationId) return null;
     return doc(firestore, 'users', applicationId);
@@ -197,7 +190,7 @@ export default function ReviewerApplicationPage({ params }: { params: Promise<{ 
           </h1>
         </div>
         <Button variant="outline" size="sm" onClick={runAiAnalysis} disabled={isAnalyzing || isFinalized}>
-          {isAnalyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2 text-primary" />}
+          {isAnalyzing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2 text-primary" />}
           AI Analysis
         </Button>
       </div>
