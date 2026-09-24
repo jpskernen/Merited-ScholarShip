@@ -1,4 +1,3 @@
-
 'use client';
 
 import {
@@ -16,6 +15,7 @@ import {
 import { AppLogo } from '@/components/shared/AppLogo';
 import { UserNav } from '@/components/shared/UserNav';
 import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
 import {
   LayoutDashboard,
   User,
@@ -23,7 +23,6 @@ import {
   Search,
   Users,
   Award,
-  FileSearch,
   ShieldCheck,
   Loader2,
   History,
@@ -69,7 +68,7 @@ function DashboardLayoutContent({
     setMounted(true);
   }, []);
 
-  // Access Control Enforcement
+  // Access Control Enforcement (Case-Insensitive)
   useEffect(() => {
     if (mounted && !isUserLoading) {
       if (!user) {
@@ -79,24 +78,22 @@ function DashboardLayoutContent({
         return;
       }
 
-      // Allow access to the shared settings page for everyone
+      const normalizedRole = role?.toLowerCase();
+      
+      // Universal routes (Settings is shared)
       if (pathname === '/settings') return;
 
-      const isAdmin = role?.toLowerCase() === 'admin';
-      const isReviewer = role?.toLowerCase() === 'reviewer';
-      const isApplicant = role?.toLowerCase() === 'applicant';
-
-      if (isReviewer) {
+      if (normalizedRole === 'reviewer') {
         if (pathname.startsWith('/dashboard') || pathname.startsWith('/admin')) {
           router.push('/reviewer/dashboard');
         }
       } 
-      else if (isAdmin) {
+      else if (normalizedRole === 'admin') {
         if (pathname === '/dashboard') {
           router.push('/admin');
         }
       }
-      else if (isApplicant) {
+      else if (normalizedRole === 'applicant') {
         if (pathname.startsWith('/admin') || pathname.startsWith('/reviewer')) {
           router.push('/dashboard');
         }

@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/card';
 import { AppLogo } from '@/components/shared/AppLogo';
 import { Badge } from '@/components/ui/badge';
-import { FileText, CheckCircle, Heart, Search, ArrowRight, Loader2, AlertCircle, LayoutDashboard } from 'lucide-react';
+import { FileText, CheckCircle, Search, ArrowRight, Loader2, AlertCircle, LayoutDashboard } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { useCollection, useFirebase, useMemoFirebase, useUser } from '@/firebase';
 import { collection } from 'firebase/firestore';
@@ -31,11 +31,15 @@ export default function Home() {
     if (!mounted) return false;
     
     // Only show the warning in development mode, never in production.
-    if (process.env.NODE_ENV !== 'production') {
-       // Check for required environment variables.
+    if (process.env.NODE_ENV === 'development') {
+       // Check for all required environment variables.
       const requiredVars = [
         process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
         process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+        process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+        process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+        process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+        process.env.NEXT_PUBLIC_FIREBASE_APP_ID
       ];
       const allVarsPresent = requiredVars.every(v => !!v && !v.includes('your_'));
       if (allVarsPresent && areServicesAvailable) return false;
@@ -75,7 +79,7 @@ export default function Home() {
     {
       icon: <FileText className="h-10 w-10 text-primary" />,
       title: 'Simple Application',
-      description: 'Easily upload your transcripts, resumes, and essays to a single secure platform.',
+      description: 'Easily upload your profile, resumes, and essays to a single secure platform.',
       href: '/signup'
     },
     {
@@ -115,7 +119,7 @@ export default function Home() {
           <div className="bg-amber-500/10 border-b border-amber-500/20 py-2">
             <div className="container mx-auto px-4 flex items-center gap-2 text-amber-600 text-xs font-medium">
               <AlertCircle className="h-4 w-4" />
-              <span>Firebase setup pending in developer workspace. Some cloud features simulated.</span>
+              <span>Development Mode: Firebase setup pending in workspace. Some cloud features simulated locally.</span>
             </div>
           </div>
         )}

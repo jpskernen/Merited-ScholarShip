@@ -99,9 +99,10 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
         }
 
         try {
-          // CRITICAL: High-priority bypass for test accounts (Case-Insensitive)
           const email = firebaseUser.email?.toLowerCase();
-          const isHardcodedAdmin = email === 'peyton.vandenbemden@gmail.com' || email === 'admin@test.com' || email === 'hello@meritedapp.com';
+          
+          // Case-Insensitive hardcoded role bypass for critical accounts
+          const isHardcodedAdmin = email === 'peyton.vandenbemden@gmail.com' || email === 'admin@test.com' || email === 'hello@meritedapp.com' || email === 'hello@merited.app';
           const isHardcodedReviewer = email === 'reviewer@test.com' || firebaseUser.uid === 'vj3d8Nz7O5QA1XXlK5QtCj03OZF2';
 
           if (isHardcodedAdmin) {
@@ -126,7 +127,6 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
             return;
           }
 
-          // Perform parallel lookups for production accounts
           const [userDoc, adminDoc, reviewerDoc] = await Promise.all([
             getDoc(doc(firestore, 'users', firebaseUser.uid)),
             getDoc(doc(firestore, 'roles_admin', firebaseUser.uid)),
@@ -152,7 +152,6 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
             userError: null,
           });
         } catch (error: any) {
-          console.error("Role resolution error:", error);
           setUserAuthState({
             user: firebaseUser,
             role: 'applicant',

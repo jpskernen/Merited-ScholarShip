@@ -28,10 +28,8 @@ export default function LoginPage() {
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Redirection Logic after role is determined
   useEffect(() => {
     if (user && role && !isUserLoading && isSigningIn) {
-      console.log('Login Redirect triggered for role:', role);
       const normalizedRole = role.toLowerCase();
       if (normalizedRole === 'admin') {
         router.push('/admin');
@@ -50,7 +48,6 @@ export default function LoginPage() {
     setError(null);
     try {
       await initiateEmailSignIn(auth, email, password);
-      // Redirection is handled by the useEffect above once the Provider resolves the role
     } catch (error: any) {
       let message = 'Please check your credentials and try again.';
       if (
