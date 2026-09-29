@@ -34,7 +34,7 @@ export default function LoginPage() {
       if (normalizedRole === 'admin') {
         router.push('/admin');
       } else if (normalizedRole === 'reviewer') {
-        router.push('/reviewer/dashboard');
+        router.push('/review');
       } else {
         router.push('/dashboard');
       }

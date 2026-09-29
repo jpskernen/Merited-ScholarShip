@@ -52,7 +52,9 @@ function ReviewerDashboardContent() {
   // 2. Get all submitted applicants
   const applicantsQuery = useMemoFirebase(() => {
     if (!firestore) return null;
-    return query(collection(firestore, 'users'), where('role', '==', 'Applicant'), where('status', '==', 'Submitted'));
+    // Role is written lowercase at signup ('applicant'); Firestore equality is
+    // case-sensitive, so querying 'Applicant' here silently returned nothing.
+    return query(collection(firestore, 'users'), where('role', '==', 'applicant'), where('status', '==', 'Submitted'));
   }, [firestore]);
   
   const { data: allApplicants, isLoading: isAppsLoading } = useCollection(applicantsQuery);
@@ -91,7 +93,7 @@ function ReviewerDashboardContent() {
         return {
           ...app,
           reviewStatus: review ? review.status : 'Not Started',
-          score: review ? review.totalWeightedScore : null,
+          score: review ? review.totalScore : null,
           needsDiscussion: review ? review.markForDiscussion : false,
           randomSortKey: randomSortKeys[app.id] || 0,
         };

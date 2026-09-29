@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useAuth, initiateEmailSignUp, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
+import { useAuth, initiateEmailSignUp, useFirestore, useDoc, useMemoFirebase, useFirebase } from '@/firebase';
 import { doc, updateDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { ShieldCheck, Loader2, Eye, EyeOff, UserCog, Key } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -16,6 +16,7 @@ export default function AdminOnboardingPage({ params }: { params: Promise<{ id: 
   const { id: inviteId } = use(params);
   const auth = useAuth();
   const firestore = useFirestore();
+  const { refreshUserRole } = useFirebase();
   const router = useRouter();
   const { toast } = useToast();
 
@@ -74,6 +75,11 @@ export default function AdminOnboardingPage({ params }: { params: Promise<{ id: 
       await updateDoc(doc(firestore, 'admin_invites', inviteId), {
         status: 'Accepted'
       });
+
+      // Re-resolve the role before navigating: the auth listener ran before
+      // the roles_admin doc above existed, so the cached role is still
+      // 'applicant' and the admin layout would bounce them straight out.
+      await refreshUserRole();
 
       toast({ title: "Privileges Granted", description: "Administrator account created. Redirecting to Panel..." });
       router.push('/admin');

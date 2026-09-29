@@ -37,11 +37,13 @@ export const ApplicantSchema = z.object({
   recommenderTitle1: z.string().optional(),
   recommendationStatus1: z.enum(['Not Requested', 'Pending', 'Received']).optional().default('Not Requested'),
   recommendationLetter1: z.string().url().optional().nullable(),
+  recommendationLetterText1: z.string().optional().nullable(),
   recommenderName2: z.string().optional(),
   recommenderEmail2: z.string().optional(),
   recommenderTitle2: z.string().optional(),
   recommendationStatus2: z.enum(['Not Requested', 'Pending', 'Received']).optional().default('Not Requested'),
   recommendationLetter2: z.string().url().optional().nullable(),
+  recommendationLetterText2: z.string().optional().nullable(),
 });
 
 export type Applicant = z.infer<typeof ApplicantSchema>;

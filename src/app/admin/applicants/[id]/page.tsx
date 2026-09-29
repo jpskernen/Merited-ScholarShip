@@ -29,7 +29,11 @@ import { useDoc, useFirebase, useMemoFirebase, useCollection } from '@/firebase'
 import { doc, collectionGroup, query, where, collection } from 'firebase/firestore';
 import type { Applicant } from '@/types/applicant';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { cn } from '@/lib/utils';
+
+
+
+
+
 
 export default function AdminApplicantDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id: applicantId } = use(params);
@@ -140,8 +144,27 @@ export default function AdminApplicantDetail({ params }: { params: Promise<{ id:
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {applicant.resume && <Button variant="outline" className="justify-start h-auto py-3" asChild><Link href={applicant.resume as string} target="_blank"><FileText className="h-4 w-4 mr-2" /> Student Resume</Link></Button>}
                   {applicant.recommendationLetter1 && <Button variant="outline" className="justify-start h-auto py-3 border-green-200 bg-green-50" asChild><Link href={applicant.recommendationLetter1 as string} target="_blank"><ShieldCheck className="h-4 w-4 mr-2 text-green-600" /> Endorsement #1</Link></Button>}
+                  {applicant.recommendationLetter2 && <Button variant="outline" className="justify-start h-auto py-3 border-green-200 bg-green-50" asChild><Link href={applicant.recommendationLetter2 as string} target="_blank"><ShieldCheck className="h-4 w-4 mr-2 text-green-600" /> Endorsement #2</Link></Button>}
                 </div>
               </div>
+
+              {(applicant.recommendationLetterText1 || applicant.recommendationLetterText2) && (
+                <div className="space-y-4">
+                  <Label className="text-xs font-black uppercase tracking-tight">Endorsement Text</Label>
+                  {applicant.recommendationLetterText1 && (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-bold text-muted-foreground">Endorsement #1</Label>
+                      <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">{applicant.recommendationLetterText1}</p>
+                    </div>
+                  )}
+                  {applicant.recommendationLetterText2 && (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-bold text-muted-foreground">Endorsement #2</Label>
+                      <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">{applicant.recommendationLetterText2}</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

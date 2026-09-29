@@ -1,29 +1,33 @@
 
 'use server';
 
-import sgMail from '@sendgrid/mail';
-import { getFirestore, collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { initializeApp, getApps, getApp } from 'firebase/app';
-import { firebaseConfig } from '@/firebase/config';
+import nodemailer from 'nodemailer';
+import { FieldValue } from 'firebase-admin/firestore';
+import { getAdminDb } from '@/firebase/admin';
 
-// Initialize Firebase for logging
-const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
-const db = getFirestore(app);
+const GMAIL_USER = process.env.GMAIL_USER;
+const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
+const FROM_EMAIL = process.env.GMAIL_FROM_EMAIL || GMAIL_USER || 'scholarships@meritedapp.com';
 
-const API_KEY = process.env.SENDGRID_API_KEY;
-const FROM_EMAIL = process.env.SENDGRID_FROM_EMAIL || 'scholarships@meritedapp.com';
+const transporter = GMAIL_USER && GMAIL_APP_PASSWORD
+  ? nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: GMAIL_USER,
+        pass: GMAIL_APP_PASSWORD,
+      },
+    })
+  : null;
 
-if (API_KEY && !API_KEY.includes('YOUR_SENDGRID')) {
-  sgMail.setApiKey(API_KEY);
-}
-
-export type NotificationType = 
-  | 'Welcome' 
-  | 'Recommendation Request' 
-  | 'Recommendation Received' 
+export type NotificationType =
+  | 'Welcome'
+  | 'Recommendation Request'
+  | 'Recommendation Received'
   | 'Recommendation Reminder'
-  | 'Submission Confirmed' 
-  | 'Status Changed';
+  | 'Submission Confirmed'
+  | 'Status Changed'
+  | 'Reviewer Invitation'
+  | 'Admin Invitation';
 
 interface EmailParams {
   to: string;
@@ -34,15 +38,15 @@ interface EmailParams {
 }
 
 /**
- * Dispatches an email via SendGrid and logs the attempt in Firestore.
+ * Dispatches an email via Gmail SMTP and logs the attempt in Firestore.
  */
 export async function sendNotification(params: EmailParams) {
   let delivered = false;
   let deliveryMethod = 'Simulation';
 
   try {
-    if (API_KEY && !API_KEY.includes('YOUR_SENDGRID')) {
-      await sgMail.send({
+    if (transporter) {
+      await transporter.sendMail({
         to: params.to,
         from: FROM_EMAIL,
         subject: params.subject,
@@ -50,25 +54,31 @@ export async function sendNotification(params: EmailParams) {
         html: params.html,
       });
       delivered = true;
-      deliveryMethod = 'SendGrid';
+      deliveryMethod = 'Gmail SMTP';
     }
+  } catch (error: any) {
+    console.error(`Notification Error [${params.type}]:`, error.response?.body || error.message);
+    return { success: false, error: error.message };
+  }
 
-    // Always log to Firestore Outbox
-    await addDoc(collection(db, 'sent_emails'), {
+  // Log to the Firestore outbox separately: a logging failure shouldn't be
+  // reported as a delivery failure when the send above succeeded. Uses the
+  // Admin SDK since this runs in a server action with no browser auth session.
+  try {
+    await getAdminDb().collection('sent_emails').add({
       recipient: params.to,
       subject: params.subject,
       body: params.text,
       type: params.type,
       delivered,
       deliveryMethod,
-      sentAt: serverTimestamp()
+      sentAt: FieldValue.serverTimestamp()
     });
-
-    return { success: true, method: deliveryMethod };
   } catch (error: any) {
-    console.error(`Notification Error [${params.type}]:`, error.response?.body || error.message);
-    return { success: false, error: error.message };
+    console.error(`Outbox log failed [${params.type}]:`, error.message);
   }
+
+  return { success: true, method: deliveryMethod };
 }
 
 export async function sendWelcomeEmail(email: string, name: string) {
@@ -98,6 +108,21 @@ export async function sendStatusUpdate(email: string, name: string, status: stri
     type: 'Status Changed',
     text: `Hello ${name}, your application status has been updated to: ${status}.`,
     html: `<h1>Decision Update</h1><p>Hello ${name},</p><p>There has been an update to your scholarship application status. Your new status is: <strong>${status}</strong>.</p><p>Log in to your dashboard for more details.</p>`
+  });
+}
+
+export async function sendInvitationEmail(params: {
+  email: string;
+  subject: string;
+  body: string;
+  role: 'Reviewer' | 'Admin';
+}) {
+  return sendNotification({
+    to: params.email,
+    subject: params.subject,
+    type: params.role === 'Admin' ? 'Admin Invitation' : 'Reviewer Invitation',
+    text: params.body,
+    html: params.body.replace(/\n/g, '<br />'),
   });
 }
 

@@ -42,7 +42,7 @@ const applicantNav = [
 ];
 
 const reviewerNav = [
-  { href: '/reviewer/dashboard', label: 'Review Center', icon: LayoutDashboard },
+  { href: '/review', label: 'Review Center', icon: LayoutDashboard },
 ];
 
 const adminNav = [
@@ -63,6 +63,19 @@ function DashboardLayoutContent({
   const router = useRouter();
   const { user, role, isUserLoading } = useUser();
   const [mounted, setMounted] = useState(false);
+  const isPublicInvite = pathname.startsWith('/reviewer/invite/');
+  // Note '/review' does not match a startsWith('/reviewer') check, so the
+  // reviewer dashboard has to be matched explicitly everywhere below.
+  const isAppRoute =
+    pathname.startsWith('/dashboard') ||
+    pathname.startsWith('/admin') ||
+    pathname.startsWith('/reviewer') ||
+    pathname === '/review' ||
+    pathname.startsWith('/review/') ||
+    pathname === '/settings';
+
+
+  
 
   useEffect(() => {
     setMounted(true);
@@ -70,9 +83,10 @@ function DashboardLayoutContent({
 
   // Access Control Enforcement (Case-Insensitive)
   useEffect(() => {
+    if (isPublicInvite) return;
     if (mounted && !isUserLoading) {
       if (!user) {
-        if (pathname.startsWith('/dashboard') || pathname.startsWith('/admin') || pathname.startsWith('/reviewer') || pathname === '/settings') {
+        if (isAppRoute) {
           router.push('/login');
         }
         return;
@@ -85,7 +99,7 @@ function DashboardLayoutContent({
 
       if (normalizedRole === 'reviewer') {
         if (pathname.startsWith('/dashboard') || pathname.startsWith('/admin')) {
-          router.push('/reviewer/dashboard');
+          router.push('/review');
         }
       } 
       else if (normalizedRole === 'admin') {
@@ -94,15 +108,15 @@ function DashboardLayoutContent({
         }
       }
       else if (normalizedRole === 'applicant') {
-        if (pathname.startsWith('/admin') || pathname.startsWith('/reviewer')) {
+        if (pathname.startsWith('/admin') || pathname.startsWith('/reviewer') || pathname === '/review' || pathname.startsWith('/review/')) {
           router.push('/dashboard');
         }
       }
     }
-  }, [mounted, user, role, isUserLoading, pathname, router]);
+  }, [mounted, user, role, isUserLoading, pathname, router, isPublicInvite, isAppRoute]);
 
   const isActive = (href: string) => {
-    return pathname === href || (href !== '/dashboard' && href !== '/admin' && href !== '/reviewer/dashboard' && pathname.startsWith(href));
+    return pathname === href || (href !== '/dashboard' && href !== '/admin' && href !== '/review' && pathname.startsWith(href));
   };
   
   const getNavItems = () => {
@@ -114,7 +128,9 @@ function DashboardLayoutContent({
 
   const currentNav = getNavItems();
   const isSettingsActive = pathname === '/settings';
-  const shouldShowLayout = pathname.startsWith('/dashboard') || pathname.startsWith('/admin') || pathname.startsWith('/reviewer') || pathname === '/settings';
+  const shouldShowLayout = !isPublicInvite && isAppRoute;
+
+  if (isPublicInvite) return <>{children}</>;
 
   if (!mounted || isUserLoading) {
     return (
@@ -216,3 +232,4 @@ export default function DashboardLayout({
     </Suspense>
   );
 }
+

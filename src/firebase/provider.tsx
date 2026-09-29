@@ -1,6 +1,6 @@
 'use client';
 
-import React, { DependencyList, createContext, useContext, ReactNode, useMemo, useState, useEffect } from 'react';
+import React, { DependencyList, createContext, useContext, ReactNode, useMemo, useState, useEffect, useCallback } from 'react';
 import { FirebaseApp } from 'firebase/app';
 import { Firestore, doc, getDoc } from 'firebase/firestore';
 import { Auth, User, onAuthStateChanged } from 'firebase/auth';
@@ -37,6 +37,13 @@ export interface FirebaseContextState {
   userData: any | null;
   isUserLoading: boolean;
   userError: Error | null;
+  /**
+   * Re-reads the signed-in user's role documents. onAuthStateChanged fires the
+   * moment an account is created - before onboarding flows have written their
+   * users/reviewers docs - so those flows must call this once they're done, or
+   * the role stays stuck at the 'applicant' default until a full reload.
+   */
+  refreshUserRole: () => Promise<void>;
 }
 
 export interface FirebaseServicesAndUser {
@@ -50,6 +57,7 @@ export interface FirebaseServicesAndUser {
   userData: any | null;
   isUserLoading: boolean;
   userError: Error | null;
+  refreshUserRole: () => Promise<void>;
 }
 
 export interface UserHookResult {
@@ -78,6 +86,69 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
     userError: null,
   });
 
+  const resolveUserState = useCallback(async (firebaseUser: User): Promise<UserAuthState> => {
+    const email = firebaseUser.email?.toLowerCase();
+
+    // Case-Insensitive hardcoded role bypass for critical accounts
+    const isHardcodedAdmin = email === 'peyton.vandenbemden@gmail.com' || email === 'admin@test.com' || email === 'hello@meritedapp.com' || email === 'hello@merited.app';
+    const isHardcodedReviewer = email === 'reviewer@test.com' || firebaseUser.uid === 'vj3d8Nz7O5QA1XXlK5QtCj03OZF2';
+
+    if (isHardcodedAdmin) {
+      return {
+        user: firebaseUser,
+        role: 'admin',
+        userData: { role: 'admin', organizationId: 'scholarship-hib4j', schoolId: 'scholarship-hib4j' },
+        isUserLoading: false,
+        userError: null,
+      };
+    }
+
+    if (isHardcodedReviewer) {
+      return {
+        user: firebaseUser,
+        role: 'reviewer',
+        userData: { role: 'reviewer', organizationId: 'scholarship-hib4j', schoolId: 'scholarship-hib4j' },
+        isUserLoading: false,
+        userError: null,
+      };
+    }
+
+    const [userDoc, adminDoc, reviewerDoc] = await Promise.all([
+      getDoc(doc(firestore!, 'users', firebaseUser.uid)),
+      getDoc(doc(firestore!, 'roles_admin', firebaseUser.uid)),
+      getDoc(doc(firestore!, 'reviewers', firebaseUser.uid))
+    ]);
+
+    const dbUserData = userDoc.exists() ? userDoc.data() : null;
+    let role = 'applicant';
+
+    if (adminDoc.exists()) {
+      role = 'admin';
+    } else if (reviewerDoc.exists() || dbUserData?.role?.toLowerCase() === 'reviewer') {
+      role = 'reviewer';
+    } else if (dbUserData?.role) {
+      role = dbUserData.role.toLowerCase();
+    }
+
+    return {
+      user: firebaseUser,
+      role: role.toLowerCase(),
+      userData: dbUserData,
+      isUserLoading: false,
+      userError: null,
+    };
+  }, [firestore]);
+
+  const refreshUserRole = useCallback(async () => {
+    const currentUser = auth?.currentUser;
+    if (!currentUser || !firestore) return;
+    try {
+      setUserAuthState(await resolveUserState(currentUser));
+    } catch (error: any) {
+      setUserAuthState(prev => ({ ...prev, userError: error }));
+    }
+  }, [auth, firestore, resolveUserState]);
+
   useEffect(() => {
     if (!auth || !firestore) {
       setUserAuthState(prev => ({ ...prev, isUserLoading: false }));
@@ -99,58 +170,7 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
         }
 
         try {
-          const email = firebaseUser.email?.toLowerCase();
-          
-          // Case-Insensitive hardcoded role bypass for critical accounts
-          const isHardcodedAdmin = email === 'peyton.vandenbemden@gmail.com' || email === 'admin@test.com' || email === 'hello@meritedapp.com' || email === 'hello@merited.app';
-          const isHardcodedReviewer = email === 'reviewer@test.com' || firebaseUser.uid === 'vj3d8Nz7O5QA1XXlK5QtCj03OZF2';
-
-          if (isHardcodedAdmin) {
-            setUserAuthState({
-              user: firebaseUser,
-              role: 'admin',
-              userData: { role: 'admin', organizationId: 'scholarship-hib4j', schoolId: 'scholarship-hib4j' },
-              isUserLoading: false,
-              userError: null,
-            });
-            return;
-          }
-
-          if (isHardcodedReviewer) {
-            setUserAuthState({
-              user: firebaseUser,
-              role: 'reviewer',
-              userData: { role: 'reviewer', organizationId: 'scholarship-hib4j', schoolId: 'scholarship-hib4j' },
-              isUserLoading: false,
-              userError: null,
-            });
-            return;
-          }
-
-          const [userDoc, adminDoc, reviewerDoc] = await Promise.all([
-            getDoc(doc(firestore, 'users', firebaseUser.uid)),
-            getDoc(doc(firestore, 'roles_admin', firebaseUser.uid)),
-            getDoc(doc(firestore, 'reviewers', firebaseUser.uid))
-          ]);
-
-          const dbUserData = userDoc.exists() ? userDoc.data() : null;
-          let role = 'applicant';
-
-          if (adminDoc.exists()) {
-            role = 'admin';
-          } else if (reviewerDoc.exists() || dbUserData?.role?.toLowerCase() === 'reviewer') {
-            role = 'reviewer';
-          } else if (dbUserData?.role) {
-            role = dbUserData.role.toLowerCase();
-          }
-
-          setUserAuthState({
-            user: firebaseUser,
-            role: role.toLowerCase(),
-            userData: dbUserData,
-            isUserLoading: false,
-            userError: null,
-          });
+          setUserAuthState(await resolveUserState(firebaseUser));
         } catch (error: any) {
           setUserAuthState({
             user: firebaseUser,
@@ -166,7 +186,7 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
       }
     );
     return () => unsubscribe();
-  }, [auth, firestore]);
+  }, [auth, firestore, resolveUserState]);
 
   const contextValue = useMemo((): FirebaseContextState => {
     const servicesAvailable = !!(firebaseApp && firestore && auth && storage);
@@ -182,8 +202,9 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
       userData: userAuthState.userData,
       isUserLoading: userAuthState.isUserLoading,
       userError: userAuthState.userError,
+      refreshUserRole,
     };
-  }, [firebaseApp, firestore, auth, functions, storage, userAuthState]);
+  }, [firebaseApp, firestore, auth, functions, storage, userAuthState, refreshUserRole]);
 
   return (
     <FirebaseContext.Provider value={contextValue}>
@@ -207,6 +228,7 @@ export const useFirebase = (): FirebaseServicesAndUser => {
     userData: context.userData,
     isUserLoading: context.isUserLoading,
     userError: context.userError,
+    refreshUserRole: context.refreshUserRole,
   };
 };
 

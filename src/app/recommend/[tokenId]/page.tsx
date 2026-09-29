@@ -33,6 +33,7 @@ import { sendNotification } from '@/app/lib/notifications';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { submitTypedRecommendation } from './actions';
+import { cn } from '@/lib/utils';
 
 export default function RecommendUploadPage({ params }: { params: Promise<{ tokenId: string }> }) {
   const { tokenId } = use(params);

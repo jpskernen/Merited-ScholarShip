@@ -138,7 +138,7 @@ export default function ReviewerApplicationPage({ params }: { params: Promise<{ 
 
       await setDoc(doc(firestore, 'users', applicationId, 'reviews', reviewer.uid), reviewData, { merge: true });
       toast({ title: status === 'Submitted' ? "Evaluation Finalized" : "Draft Saved" });
-      if (status === 'Submitted') router.push('/reviewer/dashboard');
+      if (status === 'Submitted') router.push('/review');
     } catch (error: any) {
       setSubmitError(error.message);
     } finally { 
@@ -223,8 +223,29 @@ export default function ReviewerApplicationPage({ params }: { params: Promise<{ 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {application.resume && <Button variant="outline" className="justify-start h-auto py-3 px-4" asChild><Link href={application.resume as string} target="_blank"><FileText className="h-4 w-4 mr-3" /> Student Resume</Link></Button>}
                   {application.recommendationLetter1 && <Button variant="outline" className="justify-start h-auto py-3 px-4" asChild><Link href={application.recommendationLetter1 as string} target="_blank"><CheckCircle2 className="h-4 w-4 mr-3 text-green-600" /> Endorsement #1</Link></Button>}
+                  {application.recommendationLetter2 && <Button variant="outline" className="justify-start h-auto py-3 px-4" asChild><Link href={application.recommendationLetter2 as string} target="_blank"><CheckCircle2 className="h-4 w-4 mr-3 text-green-600" /> Endorsement #2</Link></Button>}
                 </div>
               </section>
+              {(application.recommendationLetterText1 || application.recommendationLetterText2) && (
+                <>
+                  <Separator />
+                  <section className="space-y-4">
+                    <h3 className="text-lg font-semibold">Endorsement Text</h3>
+                    {application.recommendationLetterText1 && (
+                      <div>
+                        <h4 className="font-semibold text-sm mb-2 uppercase">Endorsement #1</h4>
+                        <div className="p-4 rounded-lg bg-muted/20 border text-sm leading-relaxed whitespace-pre-wrap">{application.recommendationLetterText1}</div>
+                      </div>
+                    )}
+                    {application.recommendationLetterText2 && (
+                      <div>
+                        <h4 className="font-semibold text-sm mb-2 uppercase">Endorsement #2</h4>
+                        <div className="p-4 rounded-lg bg-muted/20 border text-sm leading-relaxed whitespace-pre-wrap">{application.recommendationLetterText2}</div>
+                      </div>
+                    )}
+                  </section>
+                </>
+              )}
             </div>
           </ScrollArea>
         </div>
@@ -288,7 +309,7 @@ export default function ReviewerApplicationPage({ params }: { params: Promise<{ 
                   <Button className="font-bold" onClick={() => handleSaveReview('Submitted')} disabled={isSaving || isSubmitting}>Finalize</Button>
                 </div>
               ) : (
-                <Button variant="outline" className="w-full font-bold" onClick={() => router.push('/reviewer/dashboard')}>Back to Queue</Button>
+                <Button variant="outline" className="w-full font-bold" onClick={() => router.push('/review')}>Back to Queue</Button>
               )}
             </CardFooter>
           </Card>

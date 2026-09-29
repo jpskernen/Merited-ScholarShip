@@ -40,6 +40,7 @@ import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import Papa from 'papaparse';
 import { sendStatusUpdate } from '@/app/lib/notifications';
+import { cn } from '@/lib/utils';
 
 export default function AdminApplicantsPage() {
   const { firestore } = useFirebase();
@@ -159,6 +160,7 @@ export default function AdminApplicantsPage() {
   if (isUserLoading || isDataLoading) return <div className="flex h-64 items-center justify-center"><Loader2 className="animate-spin" /></div>;
 
   return (
+
     <div className="space-y-8">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
@@ -228,6 +230,8 @@ export default function AdminApplicantsPage() {
         </Card>
       )}
 
+      
+
       <div className="rounded-xl border bg-card overflow-hidden shadow-sm">
         <Table>
           <TableHeader className="bg-muted/50">
@@ -241,6 +245,7 @@ export default function AdminApplicantsPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
+
             {tableData.map((row) => (
               <TableRow key={row.id} className="hover:bg-muted/10 transition-colors">
                 <TableCell><Checkbox checked={selectedIds.includes(row.id)} onCheckedChange={() => setSelectedIds(prev => prev.includes(row.id) ? prev.filter(i => i !== row.id) : [...prev, row.id])} /></TableCell>
@@ -282,8 +287,11 @@ export default function AdminApplicantsPage() {
                 </TableCell>
               </TableRow>
             ))}
+
+
           </TableBody>
         </Table>
+
         {tableData.length === 0 && (
           <div className="py-20 text-center flex flex-col items-center gap-2">
             <Users className="h-10 w-10 text-muted-foreground opacity-20" />
@@ -292,5 +300,6 @@ export default function AdminApplicantsPage() {
         )}
       </div>
     </div>
+
   );
 }

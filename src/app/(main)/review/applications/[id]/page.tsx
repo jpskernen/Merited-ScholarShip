@@ -32,7 +32,7 @@ import {
 import { notFound, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useDoc, useFirebase, useMemoFirebase, useCollection } from '@/firebase';
-import { doc, updateDoc, arrayUnion, collection, query, where, getDocs, limit } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp, collection, collectionGroup, query, where, getDocs, limit } from 'firebase/firestore';
 import type { Applicant } from '@/types/applicant';
 import type { Scholarship } from '@/types/scholarship';
 import { useToast } from '@/hooks/use-toast';
@@ -60,7 +60,15 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
 
   const { data: programs, isLoading: isProgramsLoading } = useCollection<Scholarship>(programsQuery);
 
-  const activeScholarship = programs?.[0]; 
+  // This reviewer's own review of this application, if they've already filed one.
+  const myReviewRef = useMemoFirebase(() => {
+    if (!firestore || !applicationId || !reviewer) return null;
+    return doc(firestore, 'users', applicationId, 'reviews', reviewer.uid);
+  }, [firestore, applicationId, reviewer]);
+
+  const { data: myReview } = useDoc(myReviewRef);
+
+  const activeScholarship = programs?.[0];
 
   const [scores, setScores] = useState<Record<string, number>>({});
   const [comment, setComment] = useState('');
@@ -73,15 +81,14 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const hasAlreadyReviewed = useMemo(() => {
-    if (!application || !reviewer) return false;
-    return (application as any).scores?.some((s: any) => s.reviewerId === reviewer.uid);
-  }, [application, reviewer]);
+    return myReview?.status === 'Submitted';
+  }, [myReview]);
 
   useEffect(() => {
     if (activeScholarship?.rubric && Object.keys(scores).length === 0) {
       const initialScores: Record<string, number> = {};
       activeScholarship.rubric.forEach(r => {
-        initialScores[r.criterion] = 5;
+        initialScores[r.id || r.label] = 5;
       });
       setScores(initialScores);
     }
@@ -91,7 +98,7 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
     if (!activeScholarship?.rubric) return 0;
     let total = 0;
     activeScholarship.rubric.forEach(r => {
-      const score = scores[r.criterion] || 0;
+      const score = scores[r.id || r.label] || 0;
       total += (score * (r.weight / 100));
     });
     return Number(total.toFixed(2));
@@ -119,40 +126,53 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
       const reviewData = {
         reviewerId: reviewer.uid,
         reviewerName: reviewer.displayName || 'Anonymous Reviewer',
-        submittedAt: new Date().toISOString(),
+        applicationId: applicationId,
+        updatedAt: serverTimestamp(),
+        submittedAt: serverTimestamp(),
         criteriaScores,
         totalScore: totalWeightedScore,
         notes: comment,
         recommendation,
         markForDiscussion,
         aiAnalysis,
+        status: 'Submitted',
       };
 
-      const applicantDocRef = doc(firestore, 'users', applicationId);
-      await updateDoc(applicantDocRef, {
-        scores: arrayUnion(reviewData),
-        updatedAt: new Date().toISOString()
-      });
+      // Must live in the 'reviews' subcollection: both the reviewer dashboard
+      // and the admin committee board read reviews via a collection-group
+      // query, so a scores[] array on the applicant doc is invisible to them.
+      await setDoc(doc(firestore, 'users', applicationId, 'reviews', reviewer.uid), reviewData, { merge: true });
 
       toast({
         title: "Review Submitted",
         description: "Evaluation finalized and stored.",
       });
       
-      const assignedSchoolIds = programs?.map(p => p.schoolId) || ['default-school'];
-      const nextQ = query(
-        collection(firestore, 'users'),
-        where('role', '==', 'applicant'),
-        where('status', '==', 'submitted'),
-        where('schoolId', 'in', assignedSchoolIds),
-        limit(10)
-      );
+      // Firestore rejects an empty array for 'in', so skip the lookup entirely
+      // when this reviewer isn't assigned to any program yet.
+      const assignedSchoolIds = (programs?.map(p => p.schoolId) || []).filter(Boolean);
 
-      const nextSnap = await getDocs(nextQ);
-      const nextApp = nextSnap.docs.find(d => {
-        const data = d.data();
-        return d.id !== applicationId && !data.scores?.some((s: any) => s.reviewerId === reviewer.uid);
-      });
+      let nextApp;
+      if (assignedSchoolIds.length > 0) {
+        const nextQ = query(
+          collection(firestore, 'users'),
+          where('role', '==', 'applicant'),
+          where('status', '==', 'Submitted'),
+          where('schoolId', 'in', assignedSchoolIds),
+          limit(10)
+        );
+
+        const nextSnap = await getDocs(nextQ);
+
+        // Reviews live in a subcollection now, so "already reviewed by me" has
+        // to be read from there rather than off the applicant doc.
+        const myReviewsSnap = await getDocs(
+          query(collectionGroup(firestore, 'reviews'), where('reviewerId', '==', reviewer.uid))
+        );
+        const reviewedIds = new Set(myReviewsSnap.docs.map(d => d.ref.parent.parent?.id));
+
+        nextApp = nextSnap.docs.find(d => d.id !== applicationId && !reviewedIds.has(d.id));
+      }
 
       if (nextApp) {
         router.push(`/review/applications/${nextApp.id}`);
@@ -314,22 +334,25 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
                 </div>
               )}
 
-              {activeScholarship?.rubric?.map((item) => (
-                <div key={item.criterion} className="space-y-2">
-                  <div className="flex justify-between items-baseline">
-                    <div className="flex flex-col">
-                      <Label className="text-sm font-bold">{item.criterion}</Label>
-                      <span className="text-[9px] text-muted-foreground uppercase font-black tracking-widest">Weight: {item.weight}%</span>
+              {activeScholarship?.rubric?.map((item) => {
+                const itemKey = item.id || item.label;
+                return (
+                  <div key={itemKey} className="space-y-2">
+                    <div className="flex justify-between items-baseline">
+                      <div className="flex flex-col">
+                        <Label className="text-sm font-bold">{item.label}</Label>
+                        <span className="text-[9px] text-muted-foreground uppercase font-black tracking-widest">Weight: {item.weight}%</span>
+                      </div>
+                      <Badge variant="outline" className="font-mono text-primary border-primary/30">{scores[itemKey] || 0} / 10</Badge>
                     </div>
-                    <Badge variant="outline" className="font-mono text-primary border-primary/30">{scores[item.criterion] || 0} / 10</Badge>
+                    <Slider
+                      value={[scores[itemKey] || 5]} max={10} min={1} step={1}
+                      onValueChange={(val) => !hasAlreadyReviewed && setScores({ ...scores, [itemKey]: val[0] })}
+                      disabled={hasAlreadyReviewed}
+                    />
                   </div>
-                  <Slider 
-                    value={[scores[item.criterion] || 5]} max={10} min={1} step={1} 
-                    onValueChange={(val) => !hasAlreadyReviewed && setScores({ ...scores, [item.criterion]: val[0] })}
-                    disabled={hasAlreadyReviewed}
-                  />
-                </div>
-              ))}
+                );
+              })}
               
               <Separator />
 

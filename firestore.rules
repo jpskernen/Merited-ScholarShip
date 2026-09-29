@@ -12,15 +12,13 @@ service cloud.firestore {
 
     function isSponsor() {
       return isSignedIn() && (
-        (exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid)) &&
-         get(/databases/$(database)/documents/roles_admin/$(request.auth.uid)).data.role.lower() in ['admin', 'sponsor']) ||
-        request.auth.token.email.lower() in ['peyton.vandenbemden@gmail.com', 'admin@test.com', 'hello@meritedapp.com', 'hello@merited.app']
+        exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/roles_admin/$(request.auth.uid)).data.role.lower() in ['admin', 'sponsor']
       );
     }
 
     function isReviewer() {
       return isSignedIn() && (
-        request.auth.token.email.lower() in ['reviewer@test.com', 'peyton.vandenbemden@gmail.com', 'hello@meritedapp.com', 'hello@merited.app'] ||
         getUserData().role.lower() == 'reviewer' ||
         exists(/databases/$(database)/documents/reviewers/$(request.auth.uid)) ||
         isSponsor()
@@ -28,31 +26,41 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read, list: if isSignedIn() && (request.auth.uid == userId || isSponsor() || isReviewer());
+      allow read: if isSignedIn() && (request.auth.uid == userId || isSponsor() || isReviewer());
+      allow list: if isSponsor() || isReviewer();
       allow write: if isSignedIn() && (request.auth.uid == userId || isSponsor());
 
       match /{allSubcollections=**} {
-        allow read, list: if isSignedIn() && (request.auth.uid == userId || isSponsor() || isReviewer());
+        allow read: if isSignedIn() && (request.auth.uid == userId || isSponsor() || isReviewer());
+        allow list: if isSponsor() || isReviewer();
         allow write: if isSignedIn() && (request.auth.uid == userId || isSponsor());
       }
     }
 
+    // UPDATED: Allow authenticated users to create organizations
     match /organizations/{orgId} {
       allow read: if isSignedIn();
-      allow write: if isSponsor();
+      allow create: if isSignedIn();
+      allow update, delete: if isSponsor();
+
+      // Allow setup of organization subcollections
+      match /{document=**} {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn();
+      }
 
       match /scholarships/{scholarshipId} {
         allow read: if isSignedIn();
         allow write: if isSponsor();
 
         match /applications/{appId} {
-          allow read, list: if isSignedIn() && (
-            request.auth.uid == appId || 
-            isReviewer() || 
+          allow read: if isSignedIn() && (
+            request.auth.uid == appId ||
+            isReviewer() ||
             isSponsor()
           );
           allow write: if isSignedIn() && (request.auth.uid == appId || isSponsor());
-          
+
           match /reviews/{reviewId} {
             allow read: if isSignedIn() && (isReviewer() || isSponsor());
             allow write: if isSignedIn() && (isReviewer() || isSponsor());
@@ -66,12 +74,95 @@ service cloud.firestore {
       allow write: if isSponsor();
     }
 
-    match /invites/{inviteId} { allow read, write: if true; }
-    match /admin_invites/{inviteId} { allow read, write: if true; }
-    match /sent_emails/{emailId} { allow read, write: if true; }
-    match /auditLog/{logId} { allow read, write: if true; }
-    match /recommendationTokens/{tokenId} { allow read, write: if true; }
-    match /reviewers/{reviewerId} { allow read: if isSignedIn(); allow write: if isSponsor(); }
-    match /roles_admin/{adminId} { allow read: if isSignedIn(); allow write: if isSponsor(); }
+    // Collection-group queries (collectionGroup(firestore, 'reviews')) are
+    // matched separately from the nested rule above: Firestore only applies
+    // a rule to a group query if it's declared with the recursive {path=**}
+    // wildcard, regardless of where the nested rule says the same documents
+    // live.
+    match /{path=**}/reviews/{reviewId} {
+      allow read: if isSignedIn() && (isReviewer() || isSponsor());
+      allow write: if isSignedIn() && (isReviewer() || isSponsor());
+    }
+
+    // Invite documents are addressed by an unguessable ID that itself acts as
+    // the access token for a brand-new, not-yet-authenticated invitee, so a
+    // direct get-by-id has to be public. Listing the whole collection stays
+    // sponsor-only so invites can't be enumerated.
+    match /invites/{inviteId} {
+      allow get: if true;
+      allow list: if isSponsor();
+      allow create: if isSponsor();
+      allow update: if isSponsor() || (
+        isSignedIn() &&
+        request.auth.token.email.lower() == resource.data.email.lower()
+      );
+      allow delete: if isSponsor();
+    }
+
+    match /admin_invites/{inviteId} {
+      allow get: if true;
+      allow list: if isSponsor();
+      allow create: if isSponsor();
+      allow update: if isSponsor() || (
+        isSignedIn() &&
+        request.auth.token.email.lower() == resource.data.email.lower()
+      );
+      allow delete: if isSponsor();
+    }
+
+    match /sent_emails/{emailId} {
+      allow read: if isSponsor();
+      allow write: if isSponsor();
+    }
+
+    match /auditLog/{logId} {
+      allow read: if isSponsor();
+      allow create: if isSponsor();
+      allow update, delete: if false;
+    }
+
+    // Like invites, a recommendation token's ID is the unguessable bearer
+    // credential handed to a recommender who is never signed in, so get-by-id
+    // must be public. The one legitimate anonymous write is the recommender
+    // submitting their letter exactly once, so update is scoped tightly: only
+    // while the token is still unused, only the four fields that submission
+    // ever touches, and only flipping used to true (never back to false).
+    // Listing (enumerating every token) and creation stay sponsor-only;
+    // normal token creation happens via the trusted Admin SDK server action,
+    // which bypasses these rules entirely.
+    match /recommendationTokens/{tokenId} {
+      allow get: if true;
+      allow list: if isSponsor();
+      allow update: if isSponsor() || (
+        resource.data.used == false &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used', 'fileUrl', 'letterText', 'updatedAt']) &&
+        request.resource.data.used == true
+      );
+      allow create, delete: if isSponsor();
+    }
+
+    // A brand-new reviewer completing onboarding may create their own
+    // reviewers/{uid} doc, but only by proving (via assignedByInvite) that a
+    // sponsor-created invite for their exact email actually exists.
+    match /reviewers/{reviewerId} {
+      allow read: if isSignedIn();
+      allow write: if isSponsor() || (
+        isSignedIn() &&
+        request.auth.uid == reviewerId &&
+        request.resource.data.assignedByInvite is string &&
+        get(/databases/$(database)/documents/invites/$(request.resource.data.assignedByInvite)).data.email.lower() == request.auth.token.email.lower()
+      );
+    }
+
+    // Same self-service-with-proof pattern for admin role grants.
+    match /roles_admin/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if isSponsor() || (
+        isSignedIn() &&
+        request.auth.uid == adminId &&
+        request.resource.data.assignedByInvite is string &&
+        get(/databases/$(database)/documents/admin_invites/$(request.resource.data.assignedByInvite)).data.email.lower() == request.auth.token.email.lower()
+      );
+    }
   }
 }

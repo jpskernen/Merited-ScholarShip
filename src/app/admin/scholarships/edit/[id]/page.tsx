@@ -190,7 +190,7 @@ export default function EditScholarshipPage({ params }: { params: Promise<{ id: 
                 <div key={field.id} className="flex items-end gap-4 animate-in slide-in-from-left-2">
                   <div className="flex-1 space-y-2">
                     <Label className="text-[10px] uppercase font-black text-muted-foreground">Criterion</Label>
-                    <Input {...register(`rubric.${index}.criterion`)} placeholder="e.g. Leadership Potential" />
+                    <Input {...register(`rubric.${index}.label`)} placeholder="e.g. Leadership Potential" />
                   </div>
                   <div className="w-24 space-y-2">
                     <Label className="text-[10px] uppercase font-black text-muted-foreground">Weight (%)</Label>
@@ -203,7 +203,7 @@ export default function EditScholarshipPage({ params }: { params: Promise<{ id: 
               ))}
             </div>
             
-            <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => append({ criterion: '', weight: 0 })}>
+            <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => append({ id: `criterion-${Date.now()}`, label: '', weight: 0 })}>
               <Plus className="h-4 w-4 mr-2" /> Add Criteria
             </Button>
 

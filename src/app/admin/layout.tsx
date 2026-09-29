@@ -50,6 +50,7 @@ export default function AdminLayout({
   const { user, role, isUserLoading } = useUser();
   const firestore = useFirestore();
   const [mounted, setMounted] = useState(false);
+  const isPublicInvite = pathname.startsWith('/admin/invite/');
 
   useEffect(() => {
     setMounted(true);
@@ -58,6 +59,7 @@ export default function AdminLayout({
   const isAdmin = role?.toLowerCase() === 'admin' || user?.email === 'peyton.vandenbemden@gmail.com';
 
   useEffect(() => {
+    if (isPublicInvite) return;
     if (mounted && !isUserLoading) {
       if (!user) {
         router.push('/login');
@@ -67,11 +69,13 @@ export default function AdminLayout({
         router.push('/dashboard');
       }
     }
-  }, [mounted, user, isUserLoading, isAdmin, router]);
+  }, [mounted, user, isUserLoading, isAdmin, router, isPublicInvite]);
 
   const isActive = (href: string) => {
     return pathname === href || (href !== '/admin' && pathname.startsWith(href));
   };
+
+  if (isPublicInvite) return <>{children}</>;
 
   if (!mounted || isUserLoading) {
     return (

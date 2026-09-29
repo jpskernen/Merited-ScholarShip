@@ -65,7 +65,7 @@ export default function Home() {
     if (!user) return '/login';
     const r = role?.toLowerCase();
     if (r === 'admin') return '/admin';
-    if (r === 'reviewer') return '/reviewer/dashboard';
+    if (r === 'reviewer') return '/review';
     return '/dashboard';
   }, [user, role]);
 

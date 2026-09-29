@@ -57,7 +57,7 @@ export function UserNav() {
   const getDashboardLink = () => {
     const r = role?.toLowerCase();
     if (r === 'admin') return '/admin';
-    if (r === 'reviewer') return '/reviewer/dashboard';
+    if (r === 'reviewer') return '/review';
     return '/dashboard';
   };
 

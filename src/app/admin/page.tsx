@@ -41,7 +41,7 @@ export default function AdminDashboardPage() {
     // Listener for Total Applications in this Org
     const qTotal = query(
       applicantsRef, 
-      where('role', '==', 'Applicant'), 
+      where('role', '==', 'applicant'), 
       where('schoolId', '==', orgId)
     );
     const unsubscribeTotal = onSnapshot(qTotal, (snapshot) => {
@@ -51,7 +51,7 @@ export default function AdminDashboardPage() {
     // Listener for 'Submitted'
     const qSubmitted = query(
       applicantsRef, 
-      where('role', '==', 'Applicant'), 
+      where('role', '==', 'applicant'), 
       where('schoolId', '==', orgId), 
       where('status', '==', 'Submitted')
     );
@@ -62,7 +62,7 @@ export default function AdminDashboardPage() {
     // Listener for 'Under Review'
     const qReview = query(
       applicantsRef, 
-      where('role', '==', 'Applicant'), 
+      where('role', '==', 'applicant'), 
       where('schoolId', '==', orgId), 
       where('status', '==', 'In Review')
     );
@@ -73,7 +73,7 @@ export default function AdminDashboardPage() {
     // Listener for 'Awarded'
     const qAwarded = query(
       applicantsRef, 
-      where('role', '==', 'Applicant'), 
+      where('role', '==', 'applicant'), 
       where('schoolId', '==', orgId), 
       where('status', '==', 'Awarded')
     );

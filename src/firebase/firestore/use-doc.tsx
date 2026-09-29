@@ -44,7 +44,11 @@ export function useDoc<T = any>(
   type StateDataType = WithId<T> | null;
 
   const [data, setData] = useState<StateDataType>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  // Always start "loading" (constant across server and client renders, so
+  // hydration matches) so consumers never see (isLoading: false, data: null)
+  // — which reads as "confirmed not found" — before the effect below has had
+  // a chance to run and correct it.
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<FirestoreError | Error | null>(null);
 
   useEffect(() => {

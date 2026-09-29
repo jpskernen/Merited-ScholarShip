@@ -224,6 +224,48 @@ export default function ProfilePage() {
     }
   };
 
+  const handleSendReminder = async (index: number) => {
+    if (!user) return;
+    setIsRemindingRec(prev => ({ ...prev, [index]: true }));
+    try {
+      const result = await sendRecommendationReminder({
+        applicationId: user.uid,
+        requestIndex: index,
+        origin: window.location.origin
+      });
+      if (result.success) {
+        toast({ title: "Reminder Sent", description: "A follow-up email has been dispatched." });
+      } else {
+        throw new Error(result.error);
+      }
+    } catch (error: any) {
+      toast({ title: "Reminder Failed", description: error.message || "Could not send reminder.", variant: "destructive" });
+    } finally {
+      setIsRemindingRec(prev => ({ ...prev, [index]: false }));
+    }
+  };
+
+  const handleCancelRecommendation = async (index: number) => {
+    if (!user) return;
+    setIsCancellingRec(prev => ({ ...prev, [index]: true }));
+    try {
+      const result = await cancelRecommendationRequest({
+        applicationId: user.uid,
+        requestIndex: index,
+      });
+      if (result.success) {
+        toast({ title: "Request Cancelled", description: "You can send a new invitation now." });
+        setRecErrors(prev => ({ ...prev, [index]: '' }));
+      } else {
+        throw new Error(result.error);
+      }
+    } catch (error: any) {
+      toast({ title: "Cancel Failed", description: error.message || "Could not cancel request.", variant: "destructive" });
+    } finally {
+      setIsCancellingRec(prev => ({ ...prev, [index]: false }));
+    }
+  };
+
   const performAutoSave = useCallback(async () => {
     if (!user || !firestore || !isDirty || applicantData?.status === 'Submitted' || applicantData?.status === 'In Review') {
       return;
@@ -265,6 +307,7 @@ export default function ProfilePage() {
     } catch (error: any) {
       setFormError(error.message);
       setSaveStatus('error');
+      toast({ title: submit ? 'Submission Failed' : 'Save Failed', description: error.message, variant: 'destructive' });
     } finally {
       setIsSaving(false);
       setIsSubmitting(false);
@@ -312,6 +355,8 @@ export default function ProfilePage() {
                 <div className="space-y-2"><Label htmlFor="email" className="text-xs font-bold uppercase tracking-wider">Primary Contact Email</Label><Input id="email" {...register('email')} disabled className="h-10 bg-muted/50" /></div>
                 <div className="space-y-2"><Label htmlFor="school" className="text-xs font-bold uppercase tracking-wider">Current Institution</Label><Input id="school" {...register('school')} disabled={isAlreadySubmitted} className="h-10" /></div>
                 <div className="space-y-2"><Label htmlFor="gpa" className="text-xs font-bold uppercase tracking-wider">Cumulative GPA</Label><Input id="gpa" type="number" step="0.01" {...register('gpa')} disabled={isAlreadySubmitted} className="h-10" /></div>
+                <div className="space-y-2"><Label htmlFor="major" className="text-xs font-bold uppercase tracking-wider">Intended Major</Label><Input id="major" {...register('major')} disabled={isAlreadySubmitted} className="h-10" /></div>
+                <div className="space-y-2"><Label htmlFor="interests" className="text-xs font-bold uppercase tracking-wider">Academic Interests</Label><Input id="interests" {...register('interests')} placeholder="e.g. Robotics, Public Policy" disabled={isAlreadySubmitted} className="h-10" /></div>
                 <div className="space-y-2 sm:col-span-2"><Label htmlFor="address" className="text-xs font-bold uppercase tracking-wider">Permanent Mailing Address</Label><Input id="address" {...register('address')} disabled={isAlreadySubmitted} className="h-10" /></div>
               </div>
             </CardContent>
@@ -325,6 +370,11 @@ export default function ProfilePage() {
                   <Label className="text-sm font-black uppercase tracking-tight">Qualification Summary</Label>
                 </div>
                 <Textarea {...register('qualificationStatement')} rows={6} placeholder="Summarize your key achievements..." disabled={isAlreadySubmitted} onBlur={performAutoSave} className="text-sm leading-relaxed" />
+              </div>
+              <Separator />
+              <div className="space-y-4">
+                <Label className="text-sm font-black uppercase tracking-tight">Activities & Leadership</Label>
+                <Textarea {...register('activities')} rows={5} placeholder="List your extracurricular activities, leadership roles, and community involvement..." disabled={isAlreadySubmitted} onBlur={performAutoSave} className="text-sm leading-relaxed" />
               </div>
               <Separator />
               <div className="space-y-4">
@@ -369,6 +419,37 @@ export default function ProfilePage() {
                       </div>
                     )}
                     {status === 'Not Requested' && !isAlreadySubmitted && <Button type="button" size="sm" className="w-full h-10 text-xs font-bold" onClick={() => handleSendRecommendationRequest(i)} disabled={isRequestingRec[i]}><Mail className="h-4 w-4 mr-2" />Send Secure Invitation</Button>}
+                    {status === 'Pending' && !isAlreadySubmitted && (
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-700 font-black uppercase">
+                          <Clock className="h-4 w-4" /> Awaiting response from {(applicantData as any)?.[`recommenderName${i}`] || 'recommender'}
+                        </div>
+                        <div className="flex gap-2">
+                          <Button type="button" variant="outline" size="sm" className="flex-1 h-9 text-xs font-bold" onClick={() => handleSendReminder(i)} disabled={isRemindingRec[i]}>
+                            {isRemindingRec[i] ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Bell className="h-4 w-4 mr-2" />}Send Reminder
+                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button type="button" variant="outline" size="sm" className="flex-1 h-9 text-xs font-bold text-destructive hover:text-destructive" disabled={isCancellingRec[i]}>
+                                {isCancellingRec[i] ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <UserMinus className="h-4 w-4 mr-2" />}Cancel Request
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Cancel this endorsement request?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This revokes the recommender's link and clears their details so you can invite someone new. This can't be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Keep Waiting</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => handleCancelRecommendation(i)}>Cancel Request</AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      </div>
+                    )}
                     {status === 'Received' && <div className="flex items-center gap-2 p-3 rounded-lg bg-green-50 border border-green-200 text-[11px] text-green-700 font-black uppercase"><CheckCircle className="h-4 w-4" /> Letter Verified & Attached</div>}
                   </div>
                 );
@@ -377,9 +458,16 @@ export default function ProfilePage() {
           </Card>
 
           {!isAlreadySubmitted && (
-            <div className="flex flex-col sm:flex-row gap-4 justify-end pt-4 pb-10">
-              <Button type="button" variant="outline" onClick={() => onSave(false)} disabled={isSaving || isSubmitting} className="w-full sm:w-auto h-12 px-8 font-bold">Save Draft Progress</Button>
-              <Button type="button" className="font-black uppercase tracking-widest w-full sm:w-auto h-12 px-10 shadow-lg" onClick={() => onSave(true)} disabled={isSaving || isSubmitting}>Finalize & Submit</Button>
+            <div className="flex flex-col gap-4 pt-4 pb-10">
+              {formError && (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">
+                  {formError}
+                </div>
+              )}
+              <div className="flex flex-col sm:flex-row gap-4 justify-end">
+                <Button type="button" variant="outline" onClick={() => onSave(false)} disabled={isSaving || isSubmitting} className="w-full sm:w-auto h-12 px-8 font-bold">Save Draft Progress</Button>
+                <Button type="button" className="font-black uppercase tracking-widest w-full sm:w-auto h-12 px-10 shadow-lg" onClick={() => onSave(true)} disabled={isSaving || isSubmitting}>Finalize & Submit</Button>
+              </div>
             </div>
           )}
         </div>

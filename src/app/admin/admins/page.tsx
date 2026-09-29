@@ -13,6 +13,7 @@ import { collection, addDoc, serverTimestamp, deleteDoc, doc, updateDoc } from '
 import { UserPlus, Trash2, Copy, Check, ShieldAlert, Loader2, Send } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { generateInvitationEmail } from '@/ai/flows/generate-invitation-email';
+import { sendInvitationEmail } from '@/app/lib/notifications';
 import {
   Dialog,
   DialogContent,
@@ -33,8 +34,10 @@ function generatePassword(length = 12) {
 }
 
 export default function ManageAdminsPage() {
-  const { firestore } = useFirebase();
+  const { firestore, userData } = useFirebase();
   const { toast } = useToast();
+  // Must match the org that programs/applicants live under.
+  const organizationId = userData?.organizationId || userData?.schoolId || 'scholarship-hib4j';
   const [email, setEmail] = useState('');
   const [isInviting, setIsInviting] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -62,7 +65,7 @@ export default function ManageAdminsPage() {
         status: 'Pending',
         emailSent: false,
         createdAt: serverTimestamp(),
-        schoolId: 'default-school'
+        schoolId: organizationId
       });
 
       toast({
@@ -96,31 +99,35 @@ export default function ManageAdminsPage() {
         onboardingLink: link,
       });
 
-      // Simulate sending the email
-      console.log(`%c[Email Service] Sending to: ${invite.email}`, 'color: #ea580c; font-weight: bold');
-      console.log(`Subject: ${result.subject}\n\n${result.body}`);
+      const sendResult = await sendInvitationEmail({
+        email: invite.email,
+        subject: result.subject,
+        body: result.body,
+        role: 'Admin',
+      });
 
-      if (firestore) {
-        // Record the email in the outbox
-        await addDoc(collection(firestore, 'sent_emails'), {
-          recipient: invite.email,
-          subject: result.subject,
-          body: result.body,
-          type: 'Admin Invitation',
-          sentAt: serverTimestamp()
-        });
-
+      if (firestore && sendResult.success) {
         await updateDoc(doc(firestore, 'admin_invites', invite.id), {
           emailSent: true,
           lastEmailSentAt: serverTimestamp()
         });
       }
 
-      toast({
-        title: "Invitation Sent (Simulated)",
-        description: `An onboarding email record has been created for ${invite.email}.`,
-      });
-      
+      if (sendResult.success) {
+        toast({
+          title: sendResult.method === 'Gmail SMTP' ? "Invitation Sent" : "Invitation Logged (Not Delivered)",
+          description: sendResult.method === 'Gmail SMTP'
+            ? `An onboarding email was sent to ${invite.email}.`
+            : `Gmail SMTP isn't configured, so no real email was delivered to ${invite.email}.`,
+        });
+      } else {
+        toast({
+          title: "Email Send Failed",
+          description: sendResult.error || `Failed to send the invitation email to ${invite.email}.`,
+          variant: "destructive"
+        });
+      }
+
       setAiEmail(result);
     } catch (err) {
       toast({

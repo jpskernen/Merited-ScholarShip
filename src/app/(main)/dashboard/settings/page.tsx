@@ -9,6 +9,7 @@ import { ShieldCheck, Mail, Key, Loader2, AlertCircle } from 'lucide-react';
 import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 
 export default function SettingsPage() {
   const { user, role } = useUser();

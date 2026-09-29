@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useAuth, initiateEmailSignUp, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
+import { useAuth, initiateEmailSignUp, useFirestore, useDoc, useMemoFirebase, useFirebase } from '@/firebase';
 import { doc, updateDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { ShieldCheck, Loader2, Eye, EyeOff, Key } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -16,6 +16,7 @@ export default function ReviewerOnboardingPage({ params }: { params: Promise<{ i
   const { id: inviteId } = use(params);
   const auth = useAuth();
   const firestore = useFirestore();
+  const { refreshUserRole } = useFirebase();
   const router = useRouter();
   const { toast } = useToast();
 
@@ -67,13 +68,22 @@ export default function ReviewerOnboardingPage({ params }: { params: Promise<{ i
         id: user.uid,
         schoolId: invite.schoolId,
         role: 'Reviewer',
+        assignedByInvite: inviteId,
         assignedDate: serverTimestamp()
       });
+
+
+      
 
       // Mark invite as Accepted
       await updateDoc(doc(firestore, 'invites', inviteId), {
         status: 'Accepted'
       });
+
+      // The auth listener resolved this user as an applicant before the docs
+      // above existed, so re-resolve before navigating or the layout guard
+      // will bounce them to the applicant dashboard.
+      await refreshUserRole();
 
       toast({ title: "Welcome!", description: "Account created. Redirecting to Review Center..." });
       router.push('/review');
