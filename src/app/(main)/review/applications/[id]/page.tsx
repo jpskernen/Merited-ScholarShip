@@ -32,7 +32,7 @@ import {
 import { notFound, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useDoc, useFirebase, useMemoFirebase, useCollection } from '@/firebase';
-import { doc, setDoc, serverTimestamp, collection, collectionGroup, query, where, getDocs, limit } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, getDocs, limit } from 'firebase/firestore';
 import type { Applicant } from '@/types/applicant';
 import type { Scholarship } from '@/types/scholarship';
 import { useToast } from '@/hooks/use-toast';
@@ -46,29 +46,57 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
   const { toast } = useToast();
   const { firestore, user: reviewer } = useFirebase();
   
-  const applicantRef = useMemoFirebase(() => {
+  // The route id is an application, not a student. That distinction is the
+  // whole fix: a student may hold several applications and each is judged
+  // separately, against its own scholarship's rubric.
+  const applicationRef = useMemoFirebase(() => {
     if (!firestore || !applicationId) return null;
-    return doc(firestore, 'users', applicationId);
+    return doc(firestore, 'applications', applicationId);
   }, [firestore, applicationId]);
 
-  const { data: application, isLoading } = useDoc<Applicant>(applicantRef);
+  const { data: applicationRecord, isLoading: isApplicationLoading } = useDoc<any>(applicationRef);
 
-  const programsQuery = useMemoFirebase(() => {
-    if (!firestore || !reviewer) return null;
-    return query(collection(firestore, 'programs'), where('reviewerIds', 'array-contains', reviewer.uid));
-  }, [firestore, reviewer]);
+  // Shared profile details (GPA, major) still live on the student document.
+  const studentRef = useMemoFirebase(() => {
+    if (!firestore || !applicationRecord?.studentId) return null;
+    return doc(firestore, 'users', applicationRecord.studentId);
+  }, [firestore, applicationRecord?.studentId]);
 
-  const { data: programs, isLoading: isProgramsLoading } = useCollection<Scholarship>(programsQuery);
+  const { data: studentProfile, isLoading: isStudentLoading } = useDoc<Applicant>(studentRef);
+
+  const application = useMemo(
+    () => (applicationRecord ? { ...(studentProfile || {}), ...applicationRecord } as Applicant : null),
+    [studentProfile, applicationRecord],
+  );
+
+  // The student document can only be requested once the application has loaded
+  // and revealed its studentId, so there is a render in between where the
+  // application is present but the shared profile fields (GPA, major) are not.
+  // Without the second clause the page rendered in that gap and crashed on
+  // application.gpa.toFixed().
+  const isLoading =
+    isApplicationLoading ||
+    isStudentLoading ||
+    (!!applicationRecord?.studentId && !studentProfile);
+
+  // The rubric comes from the scholarship this application was submitted to.
+  // It used to be programs[0] — the first entry in whatever the reviewer
+  // happened to be assigned to — so two reviewers could score the same
+  // application against two different scholarships' criteria.
+  const programRef = useMemoFirebase(() => {
+    if (!firestore || !applicationRecord?.scholarshipId) return null;
+    return doc(firestore, 'programs', applicationRecord.scholarshipId);
+  }, [firestore, applicationRecord?.scholarshipId]);
+
+  const { data: activeScholarship, isLoading: isProgramsLoading } = useDoc<Scholarship>(programRef);
 
   // This reviewer's own review of this application, if they've already filed one.
   const myReviewRef = useMemoFirebase(() => {
     if (!firestore || !applicationId || !reviewer) return null;
-    return doc(firestore, 'users', applicationId, 'reviews', reviewer.uid);
+    return doc(firestore, 'applications', applicationId, 'reviews', reviewer.uid);
   }, [firestore, applicationId, reviewer]);
 
   const { data: myReview } = useDoc(myReviewRef);
-
-  const activeScholarship = programs?.[0];
 
   const [scores, setScores] = useState<Record<string, number>>({});
   const [comment, setComment] = useState('');
@@ -84,7 +112,13 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
     return myReview?.status === 'Submitted';
   }, [myReview]);
 
+  // Seed the neutral midpoint only for an evaluation that hasn't been filed
+  // yet. Doing it unconditionally is what made a finalised review display as a
+  // flat 5/10 on every criterion with no recommendation selected: the controls
+  // are disabled once submitted, so those defaults were frozen on screen and
+  // read as the reviewer's actual scores.
   useEffect(() => {
+    if (myReview) return;
     if (activeScholarship?.rubric && Object.keys(scores).length === 0) {
       const initialScores: Record<string, number> = {};
       activeScholarship.rubric.forEach(r => {
@@ -92,7 +126,23 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
       });
       setScores(initialScores);
     }
-  }, [activeScholarship, scores]);
+  }, [activeScholarship, scores, myReview]);
+
+  // Restore what this reviewer actually submitted.
+  useEffect(() => {
+    if (!myReview) return;
+
+    const restored: Record<string, number> = {};
+    (myReview.criteriaScores || []).forEach((entry: any) => {
+      if (entry?.criteriaId) restored[entry.criteriaId] = entry.score;
+    });
+    if (Object.keys(restored).length > 0) setScores(restored);
+
+    setComment(myReview.notes || '');
+    setRecommendation(myReview.recommendation || '');
+    setMarkForDiscussion(!!myReview.markForDiscussion);
+    setAiAnalysis(myReview.aiAnalysis ?? null);
+  }, [myReview]);
 
   const totalWeightedScore = useMemo(() => {
     if (!activeScholarship?.rubric) return 0;
@@ -104,7 +154,15 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
     return Number(total.toFixed(2));
   }, [scores, activeScholarship]);
 
-  const scorePercentage = (totalWeightedScore / 10) * 100;
+  // A finalised review shows the score that was actually recorded, not one
+  // recomputed from today's rubric weights — otherwise editing a programme's
+  // weights later would silently restate past evaluations, and this page would
+  // disagree with the score shown in the reviewer queue and the admin board.
+  const displayScore = hasAlreadyReviewed && typeof myReview?.totalScore === 'number'
+    ? myReview.totalScore
+    : totalWeightedScore;
+
+  const scorePercentage = (displayScore / 10) * 100;
 
   const handleSubmitReview = async () => {
     if (!firestore || !reviewer || !applicationId || hasAlreadyReviewed) return;
@@ -127,6 +185,8 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
         reviewerId: reviewer.uid,
         reviewerName: reviewer.displayName || 'Anonymous Reviewer',
         applicationId: applicationId,
+        studentId: applicationRecord?.studentId ?? null,
+        scholarshipId: applicationRecord?.scholarshipId ?? null,
         updatedAt: serverTimestamp(),
         submittedAt: serverTimestamp(),
         criteriaScores,
@@ -141,41 +201,27 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
       // Must live in the 'reviews' subcollection: both the reviewer dashboard
       // and the admin committee board read reviews via a collection-group
       // query, so a scores[] array on the applicant doc is invisible to them.
-      await setDoc(doc(firestore, 'users', applicationId, 'reviews', reviewer.uid), reviewData, { merge: true });
+      await setDoc(doc(firestore, 'applications', applicationId, 'reviews', reviewer.uid), reviewData, { merge: true });
 
       toast({
         title: "Review Submitted",
         description: "Evaluation finalized and stored.",
       });
       
-      // Firestore rejects an empty array for 'in', so skip the lookup entirely
-      // when this reviewer isn't assigned to any program yet.
-      const assignedSchoolIds = (programs?.map(p => p.schoolId) || []).filter(Boolean);
-
-      let nextApp;
-      if (assignedSchoolIds.length > 0) {
-        const nextQ = query(
-          collection(firestore, 'users'),
-          where('role', '==', 'applicant'),
-          where('status', '==', 'Submitted'),
-          where('schoolId', 'in', assignedSchoolIds),
-          limit(10)
-        );
-
-        const nextSnap = await getDocs(nextQ);
-
-        // Reviews live in a subcollection now, so "already reviewed by me" has
-        // to be read from there rather than off the applicant doc.
-        const myReviewsSnap = await getDocs(
-          query(collectionGroup(firestore, 'reviews'), where('reviewerId', '==', reviewer.uid))
-        );
-        const reviewedIds = new Set(myReviewsSnap.docs.map(d => d.ref.parent.parent?.id));
-
-        nextApp = nextSnap.docs.find(d => d.id !== applicationId && !reviewedIds.has(d.id));
+      // The evaluation is saved at this point. Advancing to the next candidate
+      // is a convenience on top of that, so it gets its own error handling —
+      // previously anything that went wrong here was reported as
+      // "Could not save review", telling a reviewer their submitted evaluation
+      // had failed when it was already safely stored.
+      let nextId: string | null = null;
+      try {
+        nextId = await findNextUnreviewedApplication();
+      } catch (error: any) {
+        console.error('Could not determine the next application to review:', error.message);
       }
 
-      if (nextApp) {
-        router.push(`/review/applications/${nextApp.id}`);
+      if (nextId) {
+        router.push(`/review/applications/${nextId}`);
       } else {
         setIsFinished(true);
       }
@@ -184,17 +230,58 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
     } finally { setIsSubmitting(false); }
   };
 
+  /**
+   * Returns the next submitted applicant this reviewer hasn't scored yet.
+   *
+   * "Already reviewed by me" is checked by reading each candidate's own review
+   * document directly. The obvious alternative — one collection-group query on
+   * reviews filtered by reviewerId — requires a COLLECTION_GROUP_ASC index that
+   * doesn't exist, and it failed at exactly the wrong moment: right after a
+   * review was saved. A handful of direct gets needs no index at all.
+   */
+  const findNextUnreviewedApplication = async (): Promise<string | null> => {
+    if (!firestore || !reviewer) return null;
+
+    // Firestore rejects an empty array for 'in', so skip the lookup entirely
+    // when this reviewer isn't assigned to any scholarship yet.
+    const assignedSnap = await getDocs(query(
+      collection(firestore, 'programs'),
+      where('reviewerIds', 'array-contains', reviewer.uid),
+    ));
+    const assignedScholarshipIds = assignedSnap.docs.map(d => d.id);
+    if (assignedScholarshipIds.length === 0) return null;
+
+    const nextSnap = await getDocs(query(
+      collection(firestore, 'applications'),
+      where('scholarshipId', 'in', assignedScholarshipIds.slice(0, 30)),
+      limit(30)
+    ));
+
+    const candidates = nextSnap.docs
+      .filter(d => d.id !== applicationId)
+      .filter(d => ['Submitted', 'In Review'].includes(d.data().status))
+      .map(d => d.id);
+
+    const reviewed = await Promise.all(
+      candidates.map(id => getDoc(doc(firestore, 'applications', id, 'reviews', reviewer.uid))
+        .then(snap => snap.exists())
+        .catch(() => true)) // treat an unreadable review as "skip this one"
+    );
+
+    return candidates.find((_, i) => !reviewed[i]) ?? null;
+  };
+
   const runAiAnalysis = async () => {
     if (!application || !activeScholarship) return;
     setIsAnalyzing(true);
     try {
       const result = await analyzeScholarshipFit({
         applicantData: {
-          gpa: application.gpa,
-          major: application.major,
+          gpa: typeof application.gpa === 'number' ? application.gpa : 0,
+          major: application.major || '',
           essay: application.essay || '',
-          activities: application.activities,
-          interests: application.interests,
+          activities: application.activities || '',
+          interests: application.interests || '',
         },
         scholarshipCriteria: activeScholarship.description,
       });
@@ -229,7 +316,9 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
 
   if (!application) notFound();
 
-  const anonymousIdentifier = `Applicant ${applicationId.substring(0, 6).toUpperCase()}`;
+  // Derived from the student, so the same candidate reads consistently across
+  // their separate applications.
+  const anonymousIdentifier = `Applicant ${String(applicationRecord?.studentId || applicationId).substring(0, 6).toUpperCase()}`;
 
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)]">
@@ -255,7 +344,7 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
           </Button>
           <div className="text-right">
             <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Weighted Score</p>
-            <p className="text-2xl font-black text-primary">{totalWeightedScore.toFixed(2)}<span className="text-sm font-normal text-muted-foreground">/10</span></p>
+            <p className="text-2xl font-black text-primary">{displayScore.toFixed(2)}<span className="text-sm font-normal text-muted-foreground">/10</span></p>
           </div>
         </div>
       </div>
@@ -270,8 +359,10 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
                   <h3 className="text-lg font-semibold">Candidate Profile</h3>
                 </div>
                 <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div><Label className="text-muted-foreground">GPA</Label><p className="font-bold">{application.gpa.toFixed(2)}</p></div>
-                  <div><Label className="text-muted-foreground">Intended Major</Label><p className="font-bold">{application.major}</p></div>
+                  {/* A student can reach submission without a GPA on record,
+                      so never assume it's a number here. */}
+                  <div><Label className="text-muted-foreground">GPA</Label><p className="font-bold">{typeof application.gpa === 'number' ? application.gpa.toFixed(2) : '—'}</p></div>
+                  <div><Label className="text-muted-foreground">Intended Major</Label><p className="font-bold">{application.major || '—'}</p></div>
                   <div className="col-span-2">
                      <Label className="text-muted-foreground flex items-center gap-1.5"><GraduationCap className="h-3.5 w-3.5" /> Program</Label>
                      <p className="font-medium text-primary">{activeScholarship?.name || 'Assigned Program'}</p>
@@ -281,7 +372,7 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
               <Separator />
               <section>
                 <h4 className="font-semibold text-sm mb-2 uppercase tracking-tight">Activities & Leadership</h4>
-                <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{application.activities}</p>
+                <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{application.activities || 'Not provided.'}</p>
               </section>
               <section>
                 <h4 className="font-semibold text-sm mb-2 uppercase tracking-tight">Personal Statement</h4>
@@ -297,7 +388,36 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
                   {application.essays?.map((essay, i) => (
                     <Button key={i} variant="outline" className="justify-start" asChild><Link href={essay.fileUrl} target="_blank"><FileText className="h-4 w-4 mr-2" /> Essay: {essay.fileName}</Link></Button>
                   ))}
+                  {[1, 2].map((i) => {
+                    const url = (application as any)?.[`recommendationLetter${i}`];
+                    if (!url) return null;
+                    const name = (application as any)?.[`recommenderName${i}`];
+                    return (
+                      <Button key={`rec-pdf-${i}`} variant="outline" className="justify-start" asChild><Link href={url} target="_blank"><FileText className="h-4 w-4 mr-2" /> Recommendation Letter {i}{name ? ` — ${name}` : ''}</Link></Button>
+                    );
+                  })}
                 </div>
+
+                {[1, 2].map((i) => {
+                  const text = (application as any)?.[`recommendationLetterText${i}`];
+                  if (!text) return null;
+                  const name = (application as any)?.[`recommenderName${i}`];
+                  const title = (application as any)?.[`recommenderTitle${i}`];
+                  return (
+                    <div key={`rec-text-${i}`} className="mt-4">
+                      <h4 className="font-semibold text-sm mb-2 uppercase tracking-tight">
+                        Recommendation Letter {i}{name ? ` — ${name}` : ''}{title ? `, ${title}` : ''}
+                      </h4>
+                      <div className="p-4 rounded-lg bg-muted/20 border text-sm leading-relaxed whitespace-pre-wrap">{text}</div>
+                    </div>
+                  );
+                })}
+
+                {!application.resume
+                  && !(application.essays && application.essays.length > 0)
+                  && ![1, 2].some((i) => (application as any)?.[`recommendationLetter${i}`] || (application as any)?.[`recommendationLetterText${i}`]) && (
+                  <p className="text-sm text-muted-foreground italic">No supporting documents or recommendation letters submitted yet.</p>
+                )}
               </section>
             </div>
           </ScrollArea>

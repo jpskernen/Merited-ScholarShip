@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect, use, useRef } from 'react';
-import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL, getStorage } from 'firebase/storage';
 import { useFirestore, useFirebase } from '@/firebase';
 import { Button } from '@/components/ui/button';
@@ -29,10 +29,9 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { sendNotification } from '@/app/lib/notifications';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
-import { submitTypedRecommendation } from './actions';
+import { submitTypedRecommendation, submitUploadedRecommendation } from './actions';
 import { cn } from '@/lib/utils';
 
 export default function RecommendUploadPage({ params }: { params: Promise<{ tokenId: string }> }) {
@@ -109,49 +108,29 @@ export default function RecommendUploadPage({ params }: { params: Promise<{ toke
       (snap) => setUploadProgress((snap.bytesTransferred / snap.totalBytes) * 100),
       (err) => { setIsUploading(false); toast({ title: "Upload Failed", variant: "destructive" }); },
       async () => {
-        const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-        
-        // Update Token
-        await updateDoc(doc(firestore, 'recommendationTokens', tokenId), { 
-          used: true, 
-          fileUrl: downloadURL,
-          updatedAt: serverTimestamp()
-        });
+        // Everything after the upload runs server-side. The recommender is not
+        // signed in, so the Firestore writes this used to make from the browser
+        // were rejected by the security rules — silently, and only after the
+        // token had already been marked used, which burned the link and left
+        // the student showing "Pending" forever.
+        try {
+          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+          const result = await submitUploadedRecommendation(tokenId, downloadURL, tokenData);
 
-        // Update Student
-        const studentRef = doc(firestore, 'users', tokenData.applicationId);
-        const studentSnap = await getDoc(studentRef);
-        const student = studentSnap.data();
-        
-        const index = tokenData.requestIndex || 1;
-        await updateDoc(studentRef, {
-          [`recommendationStatus${index}`]: 'Received',
-          [`recommendationLetter${index}`]: downloadURL,
-          updatedAt: serverTimestamp()
-        });
-
-        // Notify Confirmation to Recommender
-        await sendNotification({
-          to: tokenData.recommenderEmail,
-          subject: 'Recommendation Uploaded Successfully',
-          type: 'Recommendation Received',
-          text: `Thank you. Your letter for ${tokenData.studentName} has been received.`,
-          html: `<p>Hello ${tokenData.recommenderName},</p><p>Your recommendation letter for <strong>${tokenData.studentName}</strong> has been uploaded and attached to their portfolio. Thank you for your support.</p>`
-        });
-
-        // Notify Student
-        if (student?.email) {
-          await sendNotification({
-            to: student.email,
-            subject: 'Recommendation Received',
-            type: 'Recommendation Received',
-            text: `Hello ${student.name}, a recommendation letter has been uploaded by ${tokenData.recommenderName}.`,
-            html: `<p>Hi ${student.name},</p><p>We have received a new recommendation letter for your portfolio from <strong>${tokenData.recommenderName}</strong>.</p>`
+          if (result.success) {
+            setIsSuccess(true);
+          } else {
+            toast({ title: "Submission Failed", description: result.error, variant: "destructive" });
+          }
+        } catch (err: any) {
+          toast({
+            title: "Submission Failed",
+            description: err?.message || "Your letter could not be attached. Please try again.",
+            variant: "destructive",
           });
+        } finally {
+          setIsUploading(false);
         }
-
-        setIsSuccess(true);
-        setIsUploading(false);
       }
     );
   };

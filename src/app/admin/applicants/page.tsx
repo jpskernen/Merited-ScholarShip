@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
 import { 
   Eye,
   AlertTriangle, 
@@ -32,7 +33,10 @@ import {
   CheckCircle2,
   Download,
   ExternalLink,
-  ClipboardList
+  ClipboardList,
+  Search,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { useFirebase, useUser } from '@/firebase';
 import { collection, doc, updateDoc, collectionGroup, query, where, onSnapshot, serverTimestamp } from 'firebase/firestore';
@@ -48,9 +52,13 @@ export default function AdminApplicantsPage() {
   const { toast } = useToast();
   
   const [applications, setApplications] = useState<any[]>([]);
+  const [scholarshipApplications, setScholarshipApplications] = useState<any[]>([]);
   const [allReviews, setAllReviews] = useState<any[]>([]);
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkStatus, setBulkStatus] = useState<string>('');
@@ -87,50 +95,158 @@ export default function AdminApplicantsPage() {
     return () => unsubscribe();
   }, [firestore, isUserLoading]);
 
-  const tableData = useMemo(() => {
-    let data = applications.map(applicant => {
-      const applicantReviews = allReviews.filter(r => r.applicationId === applicant.id);
-      const reviewCount = applicantReviews.length;
-      const totalScore = applicantReviews.reduce((acc, r) => acc + (r.totalScore || 0), 0);
-      const averageScore = reviewCount > 0 ? totalScore / reviewCount : 0;
-      const scores = applicantReviews.map(r => r.totalScore || 0);
-      const hasOutlier = scores.length >= 2 && scores.some(s => Math.abs(s - averageScore) > 1.5);
+  // A student can now hold one application per scholarship, but this board is
+  // still keyed by student (reviews live under users/{uid}/reviews). Pulling the
+  // applications in alongside means each row can at least name the scholarships
+  // the student applied to and each one's own status, rather than showing a
+  // single global status that says nothing about which award it refers to.
+  useEffect(() => {
+    if (!firestore || isUserLoading) return;
+    const q = query(collection(firestore, 'applications'), where('organizationId', '==', schoolId));
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => setScholarshipApplications(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))),
+      (error) => console.error('Applications listener failed:', error.message),
+    );
+    return () => unsubscribe();
+  }, [firestore, schoolId, isUserLoading]);
 
+  const applicationsByStudent = useMemo(() => {
+    const map: Record<string, any[]> = {};
+    scholarshipApplications.forEach((application: any) => {
+      if (!application.studentId) return;
+      (map[application.studentId] ||= []).push(application);
+    });
+    return map;
+  }, [scholarshipApplications]);
+
+  // One row per APPLICATION, not per student. A student holding two
+  // applications in different states can't be represented by a single row, and
+  // trying to do so meant the board carried two competing status columns: the
+  // per-application badges and a global users/{uid}.status that matched neither.
+  // Awards are granted per scholarship, so the row the admin ticks has to be
+  // the thing the award applies to.
+  const tableData = useMemo(() => {
+    // Reviews are stored under the application they score. Reviews filed before
+    // the reviewer migration sit under the student instead, so the key can be
+    // either — an application row looks for its own reviews, and a student with
+    // no application record still shows the legacy ones.
+    const statsFor = (key: string) => {
+      const reviews = allReviews.filter(r => r.applicationId === key);
+      const reviewCount = reviews.length;
+      const totalScore = reviews.reduce((acc, r) => acc + (r.totalScore || 0), 0);
+      const averageScore = reviewCount > 0 ? totalScore / reviewCount : 0;
+      const scores = reviews.map(r => r.totalScore || 0);
       return {
-        ...applicant,
         averageScore,
         reviewCount,
-        hasOutlier,
-        needsDiscussion: applicantReviews.some(r => r.markForDiscussion),
+        hasOutlier: scores.length >= 2 && scores.some(s => Math.abs(s - averageScore) > 1.5),
+        needsDiscussion: reviews.some(r => r.markForDiscussion),
       };
+    };
+
+    let data = applications.flatMap(applicant => {
+      const shared = {
+        ...applicant,
+        studentId: applicant.id,
+      };
+
+      const studentApplications = applicationsByStudent[applicant.id] || [];
+
+      // Students who applied before the applications collection existed have no
+      // record yet (it is backfilled the next time they open the portal). Keep
+      // them visible on one row driven by their legacy status rather than
+      // dropping them off the board entirely.
+      if (studentApplications.length === 0) {
+        return [{
+          ...shared,
+          ...statsFor(applicant.id),
+          rowId: applicant.id,
+          applicationId: null,
+          scholarshipName: null,
+          applicationStatus: applicant.status,
+        }];
+      }
+
+      return studentApplications.map((application: any) => ({
+        ...shared,
+        ...statsFor(application.id),
+        rowId: application.id,
+        applicationId: application.id,
+        scholarshipName: application.scholarshipName,
+        applicationStatus: application.status,
+      }));
     });
 
     if (statusFilter !== 'all') {
-      data = data.filter(item => item.status?.toLowerCase() === statusFilter.toLowerCase());
+      data = data.filter(item => item.applicationStatus?.toLowerCase() === statusFilter.toLowerCase());
+    }
+
+    const term = search.trim().toLowerCase();
+    if (term) {
+      data = data.filter(item =>
+        [item.name, item.school, item.email, item.studentId, item.scholarshipName]
+          .some((field: any) => field?.toLowerCase?.().includes(term))
+      );
     }
 
     return data;
-  }, [applications, allReviews, statusFilter]);
+  }, [applications, allReviews, statusFilter, applicationsByStudent, search]);
+
+  // Filtering can shrink the list under the current page, so clamp rather than
+  // stranding the admin on an empty page with no obvious way back.
+  const totalPages = Math.max(1, Math.ceil(tableData.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+
+  const pagedData = useMemo(
+    () => tableData.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [tableData, currentPage, pageSize],
+  );
+
+  useEffect(() => { setPage(1); }, [search, statusFilter, pageSize]);
+
+  const allOnPageSelected = pagedData.length > 0 && pagedData.every(row => selectedIds.includes(row.rowId));
+
+  const toggleSelectPage = () => {
+    const pageIds = pagedData.map(row => row.rowId);
+    setSelectedIds(prev => allOnPageSelected
+      ? prev.filter(id => !pageIds.includes(id))
+      : Array.from(new Set([...prev, ...pageIds])));
+  };
 
   const handleBulkUpdate = async () => {
     if (!firestore || !bulkStatus || selectedIds.length === 0) return;
     setIsBulkUpdating(true);
     try {
-      const promises = selectedIds.map(async id => {
-        const applicant = applications.find(a => a.id === id);
-        await updateDoc(doc(firestore, 'users', id), {
-          status: bulkStatus,
-          updatedAt: serverTimestamp()
-        });
+      const selectedRows = tableData.filter(row => selectedIds.includes(row.rowId));
 
-        // Trigger notification
-        if (applicant?.email) {
-          await sendStatusUpdate(applicant.email, applicant.name || 'Student', bulkStatus);
+      const promises = selectedRows.map(async row => {
+        if (row.applicationId) {
+          // The decision belongs to the application, so awarding one scholarship
+          // no longer marks the student as awarded everywhere.
+          await updateDoc(doc(firestore, 'applications', row.applicationId), {
+            status: bulkStatus,
+            updatedAt: serverTimestamp()
+          });
+        }
+
+        // The reviewer queue and the legacy mirror still read users/{uid}.status,
+        // so keep it in step for the application it currently mirrors — and for
+        // students who have no application record yet.
+        if (!row.applicationId || row.legacyMirrorOf === row.applicationId) {
+          await updateDoc(doc(firestore, 'users', row.studentId), {
+            status: bulkStatus,
+            updatedAt: serverTimestamp()
+          });
+        }
+
+        if (row.email) {
+          await sendStatusUpdate(row.email, row.name || 'Student', bulkStatus);
         }
       });
-      
+
       await Promise.all(promises);
-      toast({ title: "Bulk Status Updated", description: "All applicants notified via email." });
+      toast({ title: "Decisions Recorded", description: `${selectedRows.length} application(s) updated and applicants notified.` });
       setSelectedIds([]);
       setBulkStatus('');
     } catch (err: any) {
@@ -142,10 +258,13 @@ export default function AdminApplicantsPage() {
 
   const handleExportCSV = () => {
     const csv = Papa.unparse(tableData.map(row => ({
-      'ID': row.id,
+      'Student ID': row.studentId,
       'Name': row.name,
+      'Email': row.email || '',
+      'School': row.school || '',
       'GPA': row.gpa,
-      'Status': row.status,
+      'Scholarship': row.scholarshipName || '',
+      'Status': row.applicationStatus,
       'Avg Score': row.averageScore.toFixed(2),
       'Reviews': row.reviewCount
     })));
@@ -167,7 +286,16 @@ export default function AdminApplicantsPage() {
           <h1 className="text-3xl font-bold">Committee Review Board</h1>
           <p className="text-muted-foreground">Aggregate scoring and decision workflow oversight.</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search name, school or scholarship..."
+              className="h-10 w-full sm:w-64 pl-9"
+            />
+          </div>
           <Button variant="outline" onClick={handleExportCSV}><Download className="mr-2 h-4 w-4" /> Export CSV</Button>
           <Button variant={statusFilter === 'all' ? 'default' : 'outline'} onClick={() => setStatusFilter('all')}>All</Button>
           <Button variant={statusFilter === 'submitted' ? 'default' : 'outline'} onClick={() => setStatusFilter('submitted')}>Pending</Button>
@@ -179,7 +307,7 @@ export default function AdminApplicantsPage() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-[10px] font-black uppercase text-primary/60">Total Active</p>
+                <p className="text-[10px] font-black uppercase text-primary/60">Applications</p>
                 <p className="text-3xl font-black">{tableData.length}</p>
               </div>
               <ClipboardList className="h-8 w-8 text-primary opacity-20" />
@@ -236,24 +364,45 @@ export default function AdminApplicantsPage() {
         <Table>
           <TableHeader className="bg-muted/50">
             <TableRow>
-              <TableHead className="w-12"><Checkbox checked={selectedIds.length === tableData.length && tableData.length > 0} onCheckedChange={() => setSelectedIds(selectedIds.length === tableData.length ? [] : tableData.map(d => d.id))} /></TableHead>
-              <TableHead>Candidate Identifier</TableHead>
+              <TableHead className="w-12"><Checkbox checked={allOnPageSelected} onCheckedChange={toggleSelectPage} /></TableHead>
+              <TableHead>Candidate</TableHead>
+              <TableHead>Scholarship</TableHead>
+              <TableHead>GPA</TableHead>
               <TableHead>Avg Score</TableHead>
-              <TableHead>Review Density</TableHead>
-              <TableHead>Current Status</TableHead>
+              <TableHead>Reviews</TableHead>
+              <TableHead>Status</TableHead>
               <TableHead className="text-right pr-6">Management</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
 
-            {tableData.map((row) => (
-              <TableRow key={row.id} className="hover:bg-muted/10 transition-colors">
-                <TableCell><Checkbox checked={selectedIds.includes(row.id)} onCheckedChange={() => setSelectedIds(prev => prev.includes(row.id) ? prev.filter(i => i !== row.id) : [...prev, row.id])} /></TableCell>
+            {pagedData.map((row) => (
+              <TableRow key={row.rowId} className="hover:bg-muted/10 transition-colors">
+                <TableCell><Checkbox checked={selectedIds.includes(row.rowId)} onCheckedChange={() => setSelectedIds(prev => prev.includes(row.rowId) ? prev.filter(i => i !== row.rowId) : [...prev, row.rowId])} /></TableCell>
                 <TableCell>
+                  {/* Admins are meant to see identities, so the name leads here.
+                      The "Applicant HNANIF" pseudonym belongs to the reviewer
+                      queue, where blind review applies — printing it above the
+                      real name and email was pure noise. */}
                   <div className="flex flex-col">
-                    <span className="font-bold">Applicant {row.id.substring(0,6).toUpperCase()}</span>
-                    <span className="text-[10px] text-muted-foreground uppercase font-black tracking-tighter">{row.name || 'Anonymous'} • {row.school || 'Texas Institution'}</span>
+                    <span className="font-bold">{row.name || 'Unnamed applicant'}</span>
+                    <span className="text-[10px] text-muted-foreground uppercase font-black tracking-tighter">
+                      {row.school || 'Institution not recorded'}
+                    </span>
+                    {row.email && <span className="text-[10px] text-muted-foreground lowercase">{row.email}</span>}
                   </div>
+                </TableCell>
+                <TableCell>
+                  {row.scholarshipName ? (
+                    <span className="text-sm font-medium">{row.scholarshipName}</span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground italic">Not linked to a scholarship</span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <span className="font-mono text-sm font-bold">
+                    {typeof row.gpa === 'number' ? row.gpa.toFixed(2) : '—'}
+                  </span>
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-2">
@@ -272,15 +421,16 @@ export default function AdminApplicantsPage() {
                 <TableCell>
                   <Badge variant="outline" className={cn(
                     "font-bold uppercase tracking-widest text-[10px]",
-                    row.status === 'Awarded' ? 'bg-green-50 text-green-700 border-green-200' : 
-                    row.status === 'In Review' ? 'bg-amber-50 text-amber-700 border-amber-200' : ''
+                    row.applicationStatus === 'Awarded' ? 'bg-green-50 text-green-700 border-green-200' :
+                    row.applicationStatus === 'Not Awarded' ? 'bg-red-50 text-red-700 border-red-200' :
+                    row.applicationStatus === 'In Review' ? 'bg-amber-50 text-amber-700 border-amber-200' : ''
                   )}>
-                    {row.status}
+                    {row.applicationStatus || 'Unknown'}
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right pr-6">
                   <Button variant="ghost" size="sm" asChild className="font-bold hover:bg-primary/5">
-                    <Link href={`/admin/applicants/${row.id}`}>
+                    <Link href={`/admin/applicants/${row.studentId}`}>
                       Detail View <ExternalLink className="ml-2 h-3 w-3" />
                     </Link>
                   </Button>
@@ -296,6 +446,42 @@ export default function AdminApplicantsPage() {
           <div className="py-20 text-center flex flex-col items-center gap-2">
             <Users className="h-10 w-10 text-muted-foreground opacity-20" />
             <p className="text-muted-foreground italic">No applications found matching the current criteria.</p>
+          </div>
+        )}
+
+        {tableData.length > 0 && (
+          <div className="flex flex-col gap-3 border-t p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <p className="text-xs text-muted-foreground">
+                Showing <span className="font-bold text-foreground">{(currentPage - 1) * pageSize + 1}</span>
+                –<span className="font-bold text-foreground">{Math.min(currentPage * pageSize, tableData.length)}</span>
+                {' '}of <span className="font-bold text-foreground">{tableData.length}</span>
+              </p>
+              <Select value={String(pageSize)} onValueChange={(value) => setPageSize(Number(value))}>
+                <SelectTrigger className="h-8 w-[110px] text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {[25, 50, 100].map(size => (
+                    <SelectItem key={size} value={String(size)}>{size} per page</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {/* Selections survive paging, so a decision can span pages. */}
+              {selectedIds.length > 0 && (
+                <span className="text-xs text-muted-foreground mr-2">{selectedIds.length} selected across all pages</span>
+              )}
+              <Button variant="outline" size="sm" className="h-8"
+                onClick={() => setPage(currentPage - 1)} disabled={currentPage <= 1}>
+                <ChevronLeft className="h-4 w-4 mr-1" /> Previous
+              </Button>
+              <span className="text-xs font-bold px-2">Page {currentPage} of {totalPages}</span>
+              <Button variant="outline" size="sm" className="h-8"
+                onClick={() => setPage(currentPage + 1)} disabled={currentPage >= totalPages}>
+                Next <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            </div>
           </div>
         )}
       </div>

@@ -11,12 +11,13 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useCollection, useFirebase, useMemoFirebase, useDoc } from '@/firebase';
-import { collection, query, doc } from 'firebase/firestore';
+import { collection, query, doc, where } from 'firebase/firestore';
 import { useState, useEffect, Suspense, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Loader2, FileText, ExternalLink, Clock, CheckCircle, FileEdit } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
+import { LEGACY_SCHOLARSHIP_ID } from '@/types/application';
 
 const getStatusVariant = (status?: string): 'default' | 'secondary' | 'destructive' | 'outline' => {
   if (!status) return 'outline';
@@ -57,9 +58,10 @@ function ApplicationsPageContent() {
   const { data: mainProfile, isLoading: isProfileLoading } = useDoc(userDocRef);
 
   // 2. Fetch history subcollection
+  // One row per scholarship applied to — each with its own status.
   const applicationsQuery = useMemoFirebase(() => {
     if (!user || !firestore) return null;
-    return collection(firestore, `users/${user.uid}/applications`);
+    return query(collection(firestore, 'applications'), where('studentId', '==', user.uid));
   }, [user, firestore]);
 
   const { data: historyApplications, isLoading: isHistoryLoading } = useCollection(applicationsQuery);
@@ -68,17 +70,18 @@ function ApplicationsPageContent() {
     if (!mounted) return [];
     const apps = historyApplications ? [...historyApplications] : [];
     
-    // Add the current active portfolio if it's not already in history (e.g. if it's a draft)
-    if (mainProfile && (mainProfile.status?.toLowerCase() === 'draft')) {
-      const exists = apps.some(a => a.status?.toLowerCase() === 'draft');
-      if (!exists) {
-        apps.unshift({
-          id: 'current-draft',
-          scholarshipName: 'General Scholarship Portfolio',
-          status: 'Draft',
-          submissionDate: mainProfile.updatedAt || new Date().toISOString(),
-        });
-      }
+    // Portfolios saved before per-application tracking records existed have no
+    // document in the subcollection above, so fall back to the profile itself
+    // rather than showing an existing applicant an empty history. Covers every
+    // status, not just Draft — a student who had already submitted saw nothing.
+    if (apps.length === 0 && mainProfile?.status) {
+      apps.unshift({
+        id: 'current-portfolio',
+        scholarshipId: LEGACY_SCHOLARSHIP_ID,
+        scholarshipName: 'General Scholarship Portfolio',
+        status: mainProfile.status,
+        submissionDate: mainProfile.submissionDate || mainProfile.updatedAt || null,
+      });
     }
 
     if (filter === 'all') return apps;
@@ -152,8 +155,10 @@ function ApplicationsPageContent() {
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right">
-                  <Button variant="outline" size="sm" asChild className="font-bold">
-                    <Link href="/dashboard/profile">
+                  <Button variant="outline" size="sm" asChild className="font-bold" disabled={!app.scholarshipId}>
+                    <Link href={app.scholarshipId
+                      ? `/dashboard/profile?scholarshipId=${encodeURIComponent(app.scholarshipId)}`
+                      : '/dashboard/scholarships'}>
                       {app.status?.toLowerCase() === 'draft' ? 'Continue' : 'View Details'} <ExternalLink className="ml-2 h-3 w-3" />
                     </Link>
                   </Button>

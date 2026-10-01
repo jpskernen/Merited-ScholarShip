@@ -5,12 +5,110 @@
 // `users` collection's security rules, this runs as a trusted server action
 // via the Admin SDK (bypasses rules entirely) and re-validates the token
 // itself server-side before writing anything.
+//
+// Both submission paths (typed letter and uploaded PDF) go through here. The
+// PDF path used to write from the browser instead, which meant its writes were
+// rejected by the security rules while the token had already been flipped to
+// used — burning the link and leaving the student on "Pending" forever.
 
 import { FieldValue } from 'firebase-admin/firestore';
 import { getAdminDb } from '@/firebase/admin';
 import { sendNotification } from '@/app/lib/notifications';
+import { applicationId, LEGACY_SCHOLARSHIP_ID } from '@/types/application';
 
-export async function submitTypedRecommendation(tokenId: string, text: string, tokenData: any) {
+type LetterPayload =
+  | { kind: 'text'; text: string }
+  | { kind: 'file'; fileUrl: string };
+
+/**
+ * Tokens issued from 2026-09-30 carry an `applications/{id}`. Tokens issued
+ * before that carry the student's uid, so fall back to their legacy general
+ * portfolio application, and finally to the user document itself, rather than
+ * rejecting a recommender who is holding a link that was valid when it was sent.
+ */
+async function resolveApplicationRef(tokenApplicationId: string) {
+  const db = getAdminDb();
+
+  const direct = db.collection('applications').doc(tokenApplicationId);
+  if ((await direct.get()).exists) return direct;
+
+  const legacy = db.collection('applications').doc(applicationId(tokenApplicationId, LEGACY_SCHOLARSHIP_ID));
+  if ((await legacy.get()).exists) return legacy;
+
+  return null;
+}
+
+/**
+ * Writes the letter everywhere it needs to land, and returns the student so the
+ * caller can notify them. Deliberately does NOT touch the token: the token is
+ * only marked used once this has succeeded, so a failure here leaves the
+ * recommender's link still usable.
+ */
+async function applyRecommendation(tokenData: any, index: number, payload: LetterPayload) {
+  const db = getAdminDb();
+
+  const letterFields = payload.kind === 'text'
+    ? { [`recommendationLetterText${index}`]: payload.text }
+    : { [`recommendationLetter${index}`]: payload.fileUrl };
+
+  const update = {
+    [`recommendationStatus${index}`]: 'Received',
+    ...letterFields,
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+
+  const appRef = await resolveApplicationRef(tokenData.applicationId);
+
+  if (!appRef) {
+    // Pure legacy: no application record exists at all, so the student's user
+    // document is still the only place this letter can live.
+    const studentRef = db.collection('users').doc(tokenData.applicationId);
+    const studentSnap = await studentRef.get();
+    if (!studentSnap.exists) {
+      return { ok: false as const, error: 'The application this request belongs to no longer exists.' };
+    }
+    await studentRef.update(update);
+    return { ok: true as const, student: studentSnap.data()! };
+  }
+
+  await appRef.update(update);
+  const application = (await appRef.get()).data()!;
+
+  const studentRef = db.collection('users').doc(application.studentId);
+  const studentSnap = await studentRef.get();
+  const student = studentSnap.exists ? studentSnap.data()! : null;
+
+  // Keep the legacy mirror in step when this is the application reviewers are
+  // currently reading, otherwise a letter that arrives after submission would
+  // be invisible to them. See mirrorToLegacyUserDocument.
+  if (student?.legacyMirrorOf === appRef.id) {
+    await studentRef.update(update);
+  }
+
+  return { ok: true as const, student };
+}
+
+async function notifyBothParties(tokenData: any, student: any) {
+  await sendNotification({
+    to: tokenData.recommenderEmail,
+    subject: 'Recommendation Submitted Successfully',
+    type: 'Recommendation Received',
+    text: `Your recommendation letter for ${tokenData.studentName} has been received. Thank you.`,
+    html: `<p>Hello ${tokenData.recommenderName},</p><p>Your recommendation letter for <strong>${tokenData.studentName}</strong> has been submitted successfully to the ScholarShip selection committee. Thank you for supporting their academic journey.</p>`
+  });
+
+  if (student?.email) {
+    await sendNotification({
+      to: student.email,
+      subject: 'Endorsement Received',
+      type: 'Recommendation Received',
+      text: `A recommendation letter has been submitted by ${tokenData.recommenderName}.`,
+      html: `<p>Hi ${student.name},</p><p>We have received a new recommendation letter for your portfolio from <strong>${tokenData.recommenderName}</strong>.</p>`
+    });
+  }
+}
+
+async function submitRecommendation(tokenId: string, tokenData: any, payload: LetterPayload) {
   try {
     const db = getAdminDb();
     const tokenRef = db.collection('recommendationTokens').doc(tokenId);
@@ -23,50 +121,35 @@ export async function submitTypedRecommendation(tokenId: string, text: string, t
     if (currentToken.used) {
       return { success: false, error: 'This recommendation has already been submitted.' };
     }
+    if (currentToken.cancelled) {
+      return { success: false, error: 'This recommendation request has been cancelled by the student.' };
+    }
 
-    // Firebase Storage isn't provisioned for this project yet, so the typed
-    // recommendation is stored as plain text in Firestore rather than
-    // rendered to a PDF and uploaded. See recommendationLetterText{index} on
-    // the student's user doc, and letterText on the token doc.
+    const index = currentToken.requestIndex || tokenData?.requestIndex || 1;
+    const resolvedToken = { ...tokenData, ...currentToken };
 
-    // 1. Update Token Document
+    // 1. Land the letter first. If this fails the token is untouched, so the
+    //    recommender can simply try again on the same link.
+    const applied = await applyRecommendation(resolvedToken, index, payload);
+    if (!applied.ok) {
+      return { success: false, error: applied.error };
+    }
+
+    // 2. Only now burn the token.
     await tokenRef.update({
       used: true,
-      letterText: text, // Saved for easy admin viewing
+      ...(payload.kind === 'text'
+        ? { letterText: payload.text }   // saved for easy admin viewing
+        : { fileUrl: payload.fileUrl }),
       updatedAt: FieldValue.serverTimestamp()
     });
 
-    // 2. Update Student Application
-    const studentRef = db.collection('users').doc(tokenData.applicationId);
-    const studentSnap = await studentRef.get();
-    const studentData = studentSnap.exists ? studentSnap.data() : null;
-
-    const index = tokenData.requestIndex || 1;
-    await studentRef.update({
-      [`recommendationStatus${index}`]: 'Received',
-      [`recommendationLetterText${index}`]: text,
-      updatedAt: FieldValue.serverTimestamp()
-    });
-
-    // 3. Send Confirmation Emails
-    // To Recommender
-    await sendNotification({
-      to: tokenData.recommenderEmail,
-      subject: 'Recommendation Submitted Successfully',
-      type: 'Recommendation Received',
-      text: `Your recommendation letter for ${tokenData.studentName} has been received. Thank you.`,
-      html: `<p>Hello ${tokenData.recommenderName},</p><p>Your recommendation letter for <strong>${tokenData.studentName}</strong> has been submitted successfully to the ScholarShip selection committee. Thank you for supporting their academic journey.</p>`
-    });
-
-    // To Student
-    if (studentData?.email) {
-      await sendNotification({
-        to: studentData.email,
-        subject: 'Endorsement Received',
-        type: 'Recommendation Received',
-        text: `A recommendation letter has been uploaded by ${tokenData.recommenderName}.`,
-        html: `<p>Hi ${studentData.name},</p><p>We have received a new recommendation letter for your portfolio from <strong>${tokenData.recommenderName}</strong>.</p>`
-      });
+    // 3. Notifications are best-effort: the letter is already safely stored, so
+    //    an email failure must not report the submission as failed.
+    try {
+      await notifyBothParties(resolvedToken, applied.student);
+    } catch (error: any) {
+      console.error('Recommendation notification failed:', error.message);
     }
 
     return { success: true };
@@ -74,4 +157,12 @@ export async function submitTypedRecommendation(tokenId: string, text: string, t
     console.error('Submission Error:', error);
     return { success: false, error: error.message };
   }
+}
+
+export async function submitTypedRecommendation(tokenId: string, text: string, tokenData: any) {
+  return submitRecommendation(tokenId, tokenData, { kind: 'text', text });
+}
+
+export async function submitUploadedRecommendation(tokenId: string, fileUrl: string, tokenData: any) {
+  return submitRecommendation(tokenId, tokenData, { kind: 'file', fileUrl });
 }

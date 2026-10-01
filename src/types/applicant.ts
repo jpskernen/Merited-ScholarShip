@@ -47,3 +47,26 @@ export const ApplicantSchema = z.object({
 });
 
 export type Applicant = z.infer<typeof ApplicantSchema>;
+// The subset of the user document that is SHARED across every application —
+// entered once, reused everywhere. Essay, activities, recommenders and status
+// moved to src/types/application.ts on 2026-09-30 when the client confirmed
+// students may apply to multiple scholarships independently.
+//
+// ApplicantSchema above is intentionally left intact: the reviewer and admin
+// screens still read the flat user document, and saveApplication mirrors the
+// most recently submitted application onto it so those screens keep working
+// until they're migrated too.
+export const ProfileSchema = ApplicantSchema.pick({
+  name: true,
+  email: true,
+  secondaryEmail: true,
+  address: true,
+  gpa: true,
+  major: true,
+  school: true,
+  interests: true,
+  schoolId: true,
+  organizationId: true,
+});
+
+export type Profile = z.infer<typeof ProfileSchema>;

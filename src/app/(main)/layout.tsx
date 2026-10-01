@@ -18,7 +18,6 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import {
   LayoutDashboard,
-  User,
   FileText,
   Search,
   Users,
@@ -34,11 +33,16 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useUser } from '@/firebase';
 import { useEffect, useState, Suspense } from 'react';
 
+// There is no longer a single "the" scholarship form: a student holds one
+// application per scholarship, so the form is always reached through a specific
+// scholarship (Opportunities) or an existing application (My Applications).
+// The old /dashboard/profile entry is gone rather than left to bounce users
+// straight back to Opportunities; the route itself still redirects, for
+// bookmarks and links already sent out.
 const applicantNav = [
   { href: '/dashboard', label: 'My Dashboard', icon: LayoutDashboard },
-  { href: '/dashboard/profile', label: 'Scholarship Form', icon: User },
-  { href: '/dashboard/applications', label: 'My Status', icon: FileText },
   { href: '/dashboard/scholarships', label: 'Opportunities', icon: Search },
+  { href: '/dashboard/applications', label: 'My Applications', icon: FileText },
 ];
 
 const reviewerNav = [

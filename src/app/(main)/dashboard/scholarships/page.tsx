@@ -13,13 +13,13 @@ import { Badge } from '@/components/ui/badge';
 import { ArrowRight, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { useCollection, useFirebase, useMemoFirebase } from '@/firebase';
-import { collection } from 'firebase/firestore';
+import { collection, query, where } from 'firebase/firestore';
 import type { Scholarship } from '@/types/scholarship';
 import { useMemo } from 'react';
 import scholarshipsData from '@/data/scholarships.json';
 
 export default function ScholarshipsPage() {
-  const { firestore } = useFirebase();
+  const { firestore, user } = useFirebase();
 
   const scholarshipsQuery = useMemoFirebase(() => {
     if (!firestore) return null;
@@ -27,6 +27,23 @@ export default function ScholarshipsPage() {
   }, [firestore]);
 
   const { data: dbScholarships, isLoading } = useCollection<Scholarship>(scholarshipsQuery);
+
+  // A student can hold one application per scholarship, so each card shows the
+  // state of *its own* application rather than a single global portfolio status.
+  const myApplicationsQuery = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return query(collection(firestore, 'applications'), where('studentId', '==', user.uid));
+  }, [firestore, user]);
+
+  const { data: myApplications } = useCollection(myApplicationsQuery);
+
+  const applicationByScholarship = useMemo(() => {
+    const map: Record<string, any> = {};
+    (myApplications || []).forEach((application: any) => {
+      map[application.scholarshipId] = application;
+    });
+    return map;
+  }, [myApplications]);
 
   const scholarships = useMemo(() => {
     if (dbScholarships && dbScholarships.length > 0) return dbScholarships;
@@ -74,11 +91,18 @@ export default function ScholarshipsPage() {
                 <p className="font-bold text-foreground">Deadline</p>
                 <p>{scholarship.deadline}</p>
               </div>
-              <Button asChild size="sm" className="font-bold">
-                <Link href="/dashboard/profile">
-                  View Form <ArrowRight className="ml-2 h-3 w-3" />
-                </Link>
-              </Button>
+              {(() => {
+                const application = applicationByScholarship[scholarship.id];
+                const isSubmitted = application && application.status !== 'Draft';
+                return (
+                  <Button asChild size="sm" variant={isSubmitted ? 'outline' : 'default'} className="font-bold">
+                    <Link href={`/dashboard/profile?scholarshipId=${encodeURIComponent(scholarship.id)}`}>
+                      {isSubmitted ? 'View Application' : application ? 'Continue' : 'Apply'}
+                      <ArrowRight className="ml-2 h-3 w-3" />
+                    </Link>
+                  </Button>
+                );
+              })()}
             </CardFooter>
           </Card>
         ))}

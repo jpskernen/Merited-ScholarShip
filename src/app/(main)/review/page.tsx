@@ -28,6 +28,18 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { useCollection, useFirebase, useMemoFirebase, useDoc } from '@/firebase';
 import { collection, collectionGroup, doc, query, where, getDocs } from 'firebase/firestore';
 
+/**
+ * submissionDate is an ISO string on records written by the application form,
+ * but older records carry a Firestore timestamp. Anything unparseable sorts
+ * last rather than throwing off the whole queue.
+ */
+function toMillis(value: any): number {
+  if (!value) return 0;
+  if (typeof value === 'object' && typeof value.seconds === 'number') return value.seconds * 1000;
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
 function ReviewerDashboardContent() {
   const { firestore, user } = useFirebase();
   const searchParams = useSearchParams();
@@ -49,62 +61,78 @@ function ReviewerDashboardContent() {
 
   const { data: programs, isLoading: isProgramsLoading } = useCollection(programsQuery);
 
-  // 2. Get all submitted applicants
-  const applicantsQuery = useMemoFirebase(() => {
-    if (!firestore) return null;
-    // Role is written lowercase at signup ('applicant'); Firestore equality is
-    // case-sensitive, so querying 'Applicant' here silently returned nothing.
-    return query(collection(firestore, 'users'), where('role', '==', 'applicant'), where('status', '==', 'Submitted'));
-  }, [firestore]);
-  
-  const { data: allApplicants, isLoading: isAppsLoading } = useCollection(applicantsQuery);
+  const assignedScholarshipIds = useMemo(
+    () => (programs || []).map(p => p.id).filter(Boolean),
+    [programs],
+  );
+
+  // 2. Get the applications submitted to the scholarships this reviewer is
+  //    assigned to. The queue is now one row per APPLICATION, not per student:
+  //    a student who applied to two of this reviewer's scholarships must be
+  //    evaluated twice, against each scholarship's own rubric. Keying the queue
+  //    by student also meant the scoring page had to guess which scholarship it
+  //    was scoring, and it guessed with programs[0].
+  const applicationsQuery = useMemoFirebase(() => {
+    if (!firestore || assignedScholarshipIds.length === 0) return null;
+    // Firestore caps 'in' at 30 values and rejects an empty array.
+    return query(
+      collection(firestore, 'applications'),
+      where('scholarshipId', 'in', assignedScholarshipIds.slice(0, 30)),
+    );
+  }, [firestore, assignedScholarshipIds]);
+
+  const { data: assignedApplications, isLoading: isAppsLoading } = useCollection(applicationsQuery);
 
   // 3. Get all reviews by this reviewer
   const myReviewsQuery = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return collectionGroup(firestore, 'reviews');
   }, [firestore, user]);
-  
+
   const { data: allReviews, isLoading: isReviewsLoading } = useCollection(myReviewsQuery);
 
   const randomSortKeys = useMemo(() => {
-    if (!allApplicants || !mounted) return {};
+    if (!assignedApplications || !mounted) return {};
     const keys: Record<string, number> = {};
-    allApplicants.forEach(app => {
-      keys[app.id] = Math.random();
+    assignedApplications.forEach(application => {
+      keys[application.id] = Math.random();
     });
     return keys;
-  }, [allApplicants, mounted]);
+  }, [assignedApplications, mounted]);
 
   const assignments = useMemo(() => {
-    if (!allApplicants || !allReviews || !user || !mounted || !programs) return [];
+    if (!assignedApplications || !allReviews || !user || !mounted || !programs) return [];
 
     const myReviews = allReviews.filter(r => r.reviewerId === user.uid);
-    
-    // In current MVP, if a user is in assigned programs, they should see applicants
-    // Ideally applicants would be linked to programs. For now, filter applicants 
-    // by organization/schoolId matching the programs assigned.
-    const assignedSchoolIds = new Set(programs.map(p => p.schoolId));
+    const programsById = new Map(programs.map(p => [p.id, p]));
 
-    return allApplicants
-      .filter(app => assignedSchoolIds.has(app.schoolId))
-      .map(app => {
-        const review = myReviews.find(r => r.applicationId === app.id);
+    return assignedApplications
+      // Drafts aren't ready to be judged, and decided applications are closed.
+      .filter((application: any) => application.status === 'Submitted' || application.status === 'In Review')
+      .map((application: any) => {
+        const review = myReviews.find(r => r.applicationId === application.id);
         return {
-          ...app,
+          ...application,
+          scholarshipName: application.scholarshipName || programsById.get(application.scholarshipId)?.name || 'Scholarship',
           reviewStatus: review ? review.status : 'Not Started',
           score: review ? review.totalScore : null,
           needsDiscussion: review ? review.markForDiscussion : false,
-          randomSortKey: randomSortKeys[app.id] || 0,
+          randomSortKey: randomSortKeys[application.id] || 0,
         };
       });
-  }, [allApplicants, allReviews, user, mounted, randomSortKeys, programs]);
+  }, [assignedApplications, allReviews, user, mounted, randomSortKeys, programs]);
 
   const processedData = useMemo(() => {
     let data = [...assignments];
 
     if (sortByRandom) {
+      // Randomised order is a deliberate bias control, so it wins over recency.
       data.sort((a, b) => a.randomSortKey - b.randomSortKey);
+    } else {
+      // Otherwise newest submission first. Firestore returns documents in key
+      // order, which put the most recently submitted applicant at the bottom of
+      // the queue.
+      data.sort((a, b) => toMillis(b.submissionDate) - toMillis(a.submissionDate));
     }
 
     if (filter === 'pending') data = data.filter(d => d.reviewStatus !== 'Submitted');
@@ -209,6 +237,7 @@ function ReviewerDashboardContent() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Candidate Identifier</TableHead>
+                  <TableHead>Scholarship</TableHead>
                   <TableHead>Eval Status</TableHead>
                   <TableHead>Score</TableHead>
                   <TableHead className="text-right">Action</TableHead>
@@ -220,13 +249,18 @@ function ReviewerDashboardContent() {
                     <TableCell>
                       <div className="flex flex-col">
                         <span className="font-bold flex items-center gap-2">
-                          Applicant {app.id.substring(0, 6).toUpperCase()}
+                          {/* Identified by student, so the same candidate reads
+                              consistently across their separate applications. */}
+                          Applicant {String(app.studentId || app.id).substring(0, 6).toUpperCase()}
                           {app.needsDiscussion && <MessageSquare className="h-3 w-3 text-amber-600" />}
                         </span>
                         <span className="text-[10px] text-muted-foreground uppercase flex items-center gap-1">
-                          <Clock className="h-2 w-2" /> Submitted: {app.submissionDate ? new Date(app.submissionDate).toLocaleDateString() : 'N/A'}
+                          <Clock className="h-2 w-2" /> Submitted: {toMillis(app.submissionDate) ? new Date(toMillis(app.submissionDate)).toLocaleDateString() : 'N/A'}
                         </span>
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-xs font-medium">{app.scholarshipName}</span>
                     </TableCell>
                     <TableCell>
                       <Badge variant={app.reviewStatus === 'Submitted' ? 'default' : 'secondary'}>

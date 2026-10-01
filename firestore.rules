@@ -69,6 +69,40 @@ service cloud.firestore {
       }
     }
 
+    // One application per (student, scholarship) pair — a student applies to as
+    // many scholarships as they like and each application is independent.
+    //
+    // get and list are split deliberately. Opening a scholarship the student
+    // hasn't applied to yet reads a document that doesn't exist, and on a get
+    // of a missing document `resource` is null — so `resource.data.studentId`
+    // raises an error and the whole rule denies, breaking the form before the
+    // student can type anything. The `resource == null` arm has to come first,
+    // and has nothing to leak: there is no document to read.
+    //
+    // list keeps the strict check. A student's own query is constrained by
+    // where('studentId','==',uid) so every document it can return satisfies the
+    // rule; reviewers and sponsors pass on a document-independent role check.
+    match /applications/{applicationId} {
+      allow get: if isSignedIn() && (
+        resource == null ||
+        resource.data.studentId == request.auth.uid ||
+        isReviewer() ||
+        isSponsor()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.studentId == request.auth.uid ||
+        isReviewer() ||
+        isSponsor()
+      );
+      allow create: if isSignedIn() && (
+        request.resource.data.studentId == request.auth.uid || isSponsor()
+      );
+      allow update: if isSignedIn() && (
+        resource.data.studentId == request.auth.uid || isSponsor()
+      );
+      allow delete: if isSponsor();
+    }
+
     match /programs/{programId} {
       allow read: if true;
       allow write: if isSponsor();

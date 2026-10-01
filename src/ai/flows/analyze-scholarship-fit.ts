@@ -43,22 +43,21 @@ const analyzeScholarshipFitFlow = ai.defineFlow(
       prompt: `You are a professional scholarship committee analyst. Your task is to evaluate an applicant's fit for a specific scholarship.
 
       ### Scholarship Criteria:
-      {{{scholarshipCriteria}}}
+      ${input.scholarshipCriteria}
 
       ### Applicant Profile:
-      - GPA: {{{applicantData.gpa}}}
-      - Intended Major: {{{applicantData.major}}}
-      - Activities: {{{applicantData.activities}}}
-      - Interests: {{{applicantData.interests}}}
-      - Personal Statement excerpt: {{{applicantData.essay}}}
+      - GPA: ${input.applicantData.gpa}
+      - Intended Major: ${input.applicantData.major}
+      - Activities: ${input.applicantData.activities}
+      - Interests: ${input.applicantData.interests}
+      - Personal Statement excerpt: ${input.applicantData.essay}
 
-      Analyze the data objectively. Focus on how well the applicant's background and goals align with the scholarship's intent and specific requirements. 
-      
+      Analyze the data objectively. Focus on how well the applicant's background and goals align with the scholarship's intent and specific requirements.
+
       Provide:
       1. A Fit Score (0-100).
       2. A logical justification.
       3. A summary recommendation.`,
-      input: input,
       output: { schema: AnalyzeFitOutputSchema },
     });
 

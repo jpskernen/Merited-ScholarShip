@@ -10,13 +10,14 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
-import { ArrowRight, FileText, Search, User, CheckCircle, Clock, Users, ShieldCheck, Loader2 } from 'lucide-react';
-import { useFirebase, useDoc, useMemoFirebase } from '@/firebase';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { ArrowRight, FileText, Search, User, Clock, Users, ShieldCheck, Loader2 } from 'lucide-react';
+import { useFirebase, useDoc, useCollection, useMemoFirebase } from '@/firebase';
+import { doc, setDoc, serverTimestamp, collection, query, where } from 'firebase/firestore';
 import type { Applicant } from '@/types/applicant';
 import { useToast } from '@/hooks/use-toast';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { Badge } from '@/components/ui/badge';
+import { Award } from 'lucide-react';
 
 export default function DashboardPage() {
   const { user, firestore } = useFirebase();
@@ -30,15 +31,34 @@ export default function DashboardPage() {
 
   const { data: profile, isLoading } = useDoc<Applicant>(userDocRef);
 
-  // Calculate completion percentage based on core fields
-  const calculateProgress = (data: Applicant | null) => {
-    if (!data) return 0;
-    const fields: (keyof Applicant)[] = ['name', 'address', 'gpa', 'major', 'school', 'essay', 'qualificationStatement', 'recommendationLetter1'];
-    const completedFields = fields.filter(field => !!data[field]);
-    return Math.round((completedFields.length / fields.length) * 100);
-  };
+  const myApplicationsQuery = useMemoFirebase(() => {
+    if (!user || !firestore) return null;
+    return query(collection(firestore, 'applications'), where('studentId', '==', user.uid));
+  }, [user, firestore]);
 
-  const progress = calculateProgress(profile);
+  const { data: myApplications } = useCollection(myApplicationsQuery);
+
+  const programsQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return collection(firestore, 'programs');
+  }, [firestore]);
+
+  const { data: programs } = useCollection(programsQuery);
+
+  // Every card below used to be derived from profile-field completeness or
+  // hardcoded, so a student could be awarded and still be told "Pending
+  // Review". These read the real per-application records instead.
+  const summary = useMemo(() => {
+    const all = myApplications || [];
+    const countOf = (status: string) => all.filter((a: any) => a.status === status).length;
+    return {
+      total: all.length,
+      drafts: countOf('Draft'),
+      submitted: countOf('Submitted') + countOf('In Review'),
+      awarded: all.filter((a: any) => a.status === 'Awarded'),
+      notAwarded: countOf('Not Awarded'),
+    };
+  }, [myApplications]);
 
   const isPeyton = user?.email === 'peyton.vandenbemden@gmail.com';
   const isAlreadyAdmin = profile?.role === 'Admin' || profile?.role === 'Sponsor';
@@ -108,28 +128,48 @@ export default function DashboardPage() {
         </Card>
       )}
 
+      {summary.awarded.length > 0 && (
+        <Card className="border-green-500/50 bg-green-500/5">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg text-green-600">
+              <Award className="h-5 w-5" />
+              {summary.awarded.length === 1 ? 'You have been awarded a scholarship' : `You have been awarded ${summary.awarded.length} scholarships`}
+            </CardTitle>
+            <CardDescription>Congratulations — the selection committee has made a decision.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-2">
+            {summary.awarded.map((application: any) => (
+              <Badge key={application.id} className="bg-green-600 text-white border-none py-1.5 px-3 font-bold">
+                {application.scholarshipName || 'Scholarship'}
+              </Badge>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        <Card className={progress === 100 ? 'border-green-500/50 bg-green-500/5' : ''}>
+        <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
               <User className="h-5 w-5 text-primary" />
-              <span>Application Progress</span>
+              <span>My Applications</span>
             </CardTitle>
             <CardDescription>
-              {progress === 100 ? 'Your profile is ready for review!' : 'Complete your form to be eligible for awards.'}
+              {summary.total === 0
+                ? 'You have not applied to any scholarships yet.'
+                : `${summary.total} application${summary.total === 1 ? '' : 's'} in total.`}
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between text-sm font-medium">
-              <span>{progress}% Complete</span>
-              {progress === 100 && <CheckCircle className="h-4 w-4 text-green-500" />}
-            </div>
-            <Progress value={progress} className="h-2" />
+          <CardContent className="space-y-2 text-sm">
+            <div className="flex justify-between"><span className="text-muted-foreground">Drafts</span><span className="font-bold">{summary.drafts}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Awaiting decision</span><span className="font-bold">{summary.submitted}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Awarded</span><span className="font-bold text-green-600">{summary.awarded.length}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Not awarded</span><span className="font-bold">{summary.notAwarded}</span></div>
           </CardContent>
           <CardFooter>
-            <Button variant={progress === 100 ? 'outline' : 'default'} asChild className="w-full">
-              <Link href="/dashboard/profile">
-                {progress === 100 ? 'View Application' : 'Continue Application'} <ArrowRight className="ml-2 h-4 w-4" />
+            <Button variant="outline" asChild className="w-full">
+              <Link href="/dashboard/applications">
+                View My Applications <ArrowRight className="ml-2 h-4 w-4" />
               </Link>
             </Button>
           </CardFooter>
@@ -142,15 +182,15 @@ export default function DashboardPage() {
               <span>Available Scholarships</span>
             </CardTitle>
             <CardDescription>
-              New opportunities matching your academic profile.
+              Programs you can apply to right now.
             </CardDescription>
           </CardHeader>
           <CardContent>
              <div className="flex items-baseline gap-2">
-               <span className="text-4xl font-bold">22</span>
+               <span className="text-4xl font-bold">{programs?.length ?? 0}</span>
                <span className="text-sm text-muted-foreground">Programs</span>
              </div>
-             <p className="mt-2 text-xs text-muted-foreground">Deadlines are approaching soon.</p>
+             <p className="mt-2 text-xs text-muted-foreground">You can apply to as many as you qualify for.</p>
           </CardContent>
           <CardFooter>
             <Button variant="outline" asChild className="w-full">
@@ -160,21 +200,34 @@ export default function DashboardPage() {
             </Button>
           </CardFooter>
         </Card>
-        
+
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
               <Clock className="h-5 w-5 text-primary" />
-              <span>Submission Status</span>
+              <span>Latest Status</span>
             </CardTitle>
             <CardDescription>
-              Real-time updates from the selection committee.
+              Updates from the selection committee.
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="rounded-md bg-muted/50 p-3 text-sm font-medium">
-              {progress < 50 ? 'Incomplete' : progress < 100 ? 'Draft Saved' : 'Pending Review'}
-            </div>
+          <CardContent className="space-y-2">
+            {summary.total === 0 ? (
+              <div className="rounded-md bg-muted/50 p-3 text-sm font-medium">No applications yet</div>
+            ) : (
+              (myApplications || []).slice(0, 3).map((application: any) => (
+                <div key={application.id} className="flex items-center justify-between gap-2 rounded-md bg-muted/50 p-3">
+                  <span className="text-xs font-medium truncate">{application.scholarshipName || 'Scholarship'}</span>
+                  <Badge variant="outline" className={
+                    application.status === 'Awarded' ? 'bg-green-600 text-white border-none text-[10px] font-bold' :
+                    application.status === 'Not Awarded' ? 'bg-red-50 text-red-700 border-red-200 text-[10px] font-bold' :
+                    'text-[10px] font-bold'
+                  }>
+                    {application.status}
+                  </Badge>
+                </div>
+              ))
+            )}
           </CardContent>
           <CardFooter>
             <Button variant="outline" asChild className="w-full">

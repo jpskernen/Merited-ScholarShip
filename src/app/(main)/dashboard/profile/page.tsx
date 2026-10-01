@@ -15,8 +15,10 @@ import { useToast } from '@/hooks/use-toast';
 import { Applicant, ApplicantSchema } from '@/types/applicant';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
-import { saveApplicantData, sendRecommendationRequest, sendRecommendationReminder, cancelRecommendationRequest } from './actions';
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { saveApplication, ensureLegacyApplication, sendRecommendationRequest, sendRecommendationReminder, cancelRecommendationRequest } from './actions';
+import { useEffect, useState, useRef, useCallback, useMemo, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { applicationId as buildApplicationId } from '@/types/application';
 import { Separator } from '@/components/ui/separator';
 import { useDoc, useFirebase, useMemoFirebase } from '@/firebase';
 import { doc, setDoc, serverTimestamp, updateDoc, arrayUnion } from 'firebase/firestore';
@@ -55,10 +57,22 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
-export default function ProfilePage() {
+function ProfilePageContent() {
   const { toast } = useToast();
   const { user, isUserLoading, firestore, storage } = useFirebase();
-  
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Which scholarship this form is an application to. Every entry point
+  // (Opportunities card, My Status row) now carries it; arriving without one is
+  // ambiguous now that a student can hold several applications, so send them
+  // back to pick one rather than guessing.
+  const scholarshipId = searchParams.get('scholarshipId');
+
+  useEffect(() => {
+    if (!scholarshipId) router.replace('/dashboard/scholarships');
+  }, [scholarshipId, router]);
+
   const [isSaving, setIsSaving] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -78,7 +92,56 @@ export default function ProfilePage() {
     return doc(firestore, 'users', user.uid);
   }, [user, firestore]);
 
-  const { data: applicantData, isLoading: isApplicantDataLoading } = useDoc<Applicant>(userDocRef);
+  const { data: profileData, isLoading: isProfileLoading } = useDoc<Applicant>(userDocRef);
+
+  const appId = user && scholarshipId ? buildApplicationId(user.uid, scholarshipId) : null;
+
+  const appDocRef = useMemoFirebase(() => {
+    if (!firestore || !appId) return null;
+    return doc(firestore, 'applications', appId);
+  }, [firestore, appId]);
+
+  const { data: applicationData, isLoading: isApplicationLoading } = useDoc<any>(appDocRef);
+
+  const programDocRef = useMemoFirebase(() => {
+    if (!firestore || !scholarshipId) return null;
+    return doc(firestore, 'programs', scholarshipId);
+  }, [firestore, scholarshipId]);
+
+  const { data: programData } = useDoc<any>(programDocRef);
+
+  const scholarshipName =
+    applicationData?.scholarshipName || programData?.name || 'Scholarship Application';
+
+  // Shared profile fields live on users/{uid}, application-specific ones on
+  // applications/{id}. The rest of this form reads a single merged object, so
+  // the split stays confined to load and save.
+  //
+  // Only the SHARED fields may be inherited from the user document. Spreading
+  // the whole of it leaked the legacy mirror of a previously submitted
+  // application into every new one — a scholarship the student had never
+  // applied to would show their old essay and their old endorsements as
+  // "Pending"/"Received", and cancelling one blew up on an application document
+  // that didn't exist.
+  const applicantData = useMemo(() => {
+    const shared: Record<string, any> = {};
+    if (profileData) {
+      for (const field of ['name', 'email', 'secondaryEmail', 'address', 'gpa',
+                           'major', 'school', 'interests', 'schoolId', 'organizationId']) {
+        const value = (profileData as any)[field];
+        if (value !== undefined) shared[field] = value;
+      }
+    }
+    return { ...shared, ...(applicationData || {}) } as Applicant;
+  }, [profileData, applicationData]);
+
+  const isApplicantDataLoading = isProfileLoading || isApplicationLoading;
+
+  // Students who built a portfolio before applications existed get it backfilled
+  // as an application to the legacy general portfolio, so their work isn't lost.
+  useEffect(() => {
+    if (user?.uid) ensureLegacyApplication(user.uid);
+  }, [user?.uid]);
 
   const {
     register,
@@ -121,24 +184,27 @@ export default function ProfilePage() {
   }, [user, applicantData, isUserLoading, setValue, reset]);
 
   const finishUpload = async (downloadURL: string, fileName: string, field: string, promptId?: string) => {
-    if (!userDocRef) return;
-    try {
-      if (promptId) {
-        await updateDoc(userDocRef, {
-          essays: arrayUnion({
-            promptId,
-            fileUrl: downloadURL,
-            fileName: fileName,
-            uploadedAt: serverTimestamp()
-          }),
-          updatedAt: serverTimestamp()
-        });
-      } else {
-        const updateObj: any = { [field]: downloadURL, updatedAt: serverTimestamp() };
-        await updateDoc(userDocRef, updateObj);
-      }
-    } catch (err: any) {
-      throw err;
+    // Uploads belong to this application, not to the student's shared profile,
+    // so two scholarships can hold two different essay PDFs.
+    if (!appDocRef || !user || !scholarshipId) return;
+    // studentId/scholarshipId are included so this write still satisfies the
+    // create rule when it's the first thing written to a brand-new application.
+    const identity = { id: appDocRef.id, studentId: user.uid, scholarshipId };
+    if (promptId) {
+      await setDoc(appDocRef, {
+        ...identity,
+        essays: arrayUnion({
+          promptId,
+          fileUrl: downloadURL,
+          fileName: fileName,
+          // Firestore rejects serverTimestamp() nested inside an array, which
+          // is why this write used to throw and the essay was never attached.
+          uploadedAt: new Date().toISOString(),
+        }),
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+    } else {
+      await setDoc(appDocRef, { ...identity, [field]: downloadURL, updatedAt: serverTimestamp() }, { merge: true });
     }
   };
 
@@ -156,9 +222,11 @@ export default function ProfilePage() {
       }
 
       setUploadStatus(prev => ({ ...prev, [field]: 'uploading' }));
-      const path = promptId 
-        ? `applications/${user.uid}/essays/${promptId}.pdf`
-        : `applications/${user.uid}/${field}.pdf`;
+      // Scoped per scholarship so an essay uploaded for one application can't
+      // overwrite the one uploaded for another.
+      const path = promptId
+        ? `applications/${user.uid}/${scholarshipId}/essays/${promptId}.pdf`
+        : `applications/${user.uid}/${scholarshipId}/${field}.pdf`;
       
       const storageRef = ref(storage, path);
       const uploadTask = uploadBytesResumable(storageRef, file);
@@ -187,10 +255,10 @@ export default function ProfilePage() {
     } catch (err: any) {
       setUploadStatus(prev => ({ ...prev, [field]: 'error' }));
     }
-  }, [user, storage, firestore, toast]);
+  }, [user, storage, firestore, toast, scholarshipId, appDocRef]);
 
   const handleSendRecommendationRequest = async (index: number) => {
-    if (!user) return;
+    if (!user || !appId || !scholarshipId) return;
     const name = getValues(`recommenderName${index}` as any);
     const email = getValues(`recommenderEmail${index}` as any);
     const title = getValues(`recommenderTitle${index}` as any);
@@ -203,7 +271,10 @@ export default function ProfilePage() {
     setIsRequestingRec(prev => ({ ...prev, [index]: true }));
     try {
       const result = await sendRecommendationRequest({
-        applicationId: user.uid,
+        applicationId: appId,
+        studentId: user.uid,
+        scholarshipId,
+        scholarshipName,
         studentName: user.displayName || 'A Student',
         recommenderName: name,
         recommenderEmail: email,
@@ -225,11 +296,11 @@ export default function ProfilePage() {
   };
 
   const handleSendReminder = async (index: number) => {
-    if (!user) return;
+    if (!user || !appId) return;
     setIsRemindingRec(prev => ({ ...prev, [index]: true }));
     try {
       const result = await sendRecommendationReminder({
-        applicationId: user.uid,
+        applicationId: appId,
         requestIndex: index,
         origin: window.location.origin
       });
@@ -246,11 +317,11 @@ export default function ProfilePage() {
   };
 
   const handleCancelRecommendation = async (index: number) => {
-    if (!user) return;
+    if (!user || !appId) return;
     setIsCancellingRec(prev => ({ ...prev, [index]: true }));
     try {
       const result = await cancelRecommendationRequest({
-        applicationId: user.uid,
+        applicationId: appId,
         requestIndex: index,
       });
       if (result.success) {
@@ -266,24 +337,24 @@ export default function ProfilePage() {
     }
   };
 
+  // Routed through the same server action as an explicit save so the shared /
+  // application field split lives in exactly one place. It also means autosave
+  // no longer blind-writes the whole form object, which used to be able to put
+  // an empty essays[] back over a freshly uploaded file.
   const performAutoSave = useCallback(async () => {
-    if (!user || !firestore || !isDirty || applicantData?.status === 'Submitted' || applicantData?.status === 'In Review') {
+    const status = applicationData?.status;
+    if (!user || !scholarshipId || !formRef.current || !isDirty || (status && status !== 'Draft')) {
       return;
     }
     setSaveStatus('saving');
     try {
-      const currentValues = getValues();
-      await setDoc(doc(firestore, 'users', user.uid), {
-        ...currentValues,
-        status: applicantData?.status || 'Draft',
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
-      setSaveStatus('saved');
-      setTimeout(() => setSaveStatus('idle'), 3000);
+      const result = await saveApplication(user.uid, scholarshipId, new FormData(formRef.current), false);
+      setSaveStatus(result.success ? 'saved' : 'error');
+      if (result.success) setTimeout(() => setSaveStatus('idle'), 3000);
     } catch (error) {
       setSaveStatus('error');
     }
-  }, [user, firestore, isDirty, applicantData?.status, getValues]);
+  }, [user, scholarshipId, isDirty, applicationData?.status]);
 
   useEffect(() => {
     const interval = setInterval(() => performAutoSave(), 30000);
@@ -291,15 +362,18 @@ export default function ProfilePage() {
   }, [performAutoSave]);
 
   const onSave = async (submit: boolean = false) => {
-    if (!user || !formRef.current) return;
+    if (!user || !formRef.current || !scholarshipId) return;
     if (submit) setIsSubmitting(true);
     else setIsSaving(true);
     setFormError(null);
     const formData = new FormData(formRef.current);
     try {
-      const result = await saveApplicantData(user.uid, formData, submit);
+      const result = await saveApplication(user.uid, scholarshipId, formData, submit);
       if (result.success) {
-        toast({ title: submit ? 'Portfolio Finalized' : 'Draft Saved', description: submit ? 'Submitted for review.' : 'Progress stored.' });
+        toast({
+          title: submit ? 'Application Submitted' : 'Draft Saved',
+          description: submit ? `Your application to ${scholarshipName} is with the committee.` : 'Progress stored.',
+        });
         setSaveStatus('saved');
       } else {
         throw new Error(result.error);
@@ -323,15 +397,29 @@ export default function ProfilePage() {
     );
   }
 
-  const isAlreadySubmitted = applicantData?.status === 'Submitted' || applicantData?.status === 'In Review' || applicantData?.status === 'Awarded' || applicantData?.status === 'Not Awarded';
+  // Read from the application, never from the merged object: the user document
+  // carries a legacy mirror of the last submitted application, and using that
+  // here would lock a brand-new application to a different scholarship.
+  const applicationStatus = applicationData?.status;
+  const isAlreadySubmitted = !!applicationStatus && applicationStatus !== 'Draft';
+
+  // Endorsements outlive submission deliberately. A recommender's deadline is
+  // normally later than the application's, and chasing or replacing a teacher
+  // who hasn't replied is the one thing a student can't do any other way — so
+  // inviting, reminding and cancelling stay available after Finalize & Submit.
+  // Everything else on the form stays locked. Once a decision is recorded there
+  // is nothing left to influence, so it closes for good.
+  const canManageEndorsements = applicationStatus !== 'Awarded' && applicationStatus !== 'Not Awarded';
 
   return (
     <form ref={formRef} className="space-y-6 md:space-y-8" noValidate>
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-2xl md:text-3xl font-bold">Scholarship Portfolio</h1>
+          <h1 className="text-2xl md:text-3xl font-bold">{scholarshipName}</h1>
           <p className="text-xs md:text-sm text-muted-foreground">
-            {isAlreadySubmitted ? 'Your portfolio is locked and undergoing institutional review.' : 'Provide your academic background and supporting evidence.'}
+            {isAlreadySubmitted
+              ? 'This application is locked and undergoing institutional review. You can still manage endorsements below, and your other applications are unaffected.'
+              : 'Provide your academic background and supporting evidence for this scholarship.'}
           </p>
           {!isAlreadySubmitted && (
             <div className="flex items-center pt-1">
@@ -340,7 +428,7 @@ export default function ProfilePage() {
             </div>
           )}
         </div>
-        {isAlreadySubmitted && <Badge className="bg-primary/10 text-primary border-primary/20 py-1.5 px-4 self-start md:self-center font-bold"><Lock className="h-4 w-4 mr-2" /> PORTFOLIO LOCKED</Badge>}
+        {isAlreadySubmitted && <Badge className="bg-primary/10 text-primary border-primary/20 py-1.5 px-4 self-start md:self-center font-bold"><Lock className="h-4 w-4 mr-2" /> {applicationStatus?.toUpperCase()}</Badge>}
       </div>
 
       <div className="grid grid-cols-1 gap-6 md:gap-8 lg:grid-cols-3">
@@ -398,9 +486,15 @@ export default function ProfilePage() {
             </CardContent>
           </Card>
 
-          <Card className={cn(isAlreadySubmitted && "opacity-80")}>
+          <Card>
             <CardHeader className="p-4 md:p-6 border-b bg-muted/20">
               <CardTitle className="text-lg md:text-xl">External Endorsements</CardTitle>
+              {isAlreadySubmitted && canManageEndorsements && (
+                <CardDescription className="text-xs">
+                  Your application is locked, but endorsements stay open — you can still invite,
+                  remind or replace a recommender while it is under review.
+                </CardDescription>
+              )}
             </CardHeader>
             <CardContent className="space-y-6 p-4 md:p-6">
               {[1, 2].map((i) => {
@@ -411,15 +505,15 @@ export default function ProfilePage() {
                       <h4 className="text-xs md:text-sm font-black uppercase flex items-center gap-2"><UserPlus className="h-4 w-4 text-primary" /> Endorsement #{i}</h4>
                       <Badge variant={status === 'Received' ? 'default' : 'outline'} className="font-bold">{status}</Badge>
                     </div>
-                    {status === 'Not Requested' && !isAlreadySubmitted && (
+                    {status === 'Not Requested' && canManageEndorsements && (
                       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                         <Input {...register(`recommenderName${i}` as any)} placeholder="Recommender Name" className="h-9 text-xs" />
                         <Input type="email" {...register(`recommenderEmail${i}` as any)} placeholder="Email Address" className="h-9 text-xs" />
                         <Input {...register(`recommenderTitle${i}` as any)} placeholder="Relationship/Title" className="h-9 text-xs" />
                       </div>
                     )}
-                    {status === 'Not Requested' && !isAlreadySubmitted && <Button type="button" size="sm" className="w-full h-10 text-xs font-bold" onClick={() => handleSendRecommendationRequest(i)} disabled={isRequestingRec[i]}><Mail className="h-4 w-4 mr-2" />Send Secure Invitation</Button>}
-                    {status === 'Pending' && !isAlreadySubmitted && (
+                    {status === 'Not Requested' && canManageEndorsements && <Button type="button" size="sm" className="w-full h-10 text-xs font-bold" onClick={() => handleSendRecommendationRequest(i)} disabled={isRequestingRec[i]}><Mail className="h-4 w-4 mr-2" />Send Secure Invitation</Button>}
+                    {status === 'Pending' && canManageEndorsements && (
                       <div className="space-y-3">
                         <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-700 font-black uppercase">
                           <Clock className="h-4 w-4" /> Awaiting response from {(applicantData as any)?.[`recommenderName${i}`] || 'recommender'}
@@ -479,11 +573,24 @@ export default function ProfilePage() {
               <div className="flex items-center gap-3"><div className={cn("h-6 w-6 rounded-full flex items-center justify-center border-2 text-[10px] font-bold", getValues('name') ? "bg-primary text-primary-foreground border-primary" : "border-muted text-muted-foreground")}>{getValues('name') ? '✓' : '1'}</div><span>Personal Details</span></div>
               <div className="flex items-center gap-3"><div className={cn("h-6 w-6 rounded-full flex items-center justify-center border-2 text-[10px] font-bold", (watch('essay') || applicantData?.essays?.some(e => e.promptId === 'personal-statement')) ? "bg-primary text-primary-foreground border-primary" : "border-muted-foreground/30 text-muted-foreground")}>{(watch('essay') || applicantData?.essays?.some(e => e.promptId === 'personal-statement')) ? '✓' : '2'}</div><span>Personal Statement</span></div>
               <div className="flex items-center gap-3"><div className={cn("h-6 w-6 rounded-full flex items-center justify-center border-2 text-[10px] font-bold", ((applicantData as any)?.recommendationStatus1 === 'Received') ? "bg-primary text-primary-foreground border-primary" : "border-muted-foreground/30 text-muted-foreground")}>{((applicantData as any)?.recommendationStatus1 === 'Received') ? '✓' : '3'}</div><span>Endorsement Verified</span></div>
-              {!isAlreadySubmitted && <div className="mt-6 p-4 rounded-lg bg-amber-50 border border-amber-200"><p className="text-[10px] font-bold text-amber-700 leading-relaxed uppercase">Important: Once submitted, you will no longer be able to modify your portfolio.</p></div>}
+              {!isAlreadySubmitted && <div className="mt-6 p-4 rounded-lg bg-amber-50 border border-amber-200"><p className="text-[10px] font-bold text-amber-700 leading-relaxed uppercase">Important: once submitted, this application is locked. You can still apply to other scholarships.</p></div>}
             </CardContent>
           </Card>
         </div>
       </div>
     </form>
+  );
+}
+
+export default function ProfilePage() {
+  // useSearchParams needs a Suspense boundary in the App Router.
+  return (
+    <Suspense fallback={
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    }>
+      <ProfilePageContent />
+    </Suspense>
   );
 }
