@@ -120,6 +120,9 @@ function ApplicationsPageContent() {
         </p>
       </div>
 
+
+      
+
       <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
         <Table>
           <TableHeader>
@@ -130,6 +133,7 @@ function ApplicationsPageContent() {
               <TableHead className="text-right font-bold">Actions</TableHead>
             </TableRow>
           </TableHeader>
+          
           <TableBody>
             {applications.map((app: any) => (
               <TableRow key={app.id} className="hover:bg-muted/30 transition-colors">

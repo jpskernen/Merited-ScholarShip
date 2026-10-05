@@ -39,7 +39,30 @@ export default function SignupPage() {
     try {
       await initiateEmailSignUp(auth, email, password);
     } catch (error: any) {
-      toast({ variant: 'destructive', title: "Signup Failed", description: error.message });
+      // Firebase's raw messages ("Firebase: Error (auth/email-already-in-use).")
+      // are codes, not something an applicant can act on.
+      let description = 'Something went wrong creating your account. Please try again.';
+      switch (error.code) {
+        case 'auth/email-already-in-use':
+          description = 'An account already exists with this email. Try logging in instead, or reset your password if you have forgotten it.';
+          break;
+        case 'auth/invalid-email':
+          description = 'That email address does not look right. Please check it and try again.';
+          break;
+        case 'auth/weak-password':
+          description = 'Please choose a longer password — at least 6 characters.';
+          break;
+        case 'auth/operation-not-allowed':
+          description = 'Sign-ups are not available right now. Please contact support.';
+          break;
+        case 'auth/too-many-requests':
+          description = 'Too many attempts. Please wait a few minutes and try again.';
+          break;
+        case 'auth/network-request-failed':
+          description = 'We could not reach the server. Please check your connection and try again.';
+          break;
+      }
+      toast({ variant: 'destructive', title: "Signup Failed", description });
       setIsSigningUp(false);
     }
   };
@@ -72,6 +95,15 @@ export default function SignupPage() {
           toast({ title: "Account Created", description: "Welcome to Merited." });
           router.push(role === 'admin' ? '/admin' : '/dashboard');
         } catch (err) {
+          // The Auth account already exists at this point, so swallowing this
+          // silently leaves the applicant staring at an unchanged form while
+          // their email is now taken.
+          console.error('Failed to finish account setup', err);
+          toast({
+            variant: 'destructive',
+            title: 'Almost there',
+            description: 'Your login was created, but we could not finish setting up your profile. Please try logging in — if that fails, contact support.',
+          });
           setIsSigningUp(false);
         }
       }

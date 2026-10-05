@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, use, useState } from 'react';
+import { useMemo, use, useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
@@ -26,7 +26,7 @@ import {
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useDoc, useFirebase, useMemoFirebase, useCollection } from '@/firebase';
-import { doc, collectionGroup, query, where, collection } from 'firebase/firestore';
+import { doc, collectionGroup, query, where, collection, onSnapshot } from 'firebase/firestore';
 import type { Applicant } from '@/types/applicant';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
@@ -47,12 +47,52 @@ export default function AdminApplicantDetail({ params }: { params: Promise<{ id:
 
   const { data: applicant, isLoading: isAppLoading } = useDoc<Applicant>(applicantRef);
 
-  const reviewsQuery = useMemoFirebase(() => {
+  // The review portal files evaluations under the application they score
+  // (applications/{id}/reviews). This page used to read users/{uid}/reviews,
+  // which only ever holds reviews from the pre-migration reviewer screen, so
+  // every evaluation submitted since looked like it had never arrived.
+  const applicationsQuery = useMemoFirebase(() => {
     if (!firestore || !applicantId) return null;
-    return query(collection(firestore, 'users', applicantId, 'reviews'));
+    return query(collection(firestore, 'applications'), where('studentId', '==', applicantId));
   }, [firestore, applicantId]);
 
-  const { data: reviews, isLoading: isReviewsLoading } = useCollection<any>(reviewsQuery);
+  const { data: applications } = useCollection<any>(applicationsQuery);
+
+  const [allReviews, setAllReviews] = useState<any[]>([]);
+  const [isReviewsLoading, setIsReviewsLoading] = useState(true);
+
+  useEffect(() => {
+    if (!firestore) return;
+    // A collection group query, because the parent id is what attributes a
+    // review to an application and a plain subcollection read cannot see it.
+    const unsubscribe = onSnapshot(
+      collectionGroup(firestore, 'reviews'),
+      (snapshot) => {
+        setAllReviews(
+          snapshot.docs.map((d) => ({ id: d.id, ...d.data(), parentId: d.ref.parent.parent?.id }))
+        );
+        setIsReviewsLoading(false);
+      },
+      (error) => {
+        console.error('Reviews listener failed:', error.message);
+        setIsReviewsLoading(false);
+      }
+    );
+    return () => unsubscribe();
+  }, [firestore]);
+
+  const reviews = useMemo(() => {
+    const scholarshipFor: Record<string, string> = {};
+    (applications || []).forEach((application: any) => {
+      scholarshipFor[application.id] = application.scholarshipName || 'Scholarship';
+    });
+
+    return allReviews
+      // Reviews filed by the legacy screen hang off the student rather than an
+      // application, so those are matched on applicantId and stay visible.
+      .filter((review) => review.parentId === applicantId || review.parentId in scholarshipFor)
+      .map((review) => ({ ...review, scholarshipName: scholarshipFor[review.parentId] }));
+  }, [allReviews, applications, applicantId]);
 
   const stats = useMemo(() => {
     if (!reviews || reviews.length === 0) return null;
@@ -186,9 +226,15 @@ export default function AdminApplicantDetail({ params }: { params: Promise<{ id:
                         <div className="space-y-0.5">
                           <p className="font-black text-sm">{review.reviewerName}</p>
                           <p className="text-[10px] text-muted-foreground uppercase font-medium">{review.recommendation}</p>
+                          {/* A student can hold an application per scholarship,
+                              so a score means nothing without naming the one it
+                              was given against. */}
+                          {review.scholarshipName && (
+                            <p className="text-[11px] text-muted-foreground">{review.scholarshipName}</p>
+                          )}
                         </div>
                         <div className="text-right">
-                          <p className="text-xl font-black text-primary">{review.totalScore.toFixed(2)}</p>
+                          <p className="text-xl font-black text-primary">{(review.totalScore || 0).toFixed(2)}</p>
                         </div>
                       </div>
 

@@ -9,6 +9,7 @@ import { ProfileSchema } from '@/types/applicant';
 import { ApplicationSchema, applicationId, LEGACY_SCHOLARSHIP_ID } from '@/types/application';
 import { firebaseConfig } from '@/firebase/config';
 import { sendSubmissionConfirmation, sendNotification, sendRecommendationReminderEmail } from '@/app/lib/notifications';
+import { escapeHtml, renderEmail } from '@/app/lib/email-template';
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 const storage = getStorage(app);
@@ -292,7 +293,18 @@ export async function sendRecommendationRequest(params: {
       subject: `Recommendation Request for ${params.studentName} — ${scholarshipTitle}`,
       type: 'Recommendation Request',
       text: `Hello ${params.recommenderName}, ${params.studentName} has requested a recommendation for the ${scholarshipTitle}. Link: ${tokenLink}`,
-      html: `<p>Hello ${params.recommenderName},</p><p><strong>${params.studentName}</strong> has requested a recommendation letter for the <strong>${scholarshipTitle}</strong>. Please upload it via this secure link: <a href="${tokenLink}">${tokenLink}</a></p>`
+      html: renderEmail({
+        title: `A recommendation letter has been requested`,
+        preheader: `${params.studentName} has asked you for a recommendation.`,
+        greeting: `Hello <strong>${escapeHtml(params.recommenderName)}</strong>,`,
+        body: [
+          `<strong>${escapeHtml(params.studentName)}</strong> has requested a recommendation letter in support of their application to the <strong>${escapeHtml(scholarshipTitle)}</strong>.`,
+          `You can write or upload your letter directly using the secure link below — no account or sign-up is needed.`,
+        ],
+        button: { label: 'Write my recommendation', url: tokenLink },
+        showPlainLink: true,
+        note: 'This link is personal to you and expires in 30 days. Please do not forward it.',
+      })
     });
 
     // Identity fields are included because this can be the first write to a

@@ -14,6 +14,7 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import { getAdminDb } from '@/firebase/admin';
 import { sendNotification } from '@/app/lib/notifications';
+import { appUrl, escapeHtml, renderEmail } from '@/app/lib/email-template';
 import { applicationId, LEGACY_SCHOLARSHIP_ID } from '@/types/application';
 
 type LetterPayload =
@@ -59,6 +60,9 @@ async function applyRecommendation(tokenData: any, index: number, payload: Lette
 
   const appRef = await resolveApplicationRef(tokenData.applicationId);
 
+
+
+  
   if (!appRef) {
     // Pure legacy: no application record exists at all, so the student's user
     // document is still the only place this letter can live.
@@ -94,7 +98,15 @@ async function notifyBothParties(tokenData: any, student: any) {
     subject: 'Recommendation Submitted Successfully',
     type: 'Recommendation Received',
     text: `Your recommendation letter for ${tokenData.studentName} has been received. Thank you.`,
-    html: `<p>Hello ${tokenData.recommenderName},</p><p>Your recommendation letter for <strong>${tokenData.studentName}</strong> has been submitted successfully to the ScholarShip selection committee. Thank you for supporting their academic journey.</p>`
+    html: renderEmail({
+      title: 'Your recommendation has been received',
+      preheader: `Thank you for supporting ${tokenData.studentName}.`,
+      greeting: `Hello <strong>${escapeHtml(tokenData.recommenderName)}</strong>,`,
+      body: [
+        `Your recommendation letter for <strong>${escapeHtml(tokenData.studentName)}</strong> has been submitted to the selection committee.`,
+        'Thank you for taking the time to support their academic journey. There is nothing further you need to do.',
+      ],
+    })
   });
 
   if (student?.email) {
@@ -103,7 +115,15 @@ async function notifyBothParties(tokenData: any, student: any) {
       subject: 'Endorsement Received',
       type: 'Recommendation Received',
       text: `A recommendation letter has been submitted by ${tokenData.recommenderName}.`,
-      html: `<p>Hi ${student.name},</p><p>We have received a new recommendation letter for your portfolio from <strong>${tokenData.recommenderName}</strong>.</p>`
+      html: renderEmail({
+        title: 'A recommendation letter has arrived',
+        preheader: `${tokenData.recommenderName} has submitted your recommendation.`,
+        greeting: `Hi <strong>${escapeHtml(student.name)}</strong>,`,
+        body: [
+          `<strong>${escapeHtml(tokenData.recommenderName)}</strong> has submitted a recommendation letter for your portfolio.`,
+        ],
+        button: appUrl('/dashboard') ? { label: 'View my application', url: appUrl('/dashboard')! } : undefined,
+      })
     });
   }
 }

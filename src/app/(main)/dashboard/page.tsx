@@ -60,6 +60,8 @@ export default function DashboardPage() {
     };
   }, [myApplications]);
 
+  const firstName = (user?.displayName || '').trim().split(' ')[0];
+
   const isPeyton = user?.email === 'peyton.vandenbemden@gmail.com';
   const isAlreadyAdmin = profile?.role === 'Admin' || profile?.role === 'Sponsor';
 
@@ -133,16 +135,28 @@ export default function DashboardPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg text-green-600">
               <Award className="h-5 w-5" />
-              {summary.awarded.length === 1 ? 'You have been awarded a scholarship' : `You have been awarded ${summary.awarded.length} scholarships`}
+              {`Congratulations${firstName ? `, ${firstName}` : ''}! `}
+              {summary.awarded.length === 1
+                ? 'You’ve won a scholarship.'
+                : `You’ve won ${summary.awarded.length} scholarships.`}
             </CardTitle>
-            <CardDescription>Congratulations — the selection committee has made a decision.</CardDescription>
+            <CardDescription>
+              {summary.awarded.length === 1
+                ? 'The selection committee has chosen you for this award. We’ll email you with the next steps — keep an eye on your inbox.'
+                : 'The selection committee has chosen you for these awards. We’ll email you with the next steps — keep an eye on your inbox.'}
+            </CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-wrap gap-2">
-            {summary.awarded.map((application: any) => (
-              <Badge key={application.id} className="bg-green-600 text-white border-none py-1.5 px-3 font-bold">
-                {application.scholarshipName || 'Scholarship'}
-              </Badge>
-            ))}
+          <CardContent className="space-y-2">
+            <p className="text-sm text-muted-foreground">
+              {summary.awarded.length === 1 ? 'Your award:' : 'Your awards:'}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {summary.awarded.map((application: any) => (
+                <Badge key={application.id} className="bg-green-600 text-white border-none py-1.5 px-3 font-bold">
+                  {application.scholarshipName || 'Scholarship'}
+                </Badge>
+              ))}
+            </div>
           </CardContent>
         </Card>
       )}

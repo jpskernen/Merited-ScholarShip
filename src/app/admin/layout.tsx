@@ -92,7 +92,9 @@ export default function AdminLayout({
 
   return (
     <SidebarProvider>
-      <div className="flex min-h-screen">
+      {/* See the note in (main)/layout.tsx — without w-full the shell collapses
+          to the width of the page content. */}
+      <div className="flex min-h-screen w-full">
         <Sidebar>
           <SidebarHeader>
             <AppLogo className="p-4" />

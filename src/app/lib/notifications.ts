@@ -4,6 +4,7 @@
 import nodemailer from 'nodemailer';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getAdminDb } from '@/firebase/admin';
+import { appUrl, escapeHtml, getEmailLogoAttachment, renderEmail, textToHtml } from './email-template';
 
 const GMAIL_USER = process.env.GMAIL_USER;
 const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
@@ -27,6 +28,7 @@ export type NotificationType =
   | 'Submission Confirmed'
   | 'Status Changed'
   | 'Reviewer Invitation'
+  | 'Review Assigned'
   | 'Admin Invitation';
 
 interface EmailParams {
@@ -46,12 +48,18 @@ export async function sendNotification(params: EmailParams) {
 
   try {
     if (transporter) {
+      // The header logo rides along as a Content-ID attachment so it renders
+      // without a publicly reachable URL. Returns undefined once
+      // EMAIL_LOGO_URL points at a hosted copy.
+      const logo = getEmailLogoAttachment();
+
       await transporter.sendMail({
         to: params.to,
         from: FROM_EMAIL,
         subject: params.subject,
         text: params.text,
         html: params.html,
+        attachments: logo ? [logo] : undefined,
       });
       delivered = true;
       deliveryMethod = 'Gmail SMTP';
@@ -87,7 +95,15 @@ export async function sendWelcomeEmail(email: string, name: string) {
     subject: 'Welcome to Merited',
     type: 'Welcome',
     text: `Hello ${name}, welcome to the Merited scholarship platform. Your account is ready.`,
-    html: `<h1>Welcome to Merited</h1><p>Hello <strong>${name}</strong>,</p><p>Your student profile has been created. You can now browse and apply for institutional scholarships.</p>`
+    html: renderEmail({
+      title: 'Welcome to Merited',
+      preheader: 'Your student profile is ready — start exploring scholarships.',
+      greeting: `Hello <strong>${escapeHtml(name)}</strong>,`,
+      body: [
+        'Your student profile has been created. You can now browse and apply for institutional scholarships.',
+      ],
+      button: appUrl('/dashboard') ? { label: 'Go to my dashboard', url: appUrl('/dashboard')! } : undefined,
+    }),
   });
 }
 
@@ -97,7 +113,18 @@ export async function sendSubmissionConfirmation(email: string, name: string) {
     subject: 'Application Received',
     type: 'Submission Confirmed',
     text: `Hello ${name}, your scholarship portfolio has been securely submitted for committee review.`,
-    html: `<h1>Application Confirmed</h1><p>Hi ${name},</p><p>Great work! Your portfolio is now locked and undergoing review by the selection committee.</p>`
+    html: renderEmail({
+      title: 'Application Confirmed',
+      preheader: 'Your portfolio is with the selection committee.',
+      greeting: `Hi <strong>${escapeHtml(name)}</strong>,`,
+      body: [
+        'Great work — your portfolio has been submitted and is now with the selection committee for review.',
+        'You will hear from us by email as soon as a decision has been made. No further action is needed from you right now.',
+      ],
+      button: appUrl('/dashboard/applications')
+        ? { label: 'View my applications', url: appUrl('/dashboard/applications')! }
+        : undefined,
+    }),
   });
 }
 
@@ -107,7 +134,16 @@ export async function sendStatusUpdate(email: string, name: string, status: stri
     subject: 'Status Update: Your Scholarship Application',
     type: 'Status Changed',
     text: `Hello ${name}, your application status has been updated to: ${status}.`,
-    html: `<h1>Decision Update</h1><p>Hello ${name},</p><p>There has been an update to your scholarship application status. Your new status is: <strong>${status}</strong>.</p><p>Log in to your dashboard for more details.</p>`
+    html: renderEmail({
+      title: 'Your application status has changed',
+      preheader: `New status: ${status}`,
+      greeting: `Hello <strong>${escapeHtml(name)}</strong>,`,
+      body: [
+        `There has been an update to your scholarship application. Your status is now <strong>${escapeHtml(status)}</strong>.`,
+        'Log in to your dashboard to see the full details.',
+      ],
+      button: appUrl('/dashboard') ? { label: 'Open my dashboard', url: appUrl('/dashboard')! } : undefined,
+    }),
   });
 }
 
@@ -122,7 +158,13 @@ export async function sendInvitationEmail(params: {
     subject: params.subject,
     type: params.role === 'Admin' ? 'Admin Invitation' : 'Reviewer Invitation',
     text: params.body,
-    html: params.body.replace(/\n/g, '<br />'),
+    // The body is generated per invitation, so it is escaped and linkified
+    // rather than trusted as HTML.
+    html: renderEmail({
+      title: params.subject,
+      preheader: `You have been invited to join as ${params.role === 'Admin' ? 'an administrator' : 'a reviewer'}.`,
+      body: [textToHtml(params.body)],
+    }),
   });
 }
 
@@ -137,6 +179,44 @@ export async function sendRecommendationReminderEmail(params: {
     subject: `Reminder: ${params.studentName} is waiting for your recommendation letter`,
     type: 'Recommendation Reminder',
     text: `Hello ${params.recommenderName}, this is a reminder that ${params.studentName} has requested a recommendation. Please upload it via this secure link: ${params.tokenLink}`,
-    html: `<h1>Recommendation Reminder</h1><p>Hello ${params.recommenderName},</p><p>This is a follow-up regarding the recommendation request for <strong>${params.studentName}</strong>.</p><p>Please upload your letter via this secure link: <a href="${params.tokenLink}">${params.tokenLink}</a></p>`
+    html: renderEmail({
+      title: 'A reminder about your recommendation letter',
+      preheader: `${params.studentName} is still waiting on your letter.`,
+      greeting: `Hello <strong>${escapeHtml(params.recommenderName)}</strong>,`,
+      body: [
+        `This is a follow-up about the recommendation letter requested by <strong>${escapeHtml(params.studentName)}</strong>.`,
+        'Uploading it takes just a couple of minutes using the secure link below.',
+      ],
+      button: { label: 'Upload recommendation letter', url: params.tokenLink },
+      showPlainLink: true,
+      note: 'This link is personal to you — please do not forward it.',
+    }),
+  });
+}
+
+export async function sendReviewAssignmentEmail(params: {
+  email: string;
+  reviewerName: string;
+  scholarshipName: string;
+  /** The admin's window.location.origin, so the link works before deploy. */
+  origin?: string;
+}) {
+  const portalUrl = params.origin ? `${params.origin}/review` : appUrl('/review');
+
+  return sendNotification({
+    to: params.email,
+    subject: `You have been assigned to review ${params.scholarshipName}`,
+    type: 'Review Assigned',
+    text: `Hello ${params.reviewerName}, you have been added to the selection committee for ${params.scholarshipName}. Applications are waiting for your review${portalUrl ? ` at ${portalUrl}` : ''}.`,
+    html: renderEmail({
+      title: 'You have been added to a review committee',
+      preheader: `${params.scholarshipName} is ready for your review.`,
+      greeting: `Hello <strong>${escapeHtml(params.reviewerName)}</strong>,`,
+      body: [
+        `You have been assigned to the selection committee for <strong>${escapeHtml(params.scholarshipName)}</strong>.`,
+        'You can now read the applications submitted to this program and score them against its evaluation rubric.',
+      ],
+      button: portalUrl ? { label: 'Open the review portal', url: portalUrl } : undefined,
+    }),
   });
 }

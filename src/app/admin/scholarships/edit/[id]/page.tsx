@@ -17,6 +17,7 @@ import { ChevronLeft, Loader2, Users, Check, Plus, Trash2, Calculator } from 'lu
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
+import { sendReviewAssignmentEmail } from '@/app/lib/notifications';
 
 export default function EditScholarshipPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -86,6 +87,47 @@ export default function EditScholarshipPage({ params }: { params: Promise<{ id: 
     setValue('reviewerIds', current, { shouldDirty: true });
   };
 
+  /**
+   * Assigning a reviewer is the only signal they get that work is waiting, so
+   * the save now tells them. Failures are reported but never roll back the
+   * save — the assignment itself already succeeded.
+   */
+  const notifyNewReviewers = async (reviewerIds: string[], scholarshipName: string) => {
+    const result = { sent: 0, simulated: 0, failed: 0 };
+    const origin = typeof window !== 'undefined' ? window.location.origin : undefined;
+
+    for (const uid of reviewerIds) {
+      const reviewer = (reviewers || []).find((r: any) => r.id === uid) as any;
+      if (!reviewer?.email) {
+        result.failed += 1;
+        continue;
+      }
+      try {
+        const sendResult = await sendReviewAssignmentEmail({
+          email: reviewer.email,
+          reviewerName: reviewer.name || 'Reviewer',
+          scholarshipName,
+          origin,
+        });
+        if (!sendResult.success) result.failed += 1;
+        else if (sendResult.method === 'Gmail SMTP') result.sent += 1;
+        else result.simulated += 1;
+      } catch {
+        result.failed += 1;
+      }
+    }
+
+    return result;
+  };
+
+  const describeSaveResult = ({ sent, simulated, failed }: { sent: number; simulated: number; failed: number }) => {
+    const parts = ['Program details and committee assignments saved.'];
+    if (sent) parts.push(`${sent} new reviewer${sent === 1 ? ' was' : 's were'} notified by email.`);
+    if (simulated) parts.push(`${simulated} notification${simulated === 1 ? '' : 's'} could not be delivered — Gmail SMTP is not configured.`);
+    if (failed) parts.push(`${failed} notification${failed === 1 ? '' : 's'} failed to send.`);
+    return parts.join(' ');
+  };
+
   const onSubmit = async (data: Scholarship) => {
     if (!firestore || !id) return;
     if (totalWeight !== 100) {
@@ -98,6 +140,13 @@ export default function EditScholarshipPage({ params }: { params: Promise<{ id: 
     }
     setIsSubmitting(true);
 
+    // Compared before the write, so a save that only edits the rubric does not
+    // re-notify a committee that was already assigned.
+    const previousReviewerIds = scholarship?.reviewerIds || [];
+    const newlyAssignedIds = (data.reviewerIds || []).filter(
+      (uid) => !previousReviewerIds.includes(uid)
+    );
+
     try {
       const formattedData = {
         ...data,
@@ -106,7 +155,12 @@ export default function EditScholarshipPage({ params }: { params: Promise<{ id: 
 
       await updateDoc(doc(firestore, 'programs', id), formattedData);
 
-      toast({ title: "Scholarship Updated", description: "Program details and committee assignments saved." });
+      const notified = await notifyNewReviewers(newlyAssignedIds, data.name);
+
+      toast({
+        title: "Scholarship Updated",
+        description: describeSaveResult(notified),
+      });
       router.push('/admin/scholarships');
     } catch (error) {
       toast({ title: "Error", description: "Failed to update scholarship program.", variant: "destructive" });

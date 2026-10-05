@@ -16,7 +16,10 @@ import { useState, useEffect, useMemo } from 'react';
 import { useCollection, useFirebase, useMemoFirebase, useUser } from '@/firebase';
 import { collection } from 'firebase/firestore';
 import type { Scholarship } from '@/types/scholarship';
-import scholarshipsData from '@/data/scholarships.json';
+
+// How many programs the landing page shows before the "View All" CTA has
+// anything left to show.
+const VISIBLE_PROGRAMS = 6;
 
 export default function Home() {
   const [mounted, setMounted] = useState(false);
@@ -55,10 +58,14 @@ export default function Home() {
 
   const { data: dbScholarships, isLoading } = useCollection<Scholarship>(scholarshipsQuery);
 
+  // No static fallback. The bundled sample programs used to render here
+  // whenever `programs` was empty, which showed visitors six awards that do not
+  // exist. An empty list now falls through to the empty state in the
+  // #scholarships section below. Still gated on `mounted` to keep the server
+  // and first client render identical.
   const scholarships = useMemo(() => {
     if (!mounted) return [];
-    if (dbScholarships && dbScholarships.length > 0) return dbScholarships;
-    return scholarshipsData;
+    return dbScholarships ?? [];
   }, [dbScholarships, mounted]);
 
   const dashboardLink = useMemo(() => {
@@ -164,9 +171,18 @@ export default function Home() {
               <div className="flex justify-center py-20">
                 <Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" />
               </div>
+            ) : scholarships.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 bg-muted/10 rounded-2xl border-2 border-dashed">
+                <Search className="h-12 w-12 text-muted-foreground mb-4 opacity-20" />
+                <p className="text-lg font-bold text-muted-foreground">No Open Programs</p>
+                <p className="text-sm text-muted-foreground max-w-sm text-center mt-1">
+                  There are no scholarship programs accepting applications right now. New awards are
+                  posted here as they open — create an account to be ready when they do.
+                </p>
+              </div>
             ) : (
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {scholarships?.slice(0, 6).map((scholarship) => (
+                {scholarships.slice(0, VISIBLE_PROGRAMS).map((scholarship) => (
                   <Card key={scholarship.id} className="flex flex-col border-primary/10 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md">
                     <CardHeader>
                       <div className="flex justify-between items-start gap-2">
@@ -204,11 +220,17 @@ export default function Home() {
               </div>
             )}
 
-            <div className="mt-12 text-center">
-              <Button variant="outline" size="lg" asChild className="rounded-full font-bold px-10">
-                <Link href={mounted && user ? dashboardLink : '/signup'}>View All Opportunities</Link>
-              </Button>
-            </div>
+            {/* The CTA only shows when there is something it would actually
+                reveal: no programs at all makes it contradict itself, and with
+                everything already on screen it leads nowhere new. The hero keeps
+                its own sign-up call to action. */}
+            {scholarships.length > VISIBLE_PROGRAMS && (
+              <div className="mt-12 text-center">
+                <Button variant="outline" size="lg" asChild className="rounded-full font-bold px-10">
+                  <Link href={mounted && user ? dashboardLink : '/signup'}>View All Opportunities</Link>
+                </Button>
+              </div>
+            )}
           </div>
         </section>
 

@@ -159,7 +159,12 @@ function DashboardLayoutContent({
 
   return (
     <SidebarProvider>
-      <div className="flex min-h-screen">
+      {/* w-full is load-bearing: SidebarProvider renders a flex row, so without
+          it this div is sized by its content and the whole shell — header bar
+          included — collapses to the width of whatever the page happens to
+          render. Pages with wide tables or card grids hid it; an empty state
+          made it obvious. */}
+      <div className="flex min-h-screen w-full">
         <Sidebar>
           <SidebarHeader>
             <div className="px-4 py-4">
