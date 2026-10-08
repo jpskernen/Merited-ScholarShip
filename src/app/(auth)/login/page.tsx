@@ -76,9 +76,11 @@ export default function LoginPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           {error && (
-            <Alert variant="destructive" className="py-2">
+            // The base Alert pins its icon 16px from the top; with py-2 that sat
+            // below the text, so lay the icon out inline instead.
+            <Alert variant="destructive" className="flex items-center gap-2 py-2 [&>svg]:static [&>svg]:shrink-0 [&>svg~*]:pl-0 [&>svg+div]:translate-y-0">
               <AlertCircle className="h-4 w-4" />
-              <AlertDescription className="text-xs">{error}</AlertDescription>
+              <AlertDescription className="text-sm">{error}</AlertDescription>
             </Alert>
           )}
           <div className="space-y-2">

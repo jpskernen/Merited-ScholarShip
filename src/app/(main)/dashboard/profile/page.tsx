@@ -173,15 +173,29 @@ function ProfilePageContent() {
   const [essayQualMethod, setEssayQualMethod] = useState<'text' | 'file'>('text');
   const [essayGeneralMethod, setEssayGeneralMethod] = useState<'text' | 'file'>('text');
 
+  // The application document changes on every invite, reminder, upload and
+  // autosave. Resetting the whole form each time threw away anything typed but
+  // not yet saved (a changed school, the other endorsement's details), so a
+  // full reset happens once per application and later snapshots keep dirty
+  // fields as the user left them.
+  const hydratedAppId = useRef<string | null>(null);
+
   useEffect(() => {
-    if (user && !isUserLoading) {
-      if (!applicantData?.email) setValue('email', user.email || '');
-      if (!applicantData?.name) setValue('name', user.displayName || '');
+    if (!user || isUserLoading || isApplicantDataLoading || !appId) return;
+
+    const values = {
+      ...applicantData,
+      email: applicantData?.email || user.email || '',
+      name: applicantData?.name || user.displayName || '',
+    } as Applicant;
+
+    if (hydratedAppId.current !== appId) {
+      reset(values);
+      hydratedAppId.current = appId;
+    } else {
+      reset(values, { keepDirtyValues: true });
     }
-    if (applicantData) {
-        reset(applicantData);
-    }
-  }, [user, applicantData, isUserLoading, setValue, reset]);
+  }, [user, applicantData, isUserLoading, isApplicantDataLoading, appId, reset]);
 
   const finishUpload = async (downloadURL: string, fileName: string, field: string, promptId?: string) => {
     // Uploads belong to this application, not to the student's shared profile,
@@ -262,9 +276,31 @@ function ProfilePageContent() {
     const name = getValues(`recommenderName${index}` as any);
     const email = getValues(`recommenderEmail${index}` as any);
     const title = getValues(`recommenderTitle${index}` as any);
+    setRecErrors(prev => ({ ...prev, [index]: '' }));
 
     if (!name || !email || !title) {
       setRecErrors(prev => ({ ...prev, [index]: "Please fill out all recommender details." }));
+      return;
+    }
+
+    // Same rules as sendRecommendationRequest, which enforces them; checked
+    // here too so the student sees the problem before anything is sent.
+    const normalized = String(email).trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+      setRecErrors(prev => ({ ...prev, [index]: "Please enter a valid recommender email address." }));
+      return;
+    }
+    const ownEmails = [user.email, getValues('email' as any), getValues('secondaryEmail' as any)]
+      .filter((e): e is string => typeof e === 'string' && e.trim() !== '')
+      .map(e => e.trim().toLowerCase());
+    if (ownEmails.includes(normalized)) {
+      setRecErrors(prev => ({ ...prev, [index]: "You cannot be your own recommender. Please enter someone else’s email." }));
+      return;
+    }
+    const otherIndex = index === 1 ? 2 : 1;
+    const otherEmail = getValues(`recommenderEmail${otherIndex}` as any);
+    if (typeof otherEmail === 'string' && otherEmail.trim().toLowerCase() === normalized) {
+      setRecErrors(prev => ({ ...prev, [index]: `This person is already your Endorsement #${otherIndex} recommender. Please choose a different recommender.` }));
       return;
     }
 
@@ -513,6 +549,13 @@ function ProfilePageContent() {
                       </div>
                     )}
                     {status === 'Not Requested' && canManageEndorsements && <Button type="button" size="sm" className="w-full h-10 text-xs font-bold" onClick={() => handleSendRecommendationRequest(i)} disabled={isRequestingRec[i]}><Mail className="h-4 w-4 mr-2" />Send Secure Invitation</Button>}
+                    {/* recErrors was set by every failed send but never rendered,
+                        so a rejected invitation looked like a dead button. */}
+                    {status === 'Not Requested' && canManageEndorsements && recErrors[i] && (
+                      <p className="flex items-center gap-2 text-sm text-destructive">
+                        <AlertCircle className="h-4 w-4 shrink-0" /> {recErrors[i]}
+                      </p>
+                    )}
                     {status === 'Pending' && canManageEndorsements && (
                       <div className="space-y-3">
                         <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-700 font-black uppercase">
@@ -560,7 +603,51 @@ function ProfilePageContent() {
               )}
               <div className="flex flex-col sm:flex-row gap-4 justify-end">
                 <Button type="button" variant="outline" onClick={() => onSave(false)} disabled={isSaving || isSubmitting} className="w-full sm:w-auto h-12 px-8 font-bold">Save Draft Progress</Button>
-                <Button type="button" className="font-black uppercase tracking-widest w-full sm:w-auto h-12 px-10 shadow-lg" onClick={() => onSave(true)} disabled={isSaving || isSubmitting}>Finalize & Submit</Button>
+                {/* Submitting locks the application for good, so it is confirmed
+                    first and the student is shown what is still missing. The
+                    checks mirror the Submission Checklist. */}
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button type="button" className="font-black uppercase tracking-widest w-full sm:w-auto h-12 px-10 shadow-lg" disabled={isSaving || isSubmitting}>Finalize & Submit</Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    {(() => {
+                      const missing: string[] = [];
+                      if (!getValues('name')) missing.push('Personal details (your name)');
+                      if (!watch('essay') && !applicantData?.essays?.some(e => e.promptId === 'personal-statement')) {
+                        missing.push('Personal statement (no essay typed or uploaded)');
+                      }
+                      const pendingLetters = [1, 2].filter(i => (applicantData as any)?.[`recommendationStatus${i}`] !== 'Received');
+                      return (
+                        <>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>{missing.length ? 'Submit with missing items?' : 'Submit this application?'}</AlertDialogTitle>
+                            <AlertDialogDescription asChild>
+                              <div className="space-y-3 text-sm">
+                                <p>Once submitted, this application is <strong>locked</strong> and you cannot edit it any more.</p>
+                                {missing.length > 0 && (
+                                  <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-red-700">
+                                    <p className="font-bold">Still missing:</p>
+                                    <ul className="list-disc pl-5">{missing.map(m => <li key={m}>{m}</li>)}</ul>
+                                  </div>
+                                )}
+                                {pendingLetters.length > 0 && (
+                                  <p className="text-muted-foreground">
+                                    Endorsement {pendingLetters.map(i => `#${i}`).join(' and ')} not received yet. You can still invite or remind recommenders after submitting.
+                                  </p>
+                                )}
+                              </div>
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Go Back</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => onSave(true)}>{missing.length ? 'Submit Anyway' : 'Submit'}</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </>
+                      );
+                    })()}
+                  </AlertDialogContent>
+                </AlertDialog>
               </div>
             </div>
           )}

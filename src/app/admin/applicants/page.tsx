@@ -95,11 +95,7 @@ export default function AdminApplicantsPage() {
     return () => unsubscribe();
   }, [firestore, isUserLoading]);
 
-  // A student can now hold one application per scholarship, but this board is
-  // still keyed by student (reviews live under users/{uid}/reviews). Pulling the
-  // applications in alongside means each row can at least name the scholarships
-  // the student applied to and each one's own status, rather than showing a
-  // single global status that says nothing about which award it refers to.
+
   useEffect(() => {
     if (!firestore || isUserLoading) return;
     const q = query(collection(firestore, 'applications'), where('organizationId', '==', schoolId));
@@ -156,8 +152,12 @@ export default function AdminApplicantsPage() {
       // Students who applied before the applications collection existed have no
       // record yet (it is backfilled the next time they open the portal). Keep
       // them visible on one row driven by their legacy status rather than
-      // dropping them off the board entirely.
+      // dropping them off the board entirely — but only when that legacy status
+      // is a real submission. A student who has merely signed up has no status
+      // at all, and showed up here as "UNKNOWN".
       if (studentApplications.length === 0) {
+        const legacyStatus = applicant.status?.toLowerCase();
+        if (!legacyStatus || legacyStatus === 'draft') return [];
         return [{
           ...shared,
           ...statsFor(applicant.id),
@@ -168,14 +168,18 @@ export default function AdminApplicantsPage() {
         }];
       }
 
-      return studentApplications.map((application: any) => ({
-        ...shared,
-        ...statsFor(application.id),
-        rowId: application.id,
-        applicationId: application.id,
-        scholarshipName: application.scholarshipName,
-        applicationStatus: application.status,
-      }));
+      // A draft hasn't been submitted, so it isn't the committee's to judge —
+      // and left on the board it could be ticked and awarded.
+      return studentApplications
+        .filter((application: any) => application.status && application.status !== 'Draft')
+        .map((application: any) => ({
+          ...shared,
+          ...statsFor(application.id),
+          rowId: application.id,
+          applicationId: application.id,
+          scholarshipName: application.scholarshipName,
+          applicationStatus: application.status,
+        }));
     });
 
     if (statusFilter !== 'all') {
@@ -430,7 +434,7 @@ export default function AdminApplicantsPage() {
                 </TableCell>
                 <TableCell className="text-right pr-6">
                   <Button variant="ghost" size="sm" asChild className="font-bold hover:bg-primary/5">
-                    <Link href={`/admin/applicants/${row.studentId}`}>
+                    <Link href={`/admin/applicants/${row.studentId}${row.applicationId ? `?application=${encodeURIComponent(row.applicationId)}` : ''}`}>
                       Detail View <ExternalLink className="ml-2 h-3 w-3" />
                     </Link>
                   </Button>

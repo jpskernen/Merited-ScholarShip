@@ -161,8 +161,10 @@ export default function DashboardPage() {
         </Card>
       )}
 
+      {/* flex-col + flex-1 on the content pushes every footer button to the
+          bottom, so the three buttons line up despite uneven card content. */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        <Card>
+        <Card className="flex flex-col">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
               <User className="h-5 w-5 text-primary" />
@@ -174,7 +176,7 @@ export default function DashboardPage() {
                 : `${summary.total} application${summary.total === 1 ? '' : 's'} in total.`}
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-2 text-sm">
+          <CardContent className="flex-1 space-y-2 text-sm">
             <div className="flex justify-between"><span className="text-muted-foreground">Drafts</span><span className="font-bold">{summary.drafts}</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">Awaiting decision</span><span className="font-bold">{summary.submitted}</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">Awarded</span><span className="font-bold text-green-600">{summary.awarded.length}</span></div>
@@ -189,7 +191,7 @@ export default function DashboardPage() {
           </CardFooter>
         </Card>
 
-        <Card>
+        <Card className="flex flex-col">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
               <Search className="h-5 w-5 text-primary" />
@@ -199,7 +201,7 @@ export default function DashboardPage() {
               Programs you can apply to right now.
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex-1">
              <div className="flex items-baseline gap-2">
                <span className="text-4xl font-bold">{programs?.length ?? 0}</span>
                <span className="text-sm text-muted-foreground">Programs</span>
@@ -215,7 +217,7 @@ export default function DashboardPage() {
           </CardFooter>
         </Card>
 
-        <Card>
+        <Card className="flex flex-col">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
               <Clock className="h-5 w-5 text-primary" />
@@ -225,7 +227,7 @@ export default function DashboardPage() {
               Updates from the selection committee.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-2">
+          <CardContent className="flex-1 space-y-2">
             {summary.total === 0 ? (
               <div className="rounded-md bg-muted/50 p-3 text-sm font-medium">No applications yet</div>
             ) : (

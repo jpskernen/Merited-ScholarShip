@@ -35,8 +35,19 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 
 
 
-export default function AdminApplicantDetail({ params }: { params: Promise<{ id: string }> }) {
+export default function AdminApplicantDetail({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ application?: string }>;
+}) {
   const { id: applicantId } = use(params);
+  // The Committee board has one row per application, so its Detail View link
+  // names the application it was opened from. Without it this page pooled
+  // every application's reviews, and a scholarship nobody had reviewed showed
+  // another scholarship's evaluation and consensus score.
+  const { application: selectedApplicationId } = use(searchParams);
   const router = useRouter();
   const { firestore } = useFirebase();
   
@@ -67,12 +78,17 @@ export default function AdminApplicantDetail({ params }: { params: Promise<{ id:
     // review to an application and a plain subcollection read cannot see it.
     const unsubscribe = onSnapshot(
       collectionGroup(firestore, 'reviews'),
+
+      
       (snapshot) => {
         setAllReviews(
           snapshot.docs.map((d) => ({ id: d.id, ...d.data(), parentId: d.ref.parent.parent?.id }))
         );
+        console.log('Reviews listener initialized for applicantId',snapshot)
         setIsReviewsLoading(false);
       },
+     
+
       (error) => {
         console.error('Reviews listener failed:', error.message);
         setIsReviewsLoading(false);
@@ -81,6 +97,9 @@ export default function AdminApplicantDetail({ params }: { params: Promise<{ id:
     return () => unsubscribe();
   }, [firestore]);
 
+
+   
+
   const reviews = useMemo(() => {
     const scholarshipFor: Record<string, string> = {};
     (applications || []).forEach((application: any) => {
@@ -88,11 +107,20 @@ export default function AdminApplicantDetail({ params }: { params: Promise<{ id:
     });
 
     return allReviews
-      // Reviews filed by the legacy screen hang off the student rather than an
-      // application, so those are matched on applicantId and stay visible.
-      .filter((review) => review.parentId === applicantId || review.parentId in scholarshipFor)
+      .filter((review) =>
+        selectedApplicationId
+          ? review.parentId === selectedApplicationId
+          // Reviews filed by the legacy screen hang off the student rather than an
+          // application, so those are matched on applicantId and stay visible.
+          : review.parentId === applicantId || review.parentId in scholarshipFor
+      )
       .map((review) => ({ ...review, scholarshipName: scholarshipFor[review.parentId] }));
-  }, [allReviews, applications, applicantId]);
+  }, [allReviews, applications, applicantId, selectedApplicationId]);
+
+  const selectedApplication = useMemo(
+    () => (selectedApplicationId ? (applications || []).find((a: any) => a.id === selectedApplicationId) : null),
+    [applications, selectedApplicationId]
+  );
 
   const stats = useMemo(() => {
     if (!reviews || reviews.length === 0) return null;
@@ -126,9 +154,12 @@ export default function AdminApplicantDetail({ params }: { params: Promise<{ id:
             <h1 className="text-3xl font-bold flex items-center gap-2">
               {applicant.name}
               <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 uppercase text-[10px] tracking-widest font-black">
-                {applicant.status}
+                {selectedApplication?.status ?? applicant.status}
               </Badge>
             </h1>
+            {selectedApplication && (
+              <p className="text-sm font-semibold">{selectedApplication.scholarshipName || 'Scholarship'}</p>
+            )}
             <p className="text-sm text-muted-foreground">{applicant.email} • ID: {applicantId.substring(0, 8).toUpperCase()}</p>
           </div>
         </div>

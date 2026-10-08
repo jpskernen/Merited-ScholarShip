@@ -1,6 +1,7 @@
 import 'server-only';
 import { cert, getApps, initializeApp, type App } from 'firebase-admin/app';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
+import { getAuth, type Auth } from 'firebase-admin/auth';
 
 /**
  * Trusted server-side Firebase access for 'use server' actions. Unlike the
@@ -34,4 +35,8 @@ export function getAdminDb(): Firestore {
     adminDb = getFirestore(getAdminApp());
   }
   return adminDb;
+}
+
+export function getAdminAuth(): Auth {
+  return getAuth(getAdminApp());
 }

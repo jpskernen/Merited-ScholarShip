@@ -92,13 +92,19 @@ export default function NewScholarshipPage() {
     }
   };
 
+  // Without this, a failed validation did nothing at all: no toast, and the
+  // field errors were never rendered, so the button simply looked broken.
+  const onInvalid = () => {
+    toast({ title: 'Please fix the highlighted fields', variant: 'destructive' });
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <Button variant="ghost" onClick={() => router.back()} className="mb-4">
         <ChevronLeft className="mr-2 h-4 w-4" /> Back to List
       </Button>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-8 pb-20">
+      <form onSubmit={handleSubmit(onSubmit, onInvalid)} className="space-y-8 pb-20">
         <Card>
           <CardHeader>
             <CardTitle>Global Program Details</CardTitle>
@@ -108,20 +114,24 @@ export default function NewScholarshipPage() {
             <div className="space-y-2">
               <Label htmlFor="name">Program Title</Label>
               <Input id="name" {...register('name')} placeholder="e.g. Merit Scholars 2024" />
+              {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="amount">Award Amount</Label>
                 <Input id="amount" {...register('amount')} placeholder="$5,000" />
+                {errors.amount && <p className="text-xs text-destructive">{errors.amount.message}</p>}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="deadline">Deadline Description</Label>
                 <Input id="deadline" {...register('deadline')} placeholder="June 30th" />
+                {errors.deadline && <p className="text-xs text-destructive">{errors.deadline.message}</p>}
               </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="description">Full Description</Label>
               <Textarea id="description" {...register('description')} rows={4} placeholder="Eligibility and selection criteria..." />
+              {errors.description && <p className="text-xs text-destructive">{errors.description.message}</p>}
             </div>
           </CardContent>
         </Card>
@@ -136,6 +146,7 @@ export default function NewScholarshipPage() {
               <div key={field.id} className="flex gap-4 items-start">
                 <div className="flex-1 space-y-2">
                   <Input {...register(`prompts.${index}.title`)} placeholder="Prompt Title (e.g. Why Merit?)" />
+                  {errors.prompts?.[index]?.title && <p className="text-xs text-destructive">{errors.prompts[index]?.title?.message}</p>}
                 </div>
                 <Button type="button" variant="ghost" size="icon" onClick={() => removePrompt(index)} className="text-destructive"><Trash2 className="h-4 w-4" /></Button>
               </div>
@@ -158,10 +169,12 @@ export default function NewScholarshipPage() {
                   <div className="flex-1 space-y-2">
                     <Label className="text-[10px] font-black uppercase">Criterion Label</Label>
                     <Input {...register(`rubric.${index}.label`)} placeholder="Academic Achievement" />
+                    {errors.rubric?.[index]?.label && <p className="text-xs text-destructive">{errors.rubric[index]?.label?.message}</p>}
                   </div>
                   <div className="w-24 space-y-2">
                     <Label className="text-[10px] font-black uppercase">Weight (%)</Label>
                     <Input type="number" {...register(`rubric.${index}.weight`, { valueAsNumber: true })} />
+                    {errors.rubric?.[index]?.weight && <p className="text-xs text-destructive">Enter 0–100.</p>}
                   </div>
                   <Button type="button" variant="ghost" size="icon" onClick={() => removeRubric(index)} className="mt-6 text-destructive"><Trash2 className="h-4 w-4" /></Button>
                 </div>
@@ -186,3 +199,6 @@ export default function NewScholarshipPage() {
     </div>
   );
 }
+
+
+

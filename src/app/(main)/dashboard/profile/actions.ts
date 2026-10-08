@@ -4,7 +4,7 @@
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { FieldValue } from 'firebase-admin/firestore';
-import { getAdminDb } from '@/firebase/admin';
+import { getAdminAuth, getAdminDb } from '@/firebase/admin';
 import { ProfileSchema } from '@/types/applicant';
 import { ApplicationSchema, applicationId, LEGACY_SCHOLARSHIP_ID } from '@/types/application';
 import { firebaseConfig } from '@/firebase/config';
@@ -254,6 +254,8 @@ export async function ensureLegacyApplication(userId: string) {
   }
 }
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export async function sendRecommendationRequest(params: {
   applicationId: string;
   studentId: string;
@@ -270,6 +272,35 @@ export async function sendRecommendationRequest(params: {
     const db = getAdminDb();
     const scholarshipTitle = params.scholarshipName || 'General Portfolio';
 
+    // The letter link goes to whoever this address belongs to, so a student who
+    // names themselves (or names one teacher twice) can write their own
+    // "verified" endorsement. Checked here as well as in the form, because the
+    // form check is only a convenience and can be skipped.
+    const recommenderEmail = (params.recommenderEmail || '').trim();
+    if (!EMAIL_PATTERN.test(recommenderEmail)) {
+      return { success: false, error: 'Please enter a valid recommender email address.' };
+    }
+    const normalized = recommenderEmail.toLowerCase();
+
+    const studentSnap = await db.collection('users').doc(params.studentId).get();
+    // The login email is authoritative; the profile copies can be missing or stale.
+    const loginEmail = await getAdminAuth().getUser(params.studentId).then((u) => u.email, () => undefined);
+    const studentEmails = [loginEmail, studentSnap.get('email'), studentSnap.get('secondaryEmail')]
+      .filter((e): e is string => typeof e === 'string' && e.trim() !== '')
+      .map((e) => e.trim().toLowerCase());
+    if (studentEmails.includes(normalized)) {
+      return { success: false, error: 'You cannot be your own recommender. Please enter someone else’s email.' };
+    }
+
+    // Cancelling a request clears its email, so a stored address in the other
+    // slot is a live request.
+    const otherIndex = params.requestIndex === 1 ? 2 : 1;
+    const existingApp = await db.collection('applications').doc(params.applicationId).get();
+    const otherEmail = existingApp.get(`recommenderEmail${otherIndex}`);
+    if (typeof otherEmail === 'string' && otherEmail.trim().toLowerCase() === normalized) {
+      return { success: false, error: `This person is already your Endorsement #${otherIndex} recommender. Please choose a different recommender.` };
+    }
+
     // applicationId is now a real applications/{id}, not the student's uid, so
     // inviting the same teacher for two scholarships creates two independent
     // tokens and two independent letters.
@@ -277,7 +308,7 @@ export async function sendRecommendationRequest(params: {
       applicationId: params.applicationId,
       studentName: params.studentName,
       recommenderName: params.recommenderName,
-      recommenderEmail: params.recommenderEmail,
+      recommenderEmail,
       scholarshipTitle,
       requestIndex: params.requestIndex,
       used: false,
@@ -289,7 +320,7 @@ export async function sendRecommendationRequest(params: {
     const tokenLink = `${params.origin}/recommend/${tokenRef.id}`;
 
     const emailResult = await sendNotification({
-      to: params.recommenderEmail,
+      to: recommenderEmail,
       subject: `Recommendation Request for ${params.studentName} — ${scholarshipTitle}`,
       type: 'Recommendation Request',
       text: `Hello ${params.recommenderName}, ${params.studentName} has requested a recommendation for the ${scholarshipTitle}. Link: ${tokenLink}`,
@@ -313,7 +344,7 @@ export async function sendRecommendationRequest(params: {
     // making it invisible to the student's own query and unwritable under the
     // applications security rule.
     const appRef = db.collection('applications').doc(params.applicationId);
-    const appExists = (await appRef.get()).exists;
+    const appExists = existingApp.exists;
 
     await appRef.set({
       ...(appExists ? {} : {
@@ -324,7 +355,7 @@ export async function sendRecommendationRequest(params: {
         status: 'Draft',
       }),
       [`recommenderName${params.requestIndex}`]: params.recommenderName,
-      [`recommenderEmail${params.requestIndex}`]: params.recommenderEmail,
+      [`recommenderEmail${params.requestIndex}`]: recommenderEmail,
       [`recommenderTitle${params.requestIndex}`]: params.recommenderTitle,
       [`recommendationStatus${params.requestIndex}`]: 'Pending',
       updatedAt: FieldValue.serverTimestamp(),
@@ -332,7 +363,7 @@ export async function sendRecommendationRequest(params: {
 
     await syncRecommenderToLegacyMirror(params.studentId, params.applicationId, {
       [`recommenderName${params.requestIndex}`]: params.recommenderName,
-      [`recommenderEmail${params.requestIndex}`]: params.recommenderEmail,
+      [`recommenderEmail${params.requestIndex}`]: recommenderEmail,
       [`recommenderTitle${params.requestIndex}`]: params.recommenderTitle,
       [`recommendationStatus${params.requestIndex}`]: 'Pending',
     });

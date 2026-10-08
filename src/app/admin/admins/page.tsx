@@ -175,6 +175,7 @@ export default function ManageAdminsPage() {
             A high-entropy temporary password and invitation email will be automatically generated.
           </CardDescription>
         </CardHeader>
+
         <CardContent>
           <form onSubmit={handleInvite} className="flex gap-4">
             <div className="flex-1 space-y-2">
@@ -194,6 +195,7 @@ export default function ManageAdminsPage() {
             </Button>
           </form>
         </CardContent>
+        
       </Card>
 
       <div className="rounded-lg border bg-card shadow-sm">

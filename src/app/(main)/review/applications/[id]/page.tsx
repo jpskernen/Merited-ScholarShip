@@ -26,7 +26,6 @@ import {
   ShieldAlert,
   GraduationCap,
   CheckCircle2,
-  Trophy,
   AlertCircle
 } from 'lucide-react';
 import { notFound, useRouter } from 'next/navigation';
@@ -105,7 +104,7 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState<AnalyzeFitOutput | null>(null);
-  const [isFinished, setIsFinished] = useState(false);
+  const [nextApplicationId, setNextApplicationId] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const hasAlreadyReviewed = useMemo(() => {
@@ -208,22 +207,16 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
         description: "Evaluation finalized and stored.",
       });
       
-      // The evaluation is saved at this point. Advancing to the next candidate
-      // is a convenience on top of that, so it gets its own error handling —
-      // previously anything that went wrong here was reported as
-      // "Could not save review", telling a reviewer their submitted evaluation
-      // had failed when it was already safely stored.
-      let nextId: string | null = null;
+      // Stay on this page so the reviewer sees the evaluation they just saved
+      // (the myReview listener re-renders it locked). Jumping straight to the
+      // next candidate looked like the same page with the scores wiped, so
+      // the next candidate is only offered as a button. Looking it up gets its
+      // own error handling: the evaluation is already stored, and a failure
+      // here must not be reported as "Could not save review".
       try {
-        nextId = await findNextUnreviewedApplication();
+        setNextApplicationId(await findNextUnreviewedApplication());
       } catch (error: any) {
         console.error('Could not determine the next application to review:', error.message);
-      }
-
-      if (nextId) {
-        router.push(`/review/applications/${nextId}`);
-      } else {
-        setIsFinished(true);
       }
     } catch (error: any) {
       setSubmitError(error.message || "Could not save review.");
@@ -295,24 +288,6 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
     return <div className="flex h-[80vh] items-center justify-center animate-pulse text-muted-foreground">Syncing evaluation workspace...</div>;
   }
 
-  if (isFinished) {
-    return (
-      <div className="flex h-[70vh] flex-col items-center justify-center space-y-6 text-center">
-        <div className="bg-primary/10 p-6 rounded-full">
-          <Trophy className="h-16 w-16 text-primary" />
-        </div>
-        <div className="space-y-2">
-          <h1 className="text-3xl font-black">All Portfolios Evaluated</h1>
-          <p className="text-muted-foreground max-w-md mx-auto">
-            You&apos;ve reviewed all assigned applications for the current cycle. Great work!
-          </p>
-        </div>
-        <Button asChild size="lg" className="rounded-full px-10">
-          <Link href="/review">Return to Dashboard</Link>
-        </Button>
-      </div>
-    );
-  }
 
   if (!application) notFound();
 
@@ -438,9 +413,11 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
             
             <CardContent className="flex-1 overflow-y-auto space-y-6 p-6">
               {submitError && (
-                <Alert variant="destructive" className="py-2">
+                // Same inline-icon layout as the login error: the base Alert
+                // pins its icon 16px down, which sat below the text with py-2.
+                <Alert variant="destructive" className="flex items-center gap-2 py-2 [&>svg]:static [&>svg]:shrink-0 [&>svg~*]:pl-0 [&>svg+div]:translate-y-0">
                   <AlertCircle className="h-4 w-4" />
-                  <AlertDescription className="text-xs">{submitError}</AlertDescription>
+                  <AlertDescription className="text-sm">{submitError}</AlertDescription>
                 </Alert>
               )}
 
@@ -516,6 +493,11 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
                   <div className="flex items-center justify-center py-2 text-xs text-muted-foreground italic gap-2 bg-muted/50 rounded-md">
                      <Lock className="h-3 w-3" /> Assessment Finalized
                   </div>
+                  {nextApplicationId && (
+                    <Button className="w-full font-bold" onClick={() => router.push(`/review/applications/${nextApplicationId}`)}>
+                      Review Next Applicant <ChevronRight className="ml-2 h-4 w-4" />
+                    </Button>
+                  )}
                   <Button variant="secondary" className="w-full" onClick={() => router.push('/review')}>
                     Back to Queue <ChevronRight className="ml-2 h-4 w-4" />
                   </Button>
