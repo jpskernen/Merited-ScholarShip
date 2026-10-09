@@ -148,10 +148,10 @@ export default function ReviewerApplicationPage({ params }: { params: Promise<{ 
   };
 
   const runAiAnalysis = async () => {
-    if (!application || !activeScholarship) return;
+    if (!application || !activeScholarship || !reviewer) return;
     setIsAnalyzing(true);
     try {
-      const result = await analyzeScholarshipFit({
+      const result = await analyzeScholarshipFit(await reviewer.getIdToken(), {
         applicantData: {
           gpa: application.gpa,
           major: application.major,

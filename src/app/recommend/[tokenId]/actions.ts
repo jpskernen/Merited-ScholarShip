@@ -128,46 +128,85 @@ async function notifyBothParties(tokenData: any, student: any) {
   }
 }
 
-async function submitRecommendation(tokenId: string, tokenData: any, payload: LetterPayload) {
+const MAX_LETTER_LENGTH = 60000;
+
+/** Whether a token's expiresAt (Timestamp, Date or string) is in the past. */
+function isTokenExpired(expiresAt: any): boolean {
+  if (!expiresAt) return false;
+  const expires = expiresAt.toDate ? expiresAt.toDate() : new Date(expiresAt);
+  return !isNaN(expires.getTime()) && expires.getTime() < Date.now();
+}
+
+/**
+ * The uploaded letter must be the file the recommender page stores for this
+ * token, recommendations/{tokenId}.pdf in this project's bucket. Anything else
+ * (another student's file, an outside link) is refused, since reviewers open
+ * it from the application (docs/13 §3).
+ */
+function isOwnLetterUrl(tokenId: string, fileUrl: string): boolean {
+  const bucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
+  let url: URL;
   try {
+    url = new URL(fileUrl);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== 'https:' || url.hostname !== 'firebasestorage.googleapis.com' || !bucket) return false;
+  const prefix = `/v0/b/${bucket}/o/`;
+  if (!url.pathname.startsWith(prefix)) return false;
+  return decodeURIComponent(url.pathname.slice(prefix.length)) === `recommendations/${tokenId}.pdf`;
+}
+
+async function submitRecommendation(tokenId: string, payload: LetterPayload) {
+  try {
+    if (payload.kind === 'text') {
+      const text = payload.text?.trim() || '';
+      if (!text) return { success: false, error: 'Please write your letter before submitting.' };
+      if (text.length > MAX_LETTER_LENGTH) return { success: false, error: 'The letter is too long.' };
+    } else if (!isOwnLetterUrl(tokenId, payload.fileUrl)) {
+      return { success: false, error: 'The uploaded file could not be verified. Please upload it again.' };
+    }
+
     const db = getAdminDb();
     const tokenRef = db.collection('recommendationTokens').doc(tokenId);
-    const tokenSnap = await tokenRef.get();
 
-    if (!tokenSnap.exists) {
-      return { success: false, error: 'This recommendation link is no longer valid.' };
-    }
-    const currentToken = tokenSnap.data()!;
-    if (currentToken.used) {
-      return { success: false, error: 'This recommendation has already been submitted.' };
-    }
-    if (currentToken.cancelled) {
-      return { success: false, error: 'This recommendation request has been cancelled by the student.' };
-    }
+    // 1. Claim the link in a transaction, so two submissions at the same
+    //    moment can't both go through. Everything comes from the stored
+    //    token, never from the browser.
+    const claim = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(tokenRef);
+      if (!snap.exists) return { error: 'This recommendation link is no longer valid.' };
+      const token = snap.data()!;
+      if (token.used) return { error: 'This recommendation has already been submitted.' };
+      if (token.cancelled) return { error: 'This recommendation request has been cancelled by the student.' };
+      if (isTokenExpired(token.expiresAt)) {
+        return { error: 'This recommendation link has expired. Please ask the student to send a new request.' };
+      }
+      tx.update(tokenRef, { used: true, submittedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
+      return { token };
+    });
+    if ('error' in claim) return { success: false, error: claim.error };
 
-    const index = currentToken.requestIndex || tokenData?.requestIndex || 1;
-    const resolvedToken = { ...tokenData, ...currentToken };
-
-    // 1. Land the letter first. If this fails the token is untouched, so the
-    //    recommender can simply try again on the same link.
-    const applied = await applyRecommendation(resolvedToken, index, payload);
+    // 2. Land the letter. If that fails, release the link again so the
+    //    recommender can simply retry. The letter is not copied onto the
+    //    token: anyone holding the link can read the token (docs/13 S10).
+    const index = claim.token.requestIndex || 1;
+    let applied;
+    try {
+      applied = await applyRecommendation(claim.token, index, payload);
+    } catch (error) {
+      applied = { ok: false as const, error: 'Your letter could not be saved. Please try again.' };
+      console.error('Recommendation write failed:', error);
+    }
     if (!applied.ok) {
+      await tokenRef.update({ used: false, submittedAt: FieldValue.delete(), updatedAt: FieldValue.serverTimestamp() });
       return { success: false, error: applied.error };
     }
-
-    // 2. Only now burn the token.
-    await tokenRef.update({
-      used: true,
-      ...(payload.kind === 'text'
-        ? { letterText: payload.text }   // saved for easy admin viewing
-        : { fileUrl: payload.fileUrl }),
-      updatedAt: FieldValue.serverTimestamp()
-    });
 
     // 3. Notifications are best-effort: the letter is already safely stored, so
     //    an email failure must not report the submission as failed.
     try {
-      await notifyBothParties(resolvedToken, applied.student);
+      await notifyBothParties(claim.token, applied.student);
     } catch (error: any) {
       console.error('Recommendation notification failed:', error.message);
     }
@@ -175,14 +214,14 @@ async function submitRecommendation(tokenId: string, tokenData: any, payload: Le
     return { success: true };
   } catch (error: any) {
     console.error('Submission Error:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: 'Your letter could not be submitted. Please try again.' };
   }
 }
 
-export async function submitTypedRecommendation(tokenId: string, text: string, tokenData: any) {
-  return submitRecommendation(tokenId, tokenData, { kind: 'text', text });
+export async function submitTypedRecommendation(tokenId: string, text: string) {
+  return submitRecommendation(tokenId, { kind: 'text', text });
 }
 
-export async function submitUploadedRecommendation(tokenId: string, fileUrl: string, tokenData: any) {
-  return submitRecommendation(tokenId, tokenData, { kind: 'file', fileUrl });
+export async function submitUploadedRecommendation(tokenId: string, fileUrl: string) {
+  return submitRecommendation(tokenId, { kind: 'file', fileUrl });
 }

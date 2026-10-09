@@ -8,10 +8,12 @@ import { collection, addDoc, serverTimestamp, doc, setDoc } from 'firebase/fires
 import { useToast } from '@/hooks/use-toast';
 import { Check, Copy, ExternalLink, Loader2, FlaskConical, Users, ShieldAlert, Mail } from 'lucide-react';
 import Link from 'next/link';
+import { orgIdOf } from '@/lib/org';
 
 export default function TestUtilsPage() {
-  const { firestore } = useFirebase();
+  const { firestore, userData } = useFirebase();
   const auth = useAuth();
+  const organizationId = orgIdOf(userData);
   const { toast } = useToast();
   const [isCreating, setIsCreating] = useState(false);
   const [isSeeding, setIsSeeding] = useState(false);
@@ -39,7 +41,7 @@ export default function TestUtilsPage() {
   };
 
   const createTestToken = async () => {
-    if (!firestore) return;
+    if (!firestore || !organizationId) return;
     setIsCreating(true);
     try {
       const expiresAt = new Date();
@@ -51,7 +53,7 @@ export default function TestUtilsPage() {
         recommenderName: "Test Teacher",
         recommenderEmail: "test@test.com",
         applicationId: "test-application-id",
-        organizationId: "scholarship-hib4j",
+        organizationId,
         used: false,
         expiresAt,
         createdAt: serverTimestamp()
@@ -74,7 +76,7 @@ export default function TestUtilsPage() {
   };
 
   const seedDemoApplications = async () => {
-    if (!firestore) return;
+    if (!firestore || !organizationId) return;
     setIsSeeding(true);
     
     const students = [
@@ -131,7 +133,7 @@ export default function TestUtilsPage() {
     ];
 
     try {
-      const orgId = "scholarship-hib4j";
+      const orgId = organizationId;
       const scholarshipId = "academic-excellence";
       const reviewerId = "vj3d8Nz7O5QA1XXlK5QtCj03OZF2";
 

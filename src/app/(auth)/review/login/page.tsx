@@ -35,15 +35,20 @@ export default function ReviewerLoginPage() {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user && isSigningIn) {
         try {
-          // Check roles to determine redirect
-          const [adminDoc, userDoc] = await Promise.all([
-            getDoc(doc(firestore, 'roles_admin', user.uid)),
-            getDoc(doc(firestore, 'users', user.uid))
-          ]);
-          
-          const isAdmin = adminDoc.exists() || user.email === 'peyton.vandenbemden@gmail.com';
-          const userData = userDoc.exists() ? userDoc.data() : null;
-          const isReviewer = userData?.role?.toLowerCase() === 'reviewer';
+          // Redirect by the token's role claims. Accounts the claims backfill
+          // hasn't reached yet fall back to the role documents (not users.role,
+          // which the user can edit).
+          const { claims } = await user.getIdTokenResult();
+          let isAdmin = claims.platformAdmin === true || claims.role === 'org_admin';
+          let isReviewer = claims.role === 'reviewer';
+          if (!claims.role) {
+            const [adminDoc, reviewerDoc] = await Promise.all([
+              getDoc(doc(firestore, 'roles_admin', user.uid)),
+              getDoc(doc(firestore, 'reviewers', user.uid)),
+            ]);
+            isAdmin = isAdmin || adminDoc.exists();
+            isReviewer = reviewerDoc.exists();
+          }
 
           if (isAdmin) {
             router.push('/admin');

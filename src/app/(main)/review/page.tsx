@@ -27,6 +27,7 @@ import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useCollection, useFirebase, useMemoFirebase, useDoc } from '@/firebase';
 import { collection, collectionGroup, doc, query, where, getDocs } from 'firebase/firestore';
+import { orgIdOf } from '@/lib/org';
 
 /**
  * submissionDate is an ISO string on records written by the application form,
@@ -41,7 +42,8 @@ function toMillis(value: any): number {
 }
 
 function ReviewerDashboardContent() {
-  const { firestore, user } = useFirebase();
+  const { firestore, user, userData } = useFirebase();
+  const orgId = orgIdOf(userData);
   const searchParams = useSearchParams();
   const router = useRouter();
   
@@ -55,9 +57,13 @@ function ReviewerDashboardContent() {
 
   // 1. Get all programs where this reviewer is assigned
   const programsQuery = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
-    return query(collection(firestore, 'programs'), where('reviewerIds', 'array-contains', user.uid));
-  }, [firestore, user]);
+    if (!firestore || !user || !orgId) return null;
+    return query(
+      collection(firestore, 'programs'),
+      where('organizationId', '==', orgId),
+      where('reviewerIds', 'array-contains', user.uid),
+    );
+  }, [firestore, user, orgId]);
 
   const { data: programs, isLoading: isProgramsLoading } = useCollection(programsQuery);
 
@@ -73,20 +79,22 @@ function ReviewerDashboardContent() {
   //    by student also meant the scoring page had to guess which scholarship it
   //    was scoring, and it guessed with programs[0].
   const applicationsQuery = useMemoFirebase(() => {
-    if (!firestore || assignedScholarshipIds.length === 0) return null;
+    if (!firestore || !orgId || assignedScholarshipIds.length === 0) return null;
     // Firestore caps 'in' at 30 values and rejects an empty array.
     return query(
       collection(firestore, 'applications'),
+      where('organizationId', '==', orgId),
       where('scholarshipId', 'in', assignedScholarshipIds.slice(0, 30)),
     );
-  }, [firestore, assignedScholarshipIds]);
+  }, [firestore, orgId, assignedScholarshipIds]);
 
   const { data: assignedApplications, isLoading: isAppsLoading } = useCollection(applicationsQuery);
 
-  // 3. Get all reviews by this reviewer
+  // 3. Get all reviews by this reviewer. The rules let a reviewer read only
+  //    their own reviews, so the filter is required, not an optimization.
   const myReviewsQuery = useMemoFirebase(() => {
     if (!firestore || !user) return null;
-    return collectionGroup(firestore, 'reviews');
+    return query(collectionGroup(firestore, 'reviews'), where('reviewerId', '==', user.uid));
   }, [firestore, user]);
 
   const { data: allReviews, isLoading: isReviewsLoading } = useCollection(myReviewsQuery);

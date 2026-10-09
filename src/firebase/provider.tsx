@@ -86,54 +86,46 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
     userError: null,
   });
 
-  const resolveUserState = useCallback(async (firebaseUser: User): Promise<UserAuthState> => {
-    const email = firebaseUser.email?.toLowerCase();
-
-    // Case-Insensitive hardcoded role bypass for critical accounts
-    const isHardcodedAdmin = email === 'peyton.vandenbemden@gmail.com' || email === 'admin@test.com' || email === 'hello@meritedapp.com' || email === 'hello@merited.app';
-    const isHardcodedReviewer = email === 'reviewer@test.com' || firebaseUser.uid === 'vj3d8Nz7O5QA1XXlK5QtCj03OZF2';
-
-    if (isHardcodedAdmin) {
-      return {
-        user: firebaseUser,
-        role: 'admin',
-        userData: { role: 'admin', organizationId: 'scholarship-hib4j', schoolId: 'scholarship-hib4j' },
-        isUserLoading: false,
-        userError: null,
-      };
-    }
-
-    if (isHardcodedReviewer) {
-      return {
-        user: firebaseUser,
-        role: 'reviewer',
-        userData: { role: 'reviewer', organizationId: 'scholarship-hib4j', schoolId: 'scholarship-hib4j' },
-        isUserLoading: false,
-        userError: null,
-      };
-    }
-
-    const [userDoc, adminDoc, reviewerDoc] = await Promise.all([
+  const resolveUserState = useCallback(async (firebaseUser: User, forceRefresh = false): Promise<UserAuthState> => {
+    // Role and organization come from the ID token's custom claims, which only
+    // server code can set (docs/07 §3.2). users.role is never trusted for
+    // access: a user can edit their own user document.
+    const [tokenResult, userDoc] = await Promise.all([
+      firebaseUser.getIdTokenResult(forceRefresh),
       getDoc(doc(firestore!, 'users', firebaseUser.uid)),
-      getDoc(doc(firestore!, 'roles_admin', firebaseUser.uid)),
-      getDoc(doc(firestore!, 'reviewers', firebaseUser.uid))
     ]);
-
+    const claims = tokenResult.claims;
     const dbUserData = userDoc.exists() ? userDoc.data() : null;
-    let role = 'applicant';
 
-    if (adminDoc.exists()) {
+    let role: 'admin' | 'reviewer' | 'applicant';
+    if (claims.platformAdmin === true || claims.role === 'org_admin') {
       role = 'admin';
-    } else if (reviewerDoc.exists() || dbUserData?.role?.toLowerCase() === 'reviewer') {
+    } else if (claims.role === 'reviewer') {
       role = 'reviewer';
-    } else if (dbUserData?.role) {
-      role = dbUserData.role.toLowerCase();
+    } else if (claims.role === 'applicant') {
+      role = 'applicant';
+    } else {
+      // Transitional, for accounts the claims backfill hasn't reached yet
+      // (docs/08 §8 releases code before the backfill). Only the role
+      // documents, which a user can't create for themselves, count here.
+      const [adminDoc, reviewerDoc] = await Promise.all([
+        getDoc(doc(firestore!, 'roles_admin', firebaseUser.uid)),
+        getDoc(doc(firestore!, 'reviewers', firebaseUser.uid)),
+      ]);
+      role = adminDoc.exists() ? 'admin' : reviewerDoc.exists() ? 'reviewer' : 'applicant';
     }
 
+    const orgId = typeof claims.orgId === 'string' ? claims.orgId : null;
     return {
       user: firebaseUser,
-      role: role.toLowerCase(),
-      userData: dbUserData,
+      role,
+      userData: {
+        ...dbUserData,
+        role,
+        platformAdmin: claims.platformAdmin === true,
+        // The token's organization wins over the (user-editable) document.
+        ...(orgId ? { organizationId: orgId } : {}),
+      },
       isUserLoading: false,
       userError: null,
     };
@@ -143,7 +135,8 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
     const currentUser = auth?.currentUser;
     if (!currentUser || !firestore) return;
     try {
-      setUserAuthState(await resolveUserState(currentUser));
+      // Force a token refresh so claims the server just changed are picked up.
+      setUserAuthState(await resolveUserState(currentUser, true));
     } catch (error: any) {
       setUserAuthState(prev => ({ ...prev, userError: error }));
     }

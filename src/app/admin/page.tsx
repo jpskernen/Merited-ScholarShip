@@ -8,13 +8,15 @@ import { collection, query, orderBy, limit, where, onSnapshot } from 'firebase/f
 import { Badge } from '@/components/ui/badge';
 import { useState, useEffect } from 'react';
 import { getSystemHealth } from './actions';
+import { orgIdOf } from '@/lib/org';
 
 export default function AdminDashboardPage() {
   const { firestore } = useFirebase();
-  const { userData } = useUser();
+  const { user, userData } = useUser();
   
-  // Multi-tenant Org ID (SaaS School ID)
-  const orgId = userData?.schoolId || 'scholarship-hib4j';
+  // Multi-tenant Org ID (SaaS School ID). No fallback: the counts below stay
+  // empty for an account that isn't linked to an organization.
+  const orgId = orgIdOf(userData);
 
   const [counts, setCounts] = useState({
     total: 0,
@@ -26,12 +28,16 @@ export default function AdminDashboardPage() {
   const [systemHealth, setSystemHealth] = useState<any>(null);
 
   useEffect(() => {
+    if (!user) return;
     async function checkHealth() {
-      const health = await getSystemHealth();
-      setSystemHealth(health);
+      try {
+        setSystemHealth(await getSystemHealth(await user!.getIdToken()));
+      } catch {
+        setSystemHealth(null);
+      }
     }
     checkHealth();
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     if (!firestore || !orgId) return;
@@ -42,7 +48,7 @@ export default function AdminDashboardPage() {
     const qTotal = query(
       applicantsRef, 
       where('role', '==', 'applicant'), 
-      where('schoolId', '==', orgId)
+      where('organizationId', '==', orgId)
     );
     const unsubscribeTotal = onSnapshot(qTotal, (snapshot) => {
       setCounts(prev => ({ ...prev, total: snapshot.size }));
@@ -52,7 +58,7 @@ export default function AdminDashboardPage() {
     const qSubmitted = query(
       applicantsRef, 
       where('role', '==', 'applicant'), 
-      where('schoolId', '==', orgId), 
+      where('organizationId', '==', orgId), 
       where('status', '==', 'Submitted')
     );
     const unsubscribeSubmitted = onSnapshot(qSubmitted, (snapshot) => {
@@ -63,7 +69,7 @@ export default function AdminDashboardPage() {
     const qReview = query(
       applicantsRef, 
       where('role', '==', 'applicant'), 
-      where('schoolId', '==', orgId), 
+      where('organizationId', '==', orgId), 
       where('status', '==', 'In Review')
     );
     const unsubscribeReview = onSnapshot(qReview, (snapshot) => {
@@ -74,7 +80,7 @@ export default function AdminDashboardPage() {
     const qAwarded = query(
       applicantsRef, 
       where('role', '==', 'applicant'), 
-      where('schoolId', '==', orgId), 
+      where('organizationId', '==', orgId), 
       where('status', '==', 'Awarded')
     );
     const unsubscribeAwarded = onSnapshot(qAwarded, (snapshot) => {
@@ -89,10 +95,13 @@ export default function AdminDashboardPage() {
     };
   }, [firestore, orgId]);
 
+  // Outbox entries carry no organizationId yet, so the rules let only the
+  // platform admin read them.
+  const isPlatformAdmin = userData?.platformAdmin === true;
   const outboxQuery = useMemoFirebase(() => {
-    if (!firestore) return null;
+    if (!firestore || !isPlatformAdmin) return null;
     return query(collection(firestore, 'sent_emails'), orderBy('sentAt', 'desc'), limit(5));
-  }, [firestore]);
+  }, [firestore, isPlatformAdmin]);
 
   const { data: recentEmails, isLoading: isOutboxLoading } = useCollection(outboxQuery);
 
@@ -173,10 +182,10 @@ export default function AdminDashboardPage() {
           <CardContent className="space-y-4">
              <div className="flex items-center justify-between py-2 border-b">
                <div className="flex flex-col">
-                 <span className="text-sm font-bold">SendGrid API</span>
+                 <span className="text-sm font-bold">{systemHealth?.email?.provider || 'Email'}</span>
                  <span className="text-[10px] text-muted-foreground">Email Dispatch Service</span>
                </div>
-               {systemHealth?.sendgrid?.isConfigured ? (
+               {systemHealth?.email?.isConfigured ? (
                  <Badge className="bg-green-600 text-white font-bold">Active</Badge>
                ) : (
                  <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50">Simulation Mode</Badge>
@@ -185,16 +194,16 @@ export default function AdminDashboardPage() {
              <div className="flex items-center justify-between py-2 border-b">
                <div className="flex flex-col">
                  <span className="text-sm font-bold">Sender Email</span>
-                 <span className="text-[10px] text-muted-foreground truncate max-w-[120px]">{systemHealth?.sendgrid?.senderEmail}</span>
+                 <span className="text-[10px] text-muted-foreground truncate max-w-[120px]">{systemHealth?.email?.senderEmail}</span>
                </div>
-               {systemHealth?.sendgrid?.senderVerified ? (
+               {systemHealth?.email?.senderVerified ? (
                  <CheckCircle className="h-4 w-4 text-green-500" />
                ) : (
                  <AlertCircle className="h-4 w-4 text-amber-500" />
                )}
              </div>
              <div className="p-3 bg-muted rounded-md text-[10px] leading-relaxed text-muted-foreground italic">
-               To activate live emails, update SENDGRID_API_KEY in the App Hosting settings dashboard.
+               To activate live emails, set GMAIL_USER and GMAIL_APP_PASSWORD in the App Hosting settings.
              </div>
           </CardContent>
         </Card>

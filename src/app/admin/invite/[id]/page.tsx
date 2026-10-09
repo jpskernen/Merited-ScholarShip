@@ -6,11 +6,12 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useAuth, initiateEmailSignUp, useFirestore, useDoc, useMemoFirebase, useFirebase } from '@/firebase';
-import { doc, updateDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { useAuth, useFirestore, useDoc, useMemoFirebase, useFirebase } from '@/firebase';
+import { doc } from 'firebase/firestore';
 import { ShieldCheck, Loader2, Eye, EyeOff, UserCog, Key } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { updateProfile } from 'firebase/auth';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { acceptInvite } from '@/app/admin/invite-actions';
 
 export default function AdminOnboardingPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: inviteId } = use(params);
@@ -33,58 +34,45 @@ export default function AdminOnboardingPage({ params }: { params: Promise<{ id: 
   const { data: invite, isLoading: isInviteLoading } = useDoc(inviteRef);
 
   useEffect(() => {
-    if (!isInviteLoading && !invite) {
+    if (isInviteLoading) return;
+    if (!invite) {
       toast({ title: "Invalid Link", description: "This admin invitation is no longer active.", variant: "destructive" });
       router.push('/');
-    } else if (invite?.tempPassword) {
-      setPassword(invite.tempPassword);
+    } else if (invite.status !== 'Pending') {
+      toast({ title: "Invitation Already Used", description: "This invitation has already been accepted. Please sign in." });
+      router.push('/login');
     }
   }, [invite, isInviteLoading, router, toast]);
 
+  // Already signed in with the invited email: accept onto the existing account.
+  const signedInAsInvitee = !!invite && auth?.currentUser?.email?.toLowerCase() === String(invite.email).toLowerCase();
+
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!auth || !firestore || !invite) return;
+    if (!auth || !invite) return;
     setIsSubmitting(true);
 
     try {
-      const userCredential = await initiateEmailSignUp(auth, invite.email, password);
-      const user = userCredential.user;
+      // The server creates the account, sets the Org Admin role and marks the
+      // invite used (src/lib/invites-server.ts). Nothing role-related is
+      // written from the browser.
+      const result = signedInAsInvitee
+        ? await acceptInvite('admin', inviteId, null, await auth.currentUser!.getIdToken())
+        : await acceptInvite('admin', inviteId, { name, password });
+      if (!result.success) {
+        toast({ title: "Could Not Activate Account", description: result.error, variant: "destructive" });
+        setIsSubmitting(false);
+        return;
+      }
 
-      await updateProfile(user, { displayName: name });
-
-      // Create Admin User Document in primary users collection
-      await setDoc(doc(firestore, 'users', user.uid), {
-        id: user.uid,
-        name,
-        email: invite.email,
-        role: 'Admin',
-        schoolId: invite.schoolId,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-
-      // Grant System-Level Admin Role in roles_admin
-      await setDoc(doc(firestore, 'roles_admin', user.uid), {
-        id: user.uid,
-        role: 'Admin',
-        assignedByInvite: inviteId,
-        grantedAt: serverTimestamp()
-      });
-
-      // Mark invite as Accepted
-      await updateDoc(doc(firestore, 'admin_invites', inviteId), {
-        status: 'Accepted'
-      });
-
-      // Re-resolve the role before navigating: the auth listener ran before
-      // the roles_admin doc above existed, so the cached role is still
-      // 'applicant' and the admin layout would bounce them straight out.
+      if (!signedInAsInvitee) await signInWithEmailAndPassword(auth, result.email, password);
+      // Pick up the new role claims before the admin layout checks them.
       await refreshUserRole();
 
-      toast({ title: "Privileges Granted", description: "Administrator account created. Redirecting to Panel..." });
+      toast({ title: "Privileges Granted", description: "Administrator account activated. Redirecting to Panel..." });
       router.push('/admin');
     } catch (error: any) {
-      toast({ title: "Setup Failed", description: error.message, variant: "destructive" });
+      toast({ title: "Setup Failed", description: "Your account was activated, but signing in failed. Please sign in from the login page.", variant: "destructive" });
       setIsSubmitting(false);
     }
   };
@@ -113,6 +101,11 @@ export default function AdminOnboardingPage({ params }: { params: Promise<{ id: 
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {signedInAsInvitee ? (
+              <p className="text-sm text-muted-foreground">
+                You are signed in as <strong>{invite?.email}</strong>. Accept to add administrator access to this account.
+              </p>
+              ) : (<>
               <div className="space-y-2">
                 <Label htmlFor="name">Full Name</Label>
                 <Input 
@@ -125,12 +118,14 @@ export default function AdminOnboardingPage({ params }: { params: Promise<{ id: 
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="password">Temporary Password</Label>
+                <Label htmlFor="password">Choose a Password</Label>
                 <div className="relative">
-                  <Input 
-                    id="password" 
-                    type={showPassword ? "text" : "password"} 
-                    required 
+                  <Input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    required
+                    minLength={8}
+                    autoComplete="new-password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     disabled={isSubmitting}
@@ -145,9 +140,10 @@ export default function AdminOnboardingPage({ params }: { params: Promise<{ id: 
                   </button>
                 </div>
                 <p className="text-[10px] text-muted-foreground flex items-center gap-1 mt-1">
-                  <Key className="h-3 w-3" /> Use the high-entropy password sent via secure invitation.
+                  <Key className="h-3 w-3" /> At least 8 characters. You will use it to sign in.
                 </p>
               </div>
+              </>)}
             </CardContent>
             <CardFooter>
               <Button type="submit" className="w-full font-bold bg-amber-600 hover:bg-amber-700" disabled={isSubmitting}>

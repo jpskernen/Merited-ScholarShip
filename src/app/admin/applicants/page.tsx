@@ -43,12 +43,13 @@ import { collection, doc, updateDoc, collectionGroup, query, where, onSnapshot, 
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import Papa from 'papaparse';
-import { sendStatusUpdate } from '@/app/lib/notifications';
+import { notifyStatusChange } from '@/app/admin/notify-actions';
 import { cn } from '@/lib/utils';
+import { orgIdOf } from '@/lib/org';
 
 export default function AdminApplicantsPage() {
   const { firestore } = useFirebase();
-  const { userData, isUserLoading } = useUser();
+  const { user, userData, isUserLoading } = useUser();
   const { toast } = useToast();
   
   const [applications, setApplications] = useState<any[]>([]);
@@ -64,16 +65,22 @@ export default function AdminApplicantsPage() {
   const [bulkStatus, setBulkStatus] = useState<string>('');
   const [isBulkUpdating, setIsBulkUpdating] = useState(false);
 
-  const schoolId = userData?.schoolId || 'scholarship-hib4j';
+  const schoolId = orgIdOf(userData);
 
   useEffect(() => {
     if (!firestore || isUserLoading) return;
+    // No organization on the account: show an empty board rather than guess one.
+    if (!schoolId) {
+      setApplications([]);
+      setIsDataLoading(false);
+      return;
+    }
 
     setIsDataLoading(true);
     const q = query(
       collection(firestore, 'users'),
       where('role', '==', 'applicant'),
-      where('schoolId', '==', schoolId)
+      where('organizationId', '==', schoolId)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -86,18 +93,18 @@ export default function AdminApplicantsPage() {
   }, [firestore, schoolId, isUserLoading]);
 
   useEffect(() => {
-    if (!firestore || isUserLoading) return;
-    const q = collectionGroup(firestore, 'reviews');
+    if (!firestore || isUserLoading || !schoolId) return;
+    const q = query(collectionGroup(firestore, 'reviews'), where('organizationId', '==', schoolId));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), applicationId: doc.ref.parent.parent?.id }));
       setAllReviews(docs);
     });
     return () => unsubscribe();
-  }, [firestore, isUserLoading]);
+  }, [firestore, isUserLoading, schoolId]);
 
 
   useEffect(() => {
-    if (!firestore || isUserLoading) return;
+    if (!firestore || isUserLoading || !schoolId) return;
     const q = query(collection(firestore, 'applications'), where('organizationId', '==', schoolId));
     const unsubscribe = onSnapshot(
       q,
@@ -219,10 +226,12 @@ export default function AdminApplicantsPage() {
   };
 
   const handleBulkUpdate = async () => {
-    if (!firestore || !bulkStatus || selectedIds.length === 0) return;
+    if (!firestore || !user || !bulkStatus || selectedIds.length === 0) return;
     setIsBulkUpdating(true);
     try {
       const selectedRows = tableData.filter(row => selectedIds.includes(row.rowId));
+      const idToken = await user.getIdToken();
+      let emailFailures = 0;
 
       const promises = selectedRows.map(async row => {
         if (row.applicationId) {
@@ -244,13 +253,18 @@ export default function AdminApplicantsPage() {
           });
         }
 
-        if (row.email) {
-          await sendStatusUpdate(row.email, row.name || 'Student', bulkStatus);
-        }
+        // The server reads the address and the new status itself.
+        const sent = await notifyStatusChange(idToken, { applicationId: row.applicationId || null, studentId: row.studentId });
+        if (!sent.success) emailFailures += 1;
       });
 
       await Promise.all(promises);
-      toast({ title: "Decisions Recorded", description: `${selectedRows.length} application(s) updated and applicants notified.` });
+      toast({
+        title: "Decisions Recorded",
+        description: emailFailures
+          ? `${selectedRows.length} application(s) updated. ${emailFailures} notification email(s) could not be sent.`
+          : `${selectedRows.length} application(s) updated and applicants notified.`,
+      });
       setSelectedIds([]);
       setBulkStatus('');
     } catch (err: any) {

@@ -18,16 +18,19 @@ import {
   limit, 
   getDocs, 
   startAfter, 
+  where, 
   QueryDocumentSnapshot, 
   DocumentData 
 } from 'firebase/firestore';
 import { useFirebase } from '@/firebase';
+import { orgIdOf } from '@/lib/org';
 import { History, Loader2, RefreshCcw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 export default function AuditLogPage() {
-  const { firestore } = useFirebase();
+  const { firestore, userData } = useFirebase();
   const { toast } = useToast();
+  const orgId = orgIdOf(userData);
   
   const [logs, setLogs] = useState<any[]>([]);
   const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
@@ -38,17 +41,18 @@ export default function AuditLogPage() {
   const PAGE_SIZE = 100;
 
   const fetchLogs = useCallback(async (isInitial = true) => {
-    if (!firestore) return;
+    if (!firestore || !orgId) return;
 
     if (isInitial) setIsLoading(true);
     else setIsLoadingMore(true);
 
     try {
       const logsRef = collection(firestore, 'auditLog');
-      let q = query(logsRef, orderBy('timestamp', 'desc'), limit(PAGE_SIZE));
+      const ownOrg = where('organizationId', '==', orgId);
+      let q = query(logsRef, ownOrg, orderBy('timestamp', 'desc'), limit(PAGE_SIZE));
 
       if (!isInitial && lastDoc) {
-        q = query(logsRef, orderBy('timestamp', 'desc'), startAfter(lastDoc), limit(PAGE_SIZE));
+        q = query(logsRef, ownOrg, orderBy('timestamp', 'desc'), startAfter(lastDoc), limit(PAGE_SIZE));
       }
 
       const snapshot = await getDocs(q);

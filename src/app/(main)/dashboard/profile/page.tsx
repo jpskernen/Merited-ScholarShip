@@ -21,6 +21,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { applicationId as buildApplicationId } from '@/types/application';
 import { Separator } from '@/components/ui/separator';
 import { useDoc, useFirebase, useMemoFirebase } from '@/firebase';
+import { orgIdOf } from '@/lib/org';
 import { doc, setDoc, serverTimestamp, updateDoc, arrayUnion } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { 
@@ -59,7 +60,7 @@ import {
 
 function ProfilePageContent() {
   const { toast } = useToast();
-  const { user, isUserLoading, firestore, storage } = useFirebase();
+  const { user, isUserLoading, firestore, storage, userData } = useFirebase();
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -140,8 +141,8 @@ function ProfilePageContent() {
   // Students who built a portfolio before applications existed get it backfilled
   // as an application to the legacy general portfolio, so their work isn't lost.
   useEffect(() => {
-    if (user?.uid) ensureLegacyApplication(user.uid);
-  }, [user?.uid]);
+    if (user) user.getIdToken().then(ensureLegacyApplication);
+  }, [user]);
 
   const {
     register,
@@ -201,9 +202,12 @@ function ProfilePageContent() {
     // Uploads belong to this application, not to the student's shared profile,
     // so two scholarships can hold two different essay PDFs.
     if (!appDocRef || !user || !scholarshipId) return;
-    // studentId/scholarshipId are included so this write still satisfies the
+    // The identity fields are included so this write still satisfies the
     // create rule when it's the first thing written to a brand-new application.
-    const identity = { id: appDocRef.id, studentId: user.uid, scholarshipId };
+    // On an existing Draft they are unchanged, so the update rule ignores them.
+    const organizationId = orgIdOf(userData);
+    if (!organizationId) return;
+    const identity = { id: appDocRef.id, studentId: user.uid, scholarshipId, organizationId, status: 'Draft' };
     if (promptId) {
       await setDoc(appDocRef, {
         ...identity,
@@ -269,7 +273,7 @@ function ProfilePageContent() {
     } catch (err: any) {
       setUploadStatus(prev => ({ ...prev, [field]: 'error' }));
     }
-  }, [user, storage, firestore, toast, scholarshipId, appDocRef]);
+  }, [user, userData, storage, firestore, toast, scholarshipId, appDocRef]);
 
   const handleSendRecommendationRequest = async (index: number) => {
     if (!user || !appId || !scholarshipId) return;
@@ -306,17 +310,14 @@ function ProfilePageContent() {
 
     setIsRequestingRec(prev => ({ ...prev, [index]: true }));
     try {
-      const result = await sendRecommendationRequest({
-        applicationId: appId,
-        studentId: user.uid,
+      // The server takes the student, application, scholarship name and link
+      // address from the signed-in account and the database, not from here.
+      const result = await sendRecommendationRequest(await user.getIdToken(), {
         scholarshipId,
-        scholarshipName,
-        studentName: user.displayName || 'A Student',
         recommenderName: name,
         recommenderEmail: email,
         recommenderTitle: title,
         requestIndex: index,
-        origin: window.location.origin
       });
 
       if (result.success) {
@@ -332,13 +333,12 @@ function ProfilePageContent() {
   };
 
   const handleSendReminder = async (index: number) => {
-    if (!user || !appId) return;
+    if (!user || !appId || !scholarshipId) return;
     setIsRemindingRec(prev => ({ ...prev, [index]: true }));
     try {
-      const result = await sendRecommendationReminder({
-        applicationId: appId,
+      const result = await sendRecommendationReminder(await user.getIdToken(), {
+        scholarshipId,
         requestIndex: index,
-        origin: window.location.origin
       });
       if (result.success) {
         toast({ title: "Reminder Sent", description: "A follow-up email has been dispatched." });
@@ -353,11 +353,11 @@ function ProfilePageContent() {
   };
 
   const handleCancelRecommendation = async (index: number) => {
-    if (!user || !appId) return;
+    if (!user || !appId || !scholarshipId) return;
     setIsCancellingRec(prev => ({ ...prev, [index]: true }));
     try {
-      const result = await cancelRecommendationRequest({
-        applicationId: appId,
+      const result = await cancelRecommendationRequest(await user.getIdToken(), {
+        scholarshipId,
         requestIndex: index,
       });
       if (result.success) {
@@ -384,7 +384,7 @@ function ProfilePageContent() {
     }
     setSaveStatus('saving');
     try {
-      const result = await saveApplication(user.uid, scholarshipId, new FormData(formRef.current), false);
+      const result = await saveApplication(await user.getIdToken(), scholarshipId, new FormData(formRef.current), false);
       setSaveStatus(result.success ? 'saved' : 'error');
       if (result.success) setTimeout(() => setSaveStatus('idle'), 3000);
     } catch (error) {
@@ -404,7 +404,7 @@ function ProfilePageContent() {
     setFormError(null);
     const formData = new FormData(formRef.current);
     try {
-      const result = await saveApplication(user.uid, scholarshipId, formData, submit);
+      const result = await saveApplication(await user.getIdToken(), scholarshipId, formData, submit);
       if (result.success) {
         toast({
           title: submit ? 'Application Submitted' : 'Draft Saved',

@@ -14,7 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { FileText, CheckCircle, Search, ArrowRight, Loader2, AlertCircle, LayoutDashboard } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { useCollection, useFirebase, useMemoFirebase, useUser } from '@/firebase';
-import { collection } from 'firebase/firestore';
+import { collection, query, where } from 'firebase/firestore';
 import type { Scholarship } from '@/types/scholarship';
 
 // How many programs the landing page shows before the "View All" CTA has
@@ -51,9 +51,12 @@ export default function Home() {
     return false;
   }, [mounted, areServicesAvailable]);
 
+  // Only the default organization's scholarships are public (docs/07 D7);
+  // the rules refuse an unfiltered query.
   const scholarshipsQuery = useMemoFirebase(() => {
-    if (!firestore) return null;
-    return collection(firestore, 'programs');
+    const defaultOrgId = process.env.NEXT_PUBLIC_DEFAULT_ORG_ID;
+    if (!firestore || !defaultOrgId) return null;
+    return query(collection(firestore, 'programs'), where('organizationId', '==', defaultOrgId));
   }, [firestore]);
 
   const { data: dbScholarships, isLoading } = useCollection<Scholarship>(scholarshipsQuery);

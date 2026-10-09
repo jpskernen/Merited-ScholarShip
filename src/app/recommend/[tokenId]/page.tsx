@@ -73,6 +73,14 @@ export default function RecommendUploadPage({ params }: { params: Promise<{ toke
           setIsLoading(false);
           return;
         }
+        // Expiry is enforced again by the server on submit; this just tells
+        // the recommender up front instead of after they've written a letter.
+        const expires = data.expiresAt?.toDate ? data.expiresAt.toDate() : (data.expiresAt ? new Date(data.expiresAt) : null);
+        if (expires && expires.getTime() < Date.now()) {
+          setError('This recommendation link has expired. Please ask the student to send a new request.');
+          setIsLoading(false);
+          return;
+        }
         setTokenData(data);
       } catch (err) {
         setError('Error loading the recommendation portal.');
@@ -115,7 +123,7 @@ export default function RecommendUploadPage({ params }: { params: Promise<{ toke
         // the student showing "Pending" forever.
         try {
           const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-          const result = await submitUploadedRecommendation(tokenId, downloadURL, tokenData);
+          const result = await submitUploadedRecommendation(tokenId, downloadURL);
 
           if (result.success) {
             setIsSuccess(true);
@@ -139,7 +147,7 @@ export default function RecommendUploadPage({ params }: { params: Promise<{ toke
     if (!isWordCountValid || isUploading) return;
     setIsUploading(true);
     
-    const result = await submitTypedRecommendation(tokenId, letterText, tokenData);
+    const result = await submitTypedRecommendation(tokenId, letterText);
     
     if (result.success) {
       setIsSuccess(true);

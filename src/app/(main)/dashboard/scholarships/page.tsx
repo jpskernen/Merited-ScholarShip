@@ -15,15 +15,18 @@ import Link from 'next/link';
 import { useCollection, useFirebase, useMemoFirebase } from '@/firebase';
 import { collection, query, where } from 'firebase/firestore';
 import type { Scholarship } from '@/types/scholarship';
+import { orgIdOf } from '@/lib/org';
 import { useMemo } from 'react';
 
 export default function ScholarshipsPage() {
-  const { firestore, user } = useFirebase();
+  const { firestore, user, userData } = useFirebase();
+  const orgId = orgIdOf(userData);
 
+  // Students see only their own organization's scholarships (docs/07 D7).
   const scholarshipsQuery = useMemoFirebase(() => {
-    if (!firestore) return null;
-    return collection(firestore, 'programs');
-  }, [firestore]);
+    if (!firestore || !orgId) return null;
+    return query(collection(firestore, 'programs'), where('organizationId', '==', orgId));
+  }, [firestore, orgId]);
 
   const { data: dbScholarships, isLoading } = useCollection<Scholarship>(scholarshipsQuery);
 

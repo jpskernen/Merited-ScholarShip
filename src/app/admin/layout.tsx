@@ -22,7 +22,8 @@ import {
   ShieldCheck,
   Loader2,
   History,
-  FlaskConical
+  FlaskConical,
+  Building2
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -40,6 +41,11 @@ const adminNav = [
   { href: '/admin/test-utils', label: 'Dev Utils', icon: FlaskConical },
 ];
 
+// Only for accounts with the platformAdmin claim (docs/07 §3.1).
+const platformNav = [
+  { href: '/admin/platform', label: 'Organizations', icon: Building2 },
+];
+
 export default function AdminLayout({
   children,
 }: {
@@ -47,7 +53,7 @@ export default function AdminLayout({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, role, isUserLoading } = useUser();
+  const { user, role, userData, isUserLoading } = useUser();
   const firestore = useFirestore();
   const [mounted, setMounted] = useState(false);
   const isPublicInvite = pathname.startsWith('/admin/invite/');
@@ -56,7 +62,8 @@ export default function AdminLayout({
     setMounted(true);
   }, []);
 
-  const isAdmin = role?.toLowerCase() === 'admin' || user?.email === 'peyton.vandenbemden@gmail.com';
+  // role comes from the token's claims (src/firebase/provider.tsx).
+  const isAdmin = role?.toLowerCase() === 'admin';
 
   useEffect(() => {
     if (isPublicInvite) return;
@@ -103,7 +110,7 @@ export default function AdminLayout({
             <SidebarGroup>
               <SidebarGroupLabel className="text-[10px] font-black uppercase tracking-widest text-primary/60 px-4 mb-2">System Admin</SidebarGroupLabel>
               <SidebarMenu>
-                {adminNav.map((item) => (
+                {[...(userData?.platformAdmin === true ? platformNav : []), ...adminNav].map((item) => (
                   <SidebarMenuItem key={item.href}>
                     <Link href={item.href} className="w-full">
                        <SidebarMenuButton isActive={isActive(item.href)} tooltip={item.label}>

@@ -6,11 +6,12 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useAuth, initiateEmailSignUp, useFirestore, useDoc, useMemoFirebase, useFirebase } from '@/firebase';
-import { doc, updateDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { useAuth, useFirestore, useDoc, useMemoFirebase, useFirebase } from '@/firebase';
+import { doc } from 'firebase/firestore';
 import { ShieldCheck, Loader2, Eye, EyeOff, Key } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { updateProfile } from 'firebase/auth';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { acceptInvite } from '@/app/admin/invite-actions';
 
 export default function ReviewerOnboardingPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: inviteId } = use(params);
@@ -33,62 +34,45 @@ export default function ReviewerOnboardingPage({ params }: { params: Promise<{ i
   const { data: invite, isLoading: isInviteLoading } = useDoc(inviteRef);
 
   useEffect(() => {
-    if (!isInviteLoading && !invite) {
+    if (isInviteLoading) return;
+    if (!invite) {
       toast({ title: "Invalid Link", description: "This invitation is no longer valid.", variant: "destructive" });
       router.push('/');
-    } else if (invite?.tempPassword) {
-      setPassword(invite.tempPassword);
+    } else if (invite.status !== 'Pending') {
+      toast({ title: "Invitation Already Used", description: "This invitation has already been accepted. Please sign in." });
+      router.push('/review/login');
     }
   }, [invite, isInviteLoading, router, toast]);
 
+  // Already signed in with the invited email: accept onto the existing account.
+  const signedInAsInvitee = !!invite && auth?.currentUser?.email?.toLowerCase() === String(invite.email).toLowerCase();
+
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!auth || !firestore || !invite) return;
+    if (!auth || !invite) return;
     setIsSubmitting(true);
 
     try {
-      const userCredential = await initiateEmailSignUp(auth, invite.email, password);
-      const user = userCredential.user;
+      // The server creates the account, sets the reviewer role and marks the
+      // invite used (src/lib/invites-server.ts). Nothing role-related is
+      // written from the browser.
+      const result = signedInAsInvitee
+        ? await acceptInvite('reviewer', inviteId, null, await auth.currentUser!.getIdToken())
+        : await acceptInvite('reviewer', inviteId, { name, password });
+      if (!result.success) {
+        toast({ title: "Could Not Activate Account", description: result.error, variant: "destructive" });
+        setIsSubmitting(false);
+        return;
+      }
 
-      await updateProfile(user, { displayName: name });
-
-      // Create Reviewer User Document
-      await setDoc(doc(firestore, 'users', user.uid), {
-        id: user.uid,
-        name,
-        email: invite.email,
-        role: 'Reviewer',
-        schoolId: invite.schoolId,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-
-      // Register in Reviewers collection
-      await setDoc(doc(firestore, 'reviewers', user.uid), {
-        id: user.uid,
-        schoolId: invite.schoolId,
-        role: 'Reviewer',
-        assignedByInvite: inviteId,
-        assignedDate: serverTimestamp()
-      });
-
-
-      
-
-      // Mark invite as Accepted
-      await updateDoc(doc(firestore, 'invites', inviteId), {
-        status: 'Accepted'
-      });
-
-      // The auth listener resolved this user as an applicant before the docs
-      // above existed, so re-resolve before navigating or the layout guard
-      // will bounce them to the applicant dashboard.
+      if (!signedInAsInvitee) await signInWithEmailAndPassword(auth, result.email, password);
+      // Pick up the new role claims before the layout guard checks them.
       await refreshUserRole();
 
-      toast({ title: "Welcome!", description: "Account created. Redirecting to Review Center..." });
+      toast({ title: "Welcome!", description: "Account activated. Redirecting to Review Center..." });
       router.push('/review');
     } catch (error: any) {
-      toast({ title: "Signup Failed", description: error.message, variant: "destructive" });
+      toast({ title: "Signup Failed", description: "Your account was activated, but signing in failed. Please sign in from the login page.", variant: "destructive" });
       setIsSubmitting(false);
     }
   };
@@ -117,11 +101,16 @@ export default function ReviewerOnboardingPage({ params }: { params: Promise<{ i
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {signedInAsInvitee ? (
+              <p className="text-sm text-muted-foreground">
+                You are signed in as <strong>{invite?.email}</strong>. Accept to add reviewer access to this account.
+              </p>
+              ) : (<>
               <div className="space-y-2">
                 <Label htmlFor="name">Full Name</Label>
-                <Input 
-                  id="name" 
-                  required 
+                <Input
+                  id="name"
+                  required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Your full name"
@@ -129,12 +118,14 @@ export default function ReviewerOnboardingPage({ params }: { params: Promise<{ i
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="password">Temporary Password</Label>
+                <Label htmlFor="password">Choose a Password</Label>
                 <div className="relative">
-                  <Input 
-                    id="password" 
-                    type={showPassword ? "text" : "password"} 
-                    required 
+                  <Input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    required
+                    minLength={8}
+                    autoComplete="new-password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     disabled={isSubmitting}
@@ -149,9 +140,10 @@ export default function ReviewerOnboardingPage({ params }: { params: Promise<{ i
                   </button>
                 </div>
                 <p className="text-[10px] text-muted-foreground flex items-center gap-1 mt-1">
-                  <Key className="h-3 w-3" /> Use the password sent in your invitation email.
+                  <Key className="h-3 w-3" /> At least 8 characters. You will use it to sign in.
                 </p>
               </div>
+              </>)}
             </CardContent>
             <CardFooter>
               <Button type="submit" className="w-full font-bold" disabled={isSubmitting}>

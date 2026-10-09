@@ -1,4 +1,6 @@
-'use server';
+// Not a server action: no page uses this flow (it is only registered for the
+// Genkit dev tools in src/ai/dev.ts). As 'use server' it was a public endpoint
+// anyone could call to spend the Gemini quota (docs/13 S5).
 
 /**
  * @fileOverview Provides a summary of a scholarship application, focusing on merit indicators.

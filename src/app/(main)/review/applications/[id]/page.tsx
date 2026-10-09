@@ -32,6 +32,7 @@ import { notFound, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useDoc, useFirebase, useMemoFirebase, useCollection } from '@/firebase';
 import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, getDocs, limit } from 'firebase/firestore';
+import { orgIdOf } from '@/lib/org';
 import type { Applicant } from '@/types/applicant';
 import type { Scholarship } from '@/types/scholarship';
 import { useToast } from '@/hooks/use-toast';
@@ -43,7 +44,8 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
   const applicationId = resolvedParams.id;
   const router = useRouter();
   const { toast } = useToast();
-  const { firestore, user: reviewer } = useFirebase();
+  const { firestore, user: reviewer, userData } = useFirebase();
+  const orgId = orgIdOf(userData);
   
   // The route id is an application, not a student. That distinction is the
   // whole fix: a student may hold several applications and each is judged
@@ -184,6 +186,7 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
         reviewerId: reviewer.uid,
         reviewerName: reviewer.displayName || 'Anonymous Reviewer',
         applicationId: applicationId,
+        organizationId: applicationRecord?.organizationId ?? null,
         studentId: applicationRecord?.studentId ?? null,
         scholarshipId: applicationRecord?.scholarshipId ?? null,
         updatedAt: serverTimestamp(),
@@ -233,12 +236,13 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
    * review was saved. A handful of direct gets needs no index at all.
    */
   const findNextUnreviewedApplication = async (): Promise<string | null> => {
-    if (!firestore || !reviewer) return null;
+    if (!firestore || !reviewer || !orgId) return null;
 
     // Firestore rejects an empty array for 'in', so skip the lookup entirely
     // when this reviewer isn't assigned to any scholarship yet.
     const assignedSnap = await getDocs(query(
       collection(firestore, 'programs'),
+      where('organizationId', '==', orgId),
       where('reviewerIds', 'array-contains', reviewer.uid),
     ));
     const assignedScholarshipIds = assignedSnap.docs.map(d => d.id);
@@ -246,6 +250,7 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
 
     const nextSnap = await getDocs(query(
       collection(firestore, 'applications'),
+      where('organizationId', '==', orgId),
       where('scholarshipId', 'in', assignedScholarshipIds.slice(0, 30)),
       limit(30)
     ));
@@ -265,10 +270,10 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
   };
 
   const runAiAnalysis = async () => {
-    if (!application || !activeScholarship) return;
+    if (!application || !activeScholarship || !reviewer) return;
     setIsAnalyzing(true);
     try {
-      const result = await analyzeScholarshipFit({
+      const result = await analyzeScholarshipFit(await reviewer.getIdToken(), {
         applicantData: {
           gpa: typeof application.gpa === 'number' ? application.gpa : 0,
           major: application.major || '',

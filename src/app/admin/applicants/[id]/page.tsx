@@ -27,6 +27,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useDoc, useFirebase, useMemoFirebase, useCollection } from '@/firebase';
 import { doc, collectionGroup, query, where, collection, onSnapshot } from 'firebase/firestore';
+import { orgIdOf } from '@/lib/org';
 import type { Applicant } from '@/types/applicant';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
@@ -49,7 +50,8 @@ export default function AdminApplicantDetail({
   // another scholarship's evaluation and consensus score.
   const { application: selectedApplicationId } = use(searchParams);
   const router = useRouter();
-  const { firestore } = useFirebase();
+  const { firestore, userData } = useFirebase();
+  const orgId = orgIdOf(userData);
   
   const applicantRef = useMemoFirebase(() => {
     if (!firestore || !applicantId) return null;
@@ -63,9 +65,13 @@ export default function AdminApplicantDetail({
   // which only ever holds reviews from the pre-migration reviewer screen, so
   // every evaluation submitted since looked like it had never arrived.
   const applicationsQuery = useMemoFirebase(() => {
-    if (!firestore || !applicantId) return null;
-    return query(collection(firestore, 'applications'), where('studentId', '==', applicantId));
-  }, [firestore, applicantId]);
+    if (!firestore || !applicantId || !orgId) return null;
+    return query(
+      collection(firestore, 'applications'),
+      where('organizationId', '==', orgId),
+      where('studentId', '==', applicantId),
+    );
+  }, [firestore, applicantId, orgId]);
 
   const { data: applications } = useCollection<any>(applicationsQuery);
 
@@ -73,11 +79,11 @@ export default function AdminApplicantDetail({
   const [isReviewsLoading, setIsReviewsLoading] = useState(true);
 
   useEffect(() => {
-    if (!firestore) return;
+    if (!firestore || !orgId) return;
     // A collection group query, because the parent id is what attributes a
     // review to an application and a plain subcollection read cannot see it.
     const unsubscribe = onSnapshot(
-      collectionGroup(firestore, 'reviews'),
+      query(collectionGroup(firestore, 'reviews'), where('organizationId', '==', orgId)),
 
       
       (snapshot) => {
@@ -95,7 +101,7 @@ export default function AdminApplicantDetail({
       }
     );
     return () => unsubscribe();
-  }, [firestore]);
+  }, [firestore, orgId]);
 
 
    

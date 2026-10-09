@@ -4,7 +4,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useFirebase, useUser } from '@/firebase';
-import { collection, addDoc, serverTimestamp, doc, setDoc } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ScholarshipSchema, type Scholarship } from '@/types/scholarship';
@@ -17,6 +17,7 @@ import { useToast } from '@/hooks/use-toast';
 import { ChevronLeft, Loader2, Plus, Trash2, Calculator, FileText } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
+import { orgIdOf } from '@/lib/org';
 
 export default function NewScholarshipPage() {
   const { firestore } = useFirebase();
@@ -25,7 +26,7 @@ export default function NewScholarshipPage() {
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const organizationId = userData?.organizationId || userData?.schoolId || 'scholarship-hib4j';
+  const organizationId = orgIdOf(userData);
 
   const {
     register,
@@ -63,6 +64,10 @@ export default function NewScholarshipPage() {
 
   const onSubmit = async (data: Scholarship) => {
     if (!firestore) return;
+    if (!organizationId) {
+      toast({ title: "No organization", description: "Your account is not linked to an organization, so the scholarship cannot be created.", variant: "destructive" });
+      return;
+    }
     if (totalWeight !== 100) {
       toast({ title: "Invalid Rubric", description: `Total weight must be 100%. Currently ${totalWeight}%`, variant: "destructive" });
       return;
@@ -78,11 +83,10 @@ export default function NewScholarshipPage() {
         updatedAt: serverTimestamp(),
       };
 
-      // 1. Legacy save
-      const docRef = await addDoc(collection(firestore, 'programs'), scholarshipData);
-
-      // 2. Hierarchical save
-      await setDoc(doc(firestore, 'organizations', organizationId, 'scholarships', docRef.id), scholarshipData);
+      // programs/ is the only copy. The duplicate under
+      // organizations/{orgId}/scholarships was never read and is no longer
+      // writable (docs/07 §3.3).
+      await addDoc(collection(firestore, 'programs'), scholarshipData);
 
       toast({ title: "Scholarship Published", description: "Program is now live for applicants." });
       router.push('/admin/scholarships');

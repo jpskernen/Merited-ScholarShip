@@ -17,11 +17,13 @@ import { ChevronLeft, Loader2, Users, Check, Plus, Trash2, Calculator } from 'lu
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
-import { sendReviewAssignmentEmail } from '@/app/lib/notifications';
+import { notifyReviewAssignment } from '@/app/admin/notify-actions';
+import { orgIdOf } from '@/lib/org';
 
 export default function EditScholarshipPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { firestore } = useFirebase();
+  const { firestore, user, userData } = useFirebase();
+  const organizationId = orgIdOf(userData);
   const router = useRouter();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -33,10 +35,17 @@ export default function EditScholarshipPage({ params }: { params: Promise<{ id: 
 
   const { data: scholarship, isLoading } = useDoc<Scholarship>(docRef);
 
+  // Reviewers of this organization only. Role values are lowercase since
+  // scripts/backfill-claims.js (the legacy spelling was 'Reviewer'). Two
+  // equality filters need no composite index.
   const reviewersQuery = useMemoFirebase(() => {
-    if (!firestore) return null;
-    return query(collection(firestore, 'users'), where('role', '==', 'Reviewer'));
-  }, [firestore]);
+    if (!firestore || !organizationId) return null;
+    return query(
+      collection(firestore, 'users'),
+      where('role', '==', 'reviewer'),
+      where('organizationId', '==', organizationId),
+    );
+  }, [firestore, organizationId]);
 
   const { data: reviewers, isLoading: isReviewersLoading } = useCollection(reviewersQuery);
 
@@ -92,23 +101,16 @@ export default function EditScholarshipPage({ params }: { params: Promise<{ id: 
    * the save now tells them. Failures are reported but never roll back the
    * save — the assignment itself already succeeded.
    */
-  const notifyNewReviewers = async (reviewerIds: string[], scholarshipName: string) => {
+  const notifyNewReviewers = async (reviewerIds: string[]) => {
     const result = { sent: 0, simulated: 0, failed: 0 };
-    const origin = typeof window !== 'undefined' ? window.location.origin : undefined;
+    if (!user) return { ...result, failed: reviewerIds.length };
+    const idToken = await user.getIdToken();
 
     for (const uid of reviewerIds) {
-      const reviewer = (reviewers || []).find((r: any) => r.id === uid) as any;
-      if (!reviewer?.email) {
-        result.failed += 1;
-        continue;
-      }
       try {
-        const sendResult = await sendReviewAssignmentEmail({
-          email: reviewer.email,
-          reviewerName: reviewer.name || 'Reviewer',
-          scholarshipName,
-          origin,
-        });
+        // The server reads the reviewer's address and the scholarship name
+        // itself, and checks the assignment was saved.
+        const sendResult = await notifyReviewAssignment(idToken, id, uid);
         if (!sendResult.success) result.failed += 1;
         else if (sendResult.method === 'Gmail SMTP') result.sent += 1;
         else result.simulated += 1;
@@ -155,7 +157,7 @@ export default function EditScholarshipPage({ params }: { params: Promise<{ id: 
 
       await updateDoc(doc(firestore, 'programs', id), formattedData);
 
-      const notified = await notifyNewReviewers(newlyAssignedIds, data.name);
+      const notified = await notifyNewReviewers(newlyAssignedIds);
 
       toast({
         title: "Scholarship Updated",

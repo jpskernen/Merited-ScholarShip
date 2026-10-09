@@ -1,5 +1,8 @@
-
-'use server';
+// Server-only: these functions send email from the organization's account, so
+// they must never be callable from the browser (docs/13 S5). This used to be a
+// 'use server' file, which made every export a public endpoint. Pages reach
+// email only through checked actions (e.g. src/app/admin/notify-actions.ts).
+import 'server-only';
 
 import nodemailer from 'nodemailer';
 import { FieldValue } from 'firebase-admin/firestore';
@@ -128,18 +131,21 @@ export async function sendSubmissionConfirmation(email: string, name: string) {
   });
 }
 
-export async function sendStatusUpdate(email: string, name: string, status: string) {
+export async function sendStatusUpdate(email: string, name: string, status: string, scholarshipName?: string) {
+  // Name the scholarship: a student with several applications can't otherwise
+  // tell which one changed.
+  const which = scholarshipName ? `your application to the ${scholarshipName}` : 'your scholarship application';
   return sendNotification({
     to: email,
-    subject: 'Status Update: Your Scholarship Application',
+    subject: scholarshipName ? `Status Update: ${scholarshipName}` : 'Status Update: Your Scholarship Application',
     type: 'Status Changed',
-    text: `Hello ${name}, your application status has been updated to: ${status}.`,
+    text: `Hello ${name}, the status of ${which} has been updated to: ${status}.`,
     html: renderEmail({
       title: 'Your application status has changed',
       preheader: `New status: ${status}`,
       greeting: `Hello <strong>${escapeHtml(name)}</strong>,`,
       body: [
-        `There has been an update to your scholarship application. Your status is now <strong>${escapeHtml(status)}</strong>.`,
+        `There has been an update to ${escapeHtml(which)}. Your status is now <strong>${escapeHtml(status)}</strong>.`,
         'Log in to your dashboard to see the full details.',
       ],
       button: appUrl('/dashboard') ? { label: 'Open my dashboard', url: appUrl('/dashboard')! } : undefined,

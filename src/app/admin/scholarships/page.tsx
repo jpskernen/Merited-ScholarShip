@@ -14,18 +14,20 @@ import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { PlusCircle, Trash2, Edit, Loader2 } from 'lucide-react';
 import { useCollection, useFirebase, useMemoFirebase } from '@/firebase';
-import { collection, doc, deleteDoc } from 'firebase/firestore';
+import { collection, doc, deleteDoc, query, where } from 'firebase/firestore';
+import { orgIdOf } from '@/lib/org';
 import { useToast } from '@/hooks/use-toast';
 import type { Scholarship } from '@/types/scholarship';
 
 export default function AdminScholarshipsPage() {
-  const { firestore } = useFirebase();
+  const { firestore, userData } = useFirebase();
   const { toast } = useToast();
+  const orgId = orgIdOf(userData);
 
   const scholarshipsQuery = useMemoFirebase(() => {
-    if (!firestore) return null;
-    return collection(firestore, 'programs');
-  }, [firestore]);
+    if (!firestore || !orgId) return null;
+    return query(collection(firestore, 'programs'), where('organizationId', '==', orgId));
+  }, [firestore, orgId]);
 
   const { data: scholarships, isLoading } = useCollection<Scholarship>(scholarshipsQuery);
 
@@ -76,6 +78,7 @@ export default function AdminScholarshipsPage() {
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
+          
           <TableBody>
             {scholarships?.map((scholarship) => (
               <TableRow key={scholarship.id}>

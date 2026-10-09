@@ -1,24 +1,20 @@
-
 'use server';
 
-import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { initializeApp, getApps, getApp } from 'firebase/app';
+// Student-side actions. Every export takes the caller's Firebase ID token and
+// works only on the caller's own applications: the student is the uid in the
+// verified token, never a uid the browser passes in (docs/13 S5). These run
+// with the Admin SDK, which bypasses the security rules, so the checks here
+// are the only thing standing between a crafted request and another
+// student's data.
+
 import { FieldValue } from 'firebase-admin/firestore';
 import { getAdminAuth, getAdminDb } from '@/firebase/admin';
 import { ProfileSchema } from '@/types/applicant';
 import { ApplicationSchema, applicationId, LEGACY_SCHOLARSHIP_ID } from '@/types/application';
-import { firebaseConfig } from '@/firebase/config';
 import { sendSubmissionConfirmation, sendNotification, sendRecommendationReminderEmail } from '@/app/lib/notifications';
 import { escapeHtml, renderEmail } from '@/app/lib/email-template';
-
-const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
-const storage = getStorage(app);
-
-async function uploadFile(file: File, path: string): Promise<string> {
-    const fileRef = ref(storage, path);
-    const snapshot = await uploadBytes(fileRef, file);
-    return getDownloadURL(snapshot.ref);
-}
+import { AuthError, requireUser, type Caller } from '@/lib/auth-server';
+import { appLink } from '@/lib/app-url';
 
 /**
  * Entered once by the student and reused by every application they open. The
@@ -26,8 +22,45 @@ async function uploadFile(file: File, path: string): Promise<string> {
  */
 const SHARED_PROFILE_FIELDS = new Set([
   'name', 'email', 'secondaryEmail', 'address', 'gpa',
-  'major', 'school', 'interests', 'schoolId', 'organizationId',
+  'major', 'school', 'interests',
 ]);
+
+/**
+ * The only application fields a student may write (docs/13 S1). Anything else
+ * the form sends (status, recommendationStatus*, letters, organizationId,
+ * scores, ...) is ignored: those are set by the server or by the recommender.
+ */
+const APPLICATION_TEXT_FIELDS = new Set(['essay', 'qualificationStatement', 'activities']);
+const RECOMMENDER_FIELD = /^recommender(Name|Email|Title)([12])$/;
+
+const MAX_TEXT_LENGTH = 20000;
+const REMINDER_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const TOKEN_DAYS = 30;
+
+type Student = Caller & { orgId: string };
+
+/** The verified caller, who must belong to an organization (set at signup, docs/07 §3.2). */
+async function requireStudent(idToken: string): Promise<Student> {
+  const caller = await requireUser(idToken);
+  if (!caller.orgId) {
+    throw new AuthError('Your account is not fully set up. Please sign out and sign in again.');
+  }
+  return caller as Student;
+}
+
+function failure(error: unknown) {
+  const message = error instanceof Error ? error.message : 'Something went wrong. Please try again.';
+  return { success: false as const, error: message };
+}
+
+function isRequestIndex(value: unknown): value is 1 | 2 {
+  return value === 1 || value === 2;
+}
+
+/** The organization a scholarship belongs to; null for the legacy general portfolio. */
+function programOrg(program: FirebaseFirestore.DocumentData | undefined | null): string | null {
+  return program ? (program.organizationId || program.schoolId || null) : null;
+}
 
 /**
  * Saves one application. A student has one of these per scholarship, each with
@@ -35,108 +68,130 @@ const SHARED_PROFILE_FIELDS = new Set([
  * submitting the Merit Scholarship no longer locks them out of applying to the
  * Academic Excellence Scholarship.
  *
- * Shared profile fields are split out and written to users/{uid}; everything
- * else is written to applications/{studentId}_{scholarshipId}.
+ * Shared profile fields are split out and written to users/{uid}; the allowed
+ * application fields are written to applications/{studentId}_{scholarshipId}.
+ * Runs in a transaction so it can't overwrite a letter, an invite or a
+ * submission that landed between the read and the write.
  */
 export async function saveApplication(
-  userId: string,
+  idToken: string,
   scholarshipId: string,
   formData: FormData,
   isSubmit: boolean = false,
 ) {
   try {
+    const student = await requireStudent(idToken);
     if (!scholarshipId) {
       return { success: false, error: 'No scholarship selected for this application.' };
     }
 
-    const db = getAdminDb();
-    const appId = applicationId(userId, scholarshipId);
-
-    const userRef = db.collection('users').doc(userId);
-    const appRef = db.collection('applications').doc(appId);
-
-    const [userSnap, appSnap] = await Promise.all([userRef.get(), appRef.get()]);
-    const existingProfile = userSnap.exists ? userSnap.data()! : {};
-    const existingApplication = appSnap.exists ? appSnap.data()! : {};
-
-    if (existingApplication.status && existingApplication.status !== 'Draft') {
-      return { success: false, error: 'This application has already been submitted and can no longer be edited.' };
-    }
-
-    const profileToSave: any = { ...existingProfile };
-    const applicationToSave: any = { ...existingApplication };
-
-    for (const [key, value] of Object.entries(Object.fromEntries(formData.entries()))) {
-      const target = SHARED_PROFILE_FIELDS.has(key) ? profileToSave : applicationToSave;
-
-      if (value instanceof File && value.size > 0) {
-        target[key] = await uploadFile(value, `applications/${userId}/${scholarshipId}/${key}/${Date.now()}-${value.name}`);
-      } else if (key === 'gpa') {
-        target[key] = value === '' ? 0 : parseFloat(value as string);
-      } else if (typeof value === 'string') {
-        target[key] = value;
+    // Keep only the fields a student may write. Files are uploaded by the
+    // browser straight to Storage, so nothing but text comes through here.
+    const profileInput: Record<string, unknown> = {};
+    const applicationInput: Record<string, string> = {};
+    for (const [key, value] of formData.entries()) {
+      if (typeof value !== 'string') continue;
+      if (SHARED_PROFILE_FIELDS.has(key)) {
+        profileInput[key] = key === 'gpa' ? (value === '' ? 0 : parseFloat(value)) : value;
+      } else if (APPLICATION_TEXT_FIELDS.has(key) || RECOMMENDER_FIELD.test(key)) {
+        if (value.length > MAX_TEXT_LENGTH) {
+          return { success: false, error: `"${key}" is too long (maximum ${MAX_TEXT_LENGTH.toLocaleString()} characters).` };
+        }
+        applicationInput[key] = value;
       }
     }
 
-    const organizationId = profileToSave.organizationId || profileToSave.schoolId || 'scholarship-hib4j';
+    const db = getAdminDb();
+    const appId = applicationId(student.uid, scholarshipId);
+    const userRef = db.collection('users').doc(student.uid);
+    const appRef = db.collection('applications').doc(appId);
+    const programRef = db.collection('programs').doc(scholarshipId);
 
-    // Denormalised onto the application so My Status and the admin board can
-    // render a row without a second read per scholarship.
-    let scholarshipName = existingApplication.scholarshipName || '';
-    if (!scholarshipName) {
-      const programSnap = await db.collection('programs').doc(scholarshipId).get();
-      scholarshipName = programSnap.exists
-        ? (programSnap.data()!.name || 'Scholarship')
-        : (scholarshipId === LEGACY_SCHOLARSHIP_ID ? 'General Scholarship Portfolio' : 'Scholarship');
-    }
+    const outcome = await db.runTransaction(async (tx) => {
+      const [userSnap, appSnap, programSnap] = await Promise.all([tx.get(userRef), tx.get(appRef), tx.get(programRef)]);
+      const existingProfile = userSnap.exists ? userSnap.data()! : {};
+      const existingApplication = appSnap.exists ? appSnap.data()! : {};
+      const program = programSnap.exists ? programSnap.data()! : null;
 
-    Object.assign(applicationToSave, {
-      id: appId,
-      studentId: userId,
-      scholarshipId,
-      scholarshipName,
-      organizationId,
-      status: isSubmit ? 'Submitted' : (applicationToSave.status || 'Draft'),
-      submissionDate: isSubmit ? new Date().toISOString() : (applicationToSave.submissionDate || null),
-    });
+      if (existingApplication.status && existingApplication.status !== 'Draft') {
+        return { error: 'This application has already been submitted and can no longer be edited.' };
+      }
 
-    // Validate before writing anything, so a rejected submit can't leave a
-    // half-written record behind.
-    const profileValidation = (isSubmit ? ProfileSchema : ProfileSchema.partial()).safeParse(profileToSave);
-    if (!profileValidation.success) {
-      return { success: false, error: `Validation failed - ${formatIssues(profileValidation.error.issues)}` };
-    }
+      // The application belongs to the scholarship's organization. Only the
+      // legacy general portfolio has no program, so it falls back to the
+      // student's stored profile (existingProfile, not the form).
+      const organizationId = program
+        ? programOrg(program)
+        : (existingApplication.organizationId || existingProfile.organizationId || existingProfile.schoolId);
+      if (!organizationId) {
+        return { error: 'This scholarship is not linked to an organization. Please contact the administrator.' };
+      }
+      // Option A (docs/07 D7): students apply only within their own organization.
+      if (organizationId !== student.orgId) {
+        return { error: 'This scholarship is not available to your account.' };
+      }
 
-    const applicationValidation = ApplicationSchema.safeParse(applicationToSave);
-    if (!applicationValidation.success) {
-      return { success: false, error: `Validation failed - ${formatIssues(applicationValidation.error.issues)}` };
-    }
+      // Recommender details can only change while that endorsement has no
+      // request out; afterwards they describe who the letter is from.
+      const applicationChanges: Record<string, string> = {};
+      for (const [key, value] of Object.entries(applicationInput)) {
+        const slot = RECOMMENDER_FIELD.exec(key)?.[2];
+        const slotStatus = slot ? existingApplication[`recommendationStatus${slot}`] : undefined;
+        if (slot && (slotStatus === 'Pending' || slotStatus === 'Received')) continue;
+        applicationChanges[key] = value;
+      }
 
-    await userRef.set(
-      { ...profileValidation.data, updatedAt: FieldValue.serverTimestamp() },
-      { merge: true },
-    );
+      const scholarshipName = existingApplication.scholarshipName || (program
+        ? (program.name || 'Scholarship')
+        : (scholarshipId === LEGACY_SCHOLARSHIP_ID ? 'General Scholarship Portfolio' : 'Scholarship'));
 
-    await appRef.set(
-      {
+      const profileToSave = { ...existingProfile, ...profileInput };
+      const applicationToSave = {
+        ...existingApplication,
+        ...applicationChanges,
+        id: appId,
+        studentId: student.uid,
+        scholarshipId,
+        scholarshipName,
+        organizationId,
+        status: isSubmit ? 'Submitted' : 'Draft',
+        submissionDate: isSubmit ? new Date().toISOString() : (existingApplication.submissionDate || null),
+      };
+
+      // Validate before writing anything, so a rejected submit can't leave a
+      // half-written record behind.
+      const profileValidation = (isSubmit ? ProfileSchema : ProfileSchema.partial()).safeParse(profileToSave);
+      if (!profileValidation.success) {
+        return { error: `Validation failed - ${formatIssues(profileValidation.error.issues)}` };
+      }
+      const applicationValidation = ApplicationSchema.safeParse(applicationToSave);
+      if (!applicationValidation.success) {
+        return { error: `Validation failed - ${formatIssues(applicationValidation.error.issues)}` };
+      }
+
+      tx.set(userRef, { ...profileValidation.data, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      tx.set(appRef, {
         ...applicationValidation.data,
         createdAt: existingApplication.createdAt || FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true },
-    );
+      }, { merge: true });
+
+      return { application: applicationValidation.data, name: profileToSave.name as string | undefined };
+    });
+
+    if ('error' in outcome) return { success: false, error: outcome.error };
 
     if (isSubmit) {
-      await mirrorToLegacyUserDocument(userId, applicationValidation.data);
-
-      if (profileToSave.email) {
-        await sendSubmissionConfirmation(profileToSave.email, profileToSave.name || 'Student');
+      await mirrorToLegacyUserDocument(student.uid, outcome.application);
+      // To the account's own login address, not a form field.
+      if (student.email) {
+        await sendSubmissionConfirmation(student.email, outcome.name || 'Student');
       }
     }
 
     return { success: true, id: appId };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+  } catch (error) {
+    return failure(error);
   }
 }
 
@@ -207,8 +262,9 @@ async function syncRecommenderToLegacyMirror(
  * general portfolio rather than silently disappearing. No-op if they already
  * have any application.
  */
-export async function ensureLegacyApplication(userId: string) {
+export async function ensureLegacyApplication(idToken: string) {
   try {
+    const { uid: userId } = await requireUser(idToken);
     const db = getAdminDb();
     const existing = await db.collection('applications').where('studentId', '==', userId).limit(1).get();
     if (!existing.empty) return { success: true, migrated: false };
@@ -218,13 +274,18 @@ export async function ensureLegacyApplication(userId: string) {
     const user = userSnap.data()!;
     if (!user.status) return { success: true, migrated: false };
 
+    const organizationId = user.organizationId || user.schoolId;
+    if (!organizationId) {
+      return { success: false, error: 'This account is not linked to an organization.' };
+    }
+
     const appId = applicationId(userId, LEGACY_SCHOLARSHIP_ID);
     await db.collection('applications').doc(appId).set({
       id: appId,
       studentId: userId,
       scholarshipId: LEGACY_SCHOLARSHIP_ID,
       scholarshipName: 'General Scholarship Portfolio',
-      organizationId: user.organizationId || user.schoolId || 'scholarship-hib4j',
+      organizationId,
       essay: user.essay ?? null,
       qualificationStatement: user.qualificationStatement ?? null,
       activities: user.activities ?? null,
@@ -249,28 +310,46 @@ export async function ensureLegacyApplication(userId: string) {
     }, { merge: true });
 
     return { success: true, migrated: true };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+  } catch (error) {
+    return failure(error);
   }
 }
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export async function sendRecommendationRequest(params: {
-  applicationId: string;
-  studentId: string;
+/** Every open (unused, uncancelled) token for one endorsement slot of one application. */
+async function openTokens(appId: string, requestIndex: 1 | 2) {
+  return getAdminDb().collection('recommendationTokens')
+    .where('applicationId', '==', appId)
+    .where('requestIndex', '==', requestIndex)
+    .where('used', '==', false)
+    .where('cancelled', '==', false)
+    .get();
+}
+
+async function cancelOpenTokens(appId: string, requestIndex: 1 | 2) {
+  const snap = await openTokens(appId, requestIndex);
+  await Promise.all(snap.docs.map((d) => d.ref.update({ cancelled: true, updatedAt: FieldValue.serverTimestamp() })));
+  return snap.size;
+}
+
+export async function sendRecommendationRequest(idToken: string, params: {
   scholarshipId: string;
-  scholarshipName?: string;
-  studentName: string;
   recommenderName: string;
   recommenderEmail: string;
   recommenderTitle: string;
   requestIndex: number;
-  origin: string;
 }) {
   try {
-    const db = getAdminDb();
-    const scholarshipTitle = params.scholarshipName || 'General Portfolio';
+    const student = await requireStudent(idToken);
+    const { requestIndex } = params;
+    if (!isRequestIndex(requestIndex)) return { success: false, error: 'Invalid endorsement slot.' };
+
+    const recommenderName = (params.recommenderName || '').trim().slice(0, 120);
+    const recommenderTitle = (params.recommenderTitle || '').trim().slice(0, 120);
+    if (!recommenderName || !recommenderTitle) {
+      return { success: false, error: 'Please fill out all recommender details.' };
+    }
 
     // The letter link goes to whoever this address belongs to, so a student who
     // names themselves (or names one teacher twice) can write their own
@@ -282,10 +361,31 @@ export async function sendRecommendationRequest(params: {
     }
     const normalized = recommenderEmail.toLowerCase();
 
-    const studentSnap = await db.collection('users').doc(params.studentId).get();
+    const db = getAdminDb();
+    const appId = applicationId(student.uid, params.scholarshipId);
+    const [studentSnap, existingApp, programSnap, authUser] = await Promise.all([
+      db.collection('users').doc(student.uid).get(),
+      db.collection('applications').doc(appId).get(),
+      db.collection('programs').doc(params.scholarshipId).get(),
+      getAdminAuth().getUser(student.uid),
+    ]);
+    const program = programSnap.exists ? programSnap.data()! : null;
+    const application = existingApp.exists ? existingApp.data()! : null;
+
+    const organizationId = programOrg(program) || application?.organizationId || studentSnap.get('organizationId');
+    // Option A (docs/07 D7).
+    if (organizationId !== student.orgId) {
+      return { success: false, error: 'This scholarship is not available to your account.' };
+    }
+    if (application && ['Awarded', 'Not Awarded'].includes(application.status)) {
+      return { success: false, error: 'A decision has already been made on this application.' };
+    }
+    if (application?.[`recommendationStatus${requestIndex}`] === 'Received') {
+      return { success: false, error: 'A letter has already been received for this endorsement.' };
+    }
+
     // The login email is authoritative; the profile copies can be missing or stale.
-    const loginEmail = await getAdminAuth().getUser(params.studentId).then((u) => u.email, () => undefined);
-    const studentEmails = [loginEmail, studentSnap.get('email'), studentSnap.get('secondaryEmail')]
+    const studentEmails = [authUser.email, studentSnap.get('email'), studentSnap.get('secondaryEmail')]
       .filter((e): e is string => typeof e === 'string' && e.trim() !== '')
       .map((e) => e.trim().toLowerCase());
     if (studentEmails.includes(normalized)) {
@@ -294,101 +394,108 @@ export async function sendRecommendationRequest(params: {
 
     // Cancelling a request clears its email, so a stored address in the other
     // slot is a live request.
-    const otherIndex = params.requestIndex === 1 ? 2 : 1;
-    const existingApp = await db.collection('applications').doc(params.applicationId).get();
-    const otherEmail = existingApp.get(`recommenderEmail${otherIndex}`);
+    const otherIndex = requestIndex === 1 ? 2 : 1;
+    const otherEmail = application?.[`recommenderEmail${otherIndex}`];
     if (typeof otherEmail === 'string' && otherEmail.trim().toLowerCase() === normalized) {
       return { success: false, error: `This person is already your Endorsement #${otherIndex} recommender. Please choose a different recommender.` };
     }
 
-    // applicationId is now a real applications/{id}, not the student's uid, so
+    const scholarshipTitle = application?.scholarshipName || program?.name || 'General Portfolio';
+    const studentName = studentSnap.get('name') || authUser.displayName || 'A student';
+
+    // A new invite replaces any earlier one for this slot, so an old link can't
+    // later overwrite the letter (docs/13 §3).
+    await cancelOpenTokens(appId, requestIndex);
+
+    // applicationId is a real applications/{id}, not the student's uid, so
     // inviting the same teacher for two scholarships creates two independent
     // tokens and two independent letters.
     const tokenRef = await db.collection('recommendationTokens').add({
-      applicationId: params.applicationId,
-      studentName: params.studentName,
-      recommenderName: params.recommenderName,
+      applicationId: appId,
+      organizationId,
+      studentName,
+      recommenderName,
       recommenderEmail,
       scholarshipTitle,
-      requestIndex: params.requestIndex,
+      requestIndex,
       used: false,
       cancelled: false,
       createdAt: FieldValue.serverTimestamp(),
-      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+      expiresAt: new Date(Date.now() + TOKEN_DAYS * 24 * 60 * 60 * 1000),
     });
 
-    const tokenLink = `${params.origin}/recommend/${tokenRef.id}`;
+    const tokenLink = await appLink(`/recommend/${tokenRef.id}`);
 
     const emailResult = await sendNotification({
       to: recommenderEmail,
-      subject: `Recommendation Request for ${params.studentName} — ${scholarshipTitle}`,
+      subject: `Recommendation Request for ${studentName} — ${scholarshipTitle}`,
       type: 'Recommendation Request',
-      text: `Hello ${params.recommenderName}, ${params.studentName} has requested a recommendation for the ${scholarshipTitle}. Link: ${tokenLink}`,
+      text: `Hello ${recommenderName}, ${studentName} has requested a recommendation for the ${scholarshipTitle}. Link: ${tokenLink}`,
       html: renderEmail({
         title: `A recommendation letter has been requested`,
-        preheader: `${params.studentName} has asked you for a recommendation.`,
-        greeting: `Hello <strong>${escapeHtml(params.recommenderName)}</strong>,`,
+        preheader: `${studentName} has asked you for a recommendation.`,
+        greeting: `Hello <strong>${escapeHtml(recommenderName)}</strong>,`,
         body: [
-          `<strong>${escapeHtml(params.studentName)}</strong> has requested a recommendation letter in support of their application to the <strong>${escapeHtml(scholarshipTitle)}</strong>.`,
+          `<strong>${escapeHtml(studentName)}</strong> has requested a recommendation letter in support of their application to the <strong>${escapeHtml(scholarshipTitle)}</strong>.`,
           `You can write or upload your letter directly using the secure link below — no account or sign-up is needed.`,
         ],
         button: { label: 'Write my recommendation', url: tokenLink },
         showPlainLink: true,
-        note: 'This link is personal to you and expires in 30 days. Please do not forward it.',
+        note: `This link is personal to you and expires in ${TOKEN_DAYS} days. Please do not forward it.`,
       })
     });
+
+    // A request nobody received must not show as Pending (docs/13 §3).
+    if (!emailResult.success) {
+      await tokenRef.update({ cancelled: true, updatedAt: FieldValue.serverTimestamp() });
+      return { success: false, error: 'The invitation email could not be sent. Please check the address and try again.' };
+    }
 
     // Identity fields are included because this can be the first write to a
     // brand-new application (a student may invite a recommender before saving
     // a draft). Without them the document would be created with no studentId,
     // making it invisible to the student's own query and unwritable under the
     // applications security rule.
-    const appRef = db.collection('applications').doc(params.applicationId);
-    const appExists = existingApp.exists;
-
-    await appRef.set({
-      ...(appExists ? {} : {
-        id: params.applicationId,
-        studentId: params.studentId,
+    const slotFields = {
+      [`recommenderName${requestIndex}`]: recommenderName,
+      [`recommenderEmail${requestIndex}`]: recommenderEmail,
+      [`recommenderTitle${requestIndex}`]: recommenderTitle,
+      [`recommendationStatus${requestIndex}`]: 'Pending',
+    };
+    await db.collection('applications').doc(appId).set({
+      ...(application ? {} : {
+        id: appId,
+        studentId: student.uid,
         scholarshipId: params.scholarshipId,
         scholarshipName: scholarshipTitle,
+        organizationId,
         status: 'Draft',
+        createdAt: FieldValue.serverTimestamp(),
       }),
-      [`recommenderName${params.requestIndex}`]: params.recommenderName,
-      [`recommenderEmail${params.requestIndex}`]: recommenderEmail,
-      [`recommenderTitle${params.requestIndex}`]: params.recommenderTitle,
-      [`recommendationStatus${params.requestIndex}`]: 'Pending',
+      ...slotFields,
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
 
-    await syncRecommenderToLegacyMirror(params.studentId, params.applicationId, {
-      [`recommenderName${params.requestIndex}`]: params.recommenderName,
-      [`recommenderEmail${params.requestIndex}`]: recommenderEmail,
-      [`recommenderTitle${params.requestIndex}`]: params.recommenderTitle,
-      [`recommendationStatus${params.requestIndex}`]: 'Pending',
-    });
+    await syncRecommenderToLegacyMirror(student.uid, appId, slotFields);
 
     return { success: true, deliveryMethod: emailResult.method };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+  } catch (error) {
+    return failure(error);
   }
 }
 
-export async function sendRecommendationReminder(params: {
-  applicationId: string;
+export async function sendRecommendationReminder(idToken: string, params: {
+  scholarshipId: string;
   requestIndex: number;
-  origin: string;
 }) {
   try {
-    const db = getAdminDb();
-    const querySnapshot = await db.collection('recommendationTokens')
-      .where('applicationId', '==', params.applicationId)
-      .where('requestIndex', '==', params.requestIndex)
-      .where('used', '==', false)
-      .where('cancelled', '==', false)
-      .limit(1)
-      .get();
+    const student = await requireStudent(idToken);
+    const { requestIndex } = params;
+    if (!isRequestIndex(requestIndex)) return { success: false, error: 'Invalid endorsement slot.' };
 
+    const db = getAdminDb();
+    const appId = applicationId(student.uid, params.scholarshipId);
+    const querySnapshot = await openTokens(appId, requestIndex);
     if (querySnapshot.empty) {
       return { success: false, error: "Active invitation not found or already used/cancelled." };
     }
@@ -396,85 +503,77 @@ export async function sendRecommendationReminder(params: {
     const tokenDoc = querySnapshot.docs[0];
     const tokenData = tokenDoc.data();
 
-    const now = new Date();
     const expiresAt = tokenData.expiresAt?.toDate ? tokenData.expiresAt.toDate() : new Date(tokenData.expiresAt);
-    if (now > expiresAt) {
-      return { success: false, error: "The recommendation link has expired." };
+    if (Date.now() > expiresAt.getTime()) {
+      return { success: false, error: "The recommendation link has expired. Cancel it and send a new request." };
     }
 
-    const tokenLink = `${params.origin}/recommend/${tokenDoc.id}`;
+    // One reminder a day, so the button can't be used to flood a teacher.
+    const lastSent = tokenData.lastReminderSentAt?.toDate?.();
+    if (lastSent && Date.now() - lastSent.getTime() < REMINDER_INTERVAL_MS) {
+      return { success: false, error: 'A reminder was already sent in the last 24 hours.' };
+    }
+
     const emailResult = await sendRecommendationReminderEmail({
       email: tokenData.recommenderEmail,
       studentName: tokenData.studentName || 'A Student',
       recommenderName: tokenData.recommenderName,
-      tokenLink: tokenLink
+      tokenLink: await appLink(`/recommend/${tokenDoc.id}`),
     });
-
     if (!emailResult.success) {
-      throw new Error(emailResult.error);
+      return { success: false, error: emailResult.error || 'The reminder could not be sent.' };
     }
 
-    await db.collection('recommendationTokens').doc(tokenDoc.id).update({
-      lastReminderSentAt: FieldValue.serverTimestamp()
-    });
-
-    await db.collection('applications').doc(params.applicationId).set({
-      [`recommendationLastReminder${params.requestIndex}`]: new Date().toISOString(),
+    await tokenDoc.ref.update({ lastReminderSentAt: FieldValue.serverTimestamp() });
+    await db.collection('applications').doc(appId).set({
+      [`recommendationLastReminder${requestIndex}`]: new Date().toISOString(),
       updatedAt: FieldValue.serverTimestamp()
     }, { merge: true });
 
     return { success: true, method: emailResult.method };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+  } catch (error) {
+    return failure(error);
   }
 }
 
-export async function cancelRecommendationRequest(params: {
-  applicationId: string;
+export async function cancelRecommendationRequest(idToken: string, params: {
+  scholarshipId: string;
   requestIndex: number;
 }) {
   try {
-    const db = getAdminDb();
-    // 1. Mark active token as cancelled
-    const querySnapshot = await db.collection('recommendationTokens')
-      .where('applicationId', '==', params.applicationId)
-      .where('requestIndex', '==', params.requestIndex)
-      .where('used', '==', false)
-      .where('cancelled', '==', false)
-      .limit(1)
-      .get();
+    const student = await requireStudent(idToken);
+    const { requestIndex } = params;
+    if (!isRequestIndex(requestIndex)) return { success: false, error: 'Invalid endorsement slot.' };
 
-    if (!querySnapshot.empty) {
-      const tokenDoc = querySnapshot.docs[0];
-      await db.collection('recommendationTokens').doc(tokenDoc.id).update({
-        cancelled: true,
-        updatedAt: FieldValue.serverTimestamp()
-      });
+    const db = getAdminDb();
+    const appId = applicationId(student.uid, params.scholarshipId);
+    const appRef = db.collection('applications').doc(appId);
+    const appSnap = await appRef.get();
+
+    if (appSnap.get(`recommendationStatus${requestIndex}`) === 'Received') {
+      return { success: false, error: 'This letter has already been received and cannot be cancelled.' };
     }
+
+    // 1. Cancel every open link for this slot, not just one.
+    await cancelOpenTokens(appId, requestIndex);
 
     // 2. Reset this application's recommender slot. Cancel is a recovery path,
     //    so it must not fail on an application that was never created — there
     //    is simply nothing to reset in that case.
-    const appRef = db.collection('applications').doc(params.applicationId);
-    const appSnap = await appRef.get();
     if (appSnap.exists) {
       const reset = {
-        [`recommendationStatus${params.requestIndex}`]: 'Not Requested',
-        [`recommenderName${params.requestIndex}`]: '',
-        [`recommenderEmail${params.requestIndex}`]: '',
-        [`recommenderTitle${params.requestIndex}`]: '',
-        [`recommendationLastReminder${params.requestIndex}`]: null,
+        [`recommendationStatus${requestIndex}`]: 'Not Requested',
+        [`recommenderName${requestIndex}`]: '',
+        [`recommenderEmail${requestIndex}`]: '',
+        [`recommenderTitle${requestIndex}`]: '',
+        [`recommendationLastReminder${requestIndex}`]: null,
       };
       await appRef.update({ ...reset, updatedAt: FieldValue.serverTimestamp() });
-
-      const studentId = appSnap.data()?.studentId;
-      if (studentId) {
-        await syncRecommenderToLegacyMirror(studentId, params.applicationId, reset);
-      }
+      await syncRecommenderToLegacyMirror(student.uid, appId, reset);
     }
 
     return { success: true };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+  } catch (error) {
+    return failure(error);
   }
 }

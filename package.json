@@ -9,7 +9,9 @@
     "build": "node check-env.js && next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-merited-rules \"node --test --test-reporter=spec tests/rules/firestore.rules.test.mjs\"",
+    "test:unit": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test --test-reporter=spec tests/unit/staff-eligibility.test.mjs"
   },
   "dependencies": {
     "@genkit-ai/googleai": "^1.14.1",
@@ -62,6 +64,7 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "4.0.1",
     "@types/node": "^20",
     "@types/nodemailer": "^8.0.2",
     "@types/papaparse": "^5.3.15",

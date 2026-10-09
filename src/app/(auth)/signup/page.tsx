@@ -19,7 +19,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Eye, EyeOff } from 'lucide-react';
 import { onAuthStateChanged, updateProfile } from 'firebase/auth';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { sendWelcomeEmail } from '@/app/lib/notifications';
+import { completeSignup } from './actions';
 
 export default function SignupPage() {
   const auth = useAuth();
@@ -73,27 +73,26 @@ export default function SignupPage() {
       if (user && isSigningUp) {
         try {
           await updateProfile(user, { displayName: name });
-          const role = user.email === 'peyton.vandenbemden@gmail.com' ? 'admin' : 'applicant';
-          
+          // Role and organization are not written here: the rules refuse
+          // them from the browser, and completeSignup sets them on the server.
+          // Signup only ever creates applicants. Admins and reviewers join
+          // through an invitation (src/lib/invites-server.ts).
           await setDoc(doc(firestore, 'users', user.uid), {
-            id: user.uid,
             name,
             email: user.email,
-            role,
-            schoolId: 'scholarship-hib4j',
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           }, { merge: true });
 
-          if (role === 'admin') {
-            await setDoc(doc(firestore, 'roles_admin', user.uid), { id: user.uid, role: 'admin', grantedAt: serverTimestamp() });
-          }
-
-          // Trigger Welcome Email
-          await sendWelcomeEmail(user.email!, name);
+          // The server sets the role and organization claims and sends the
+          // welcome email; refresh the token so this session carries the
+          // claims straight away.
+          const completed = await completeSignup(await user.getIdToken());
+          if (!completed.success) throw new Error(completed.error);
+          await user.getIdToken(true);
 
           toast({ title: "Account Created", description: "Welcome to Merited." });
-          router.push(role === 'admin' ? '/admin' : '/dashboard');
+          router.push('/dashboard');
         } catch (err) {
           // The Auth account already exists at this point, so swallowing this
           // silently leaves the applicant staring at an unchanged form while
