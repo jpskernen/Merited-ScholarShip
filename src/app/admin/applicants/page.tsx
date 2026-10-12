@@ -148,17 +148,22 @@ function AdminApplicantsBoard() {
     // the reviewer migration sit under the student instead, so the key can be
     // either — an application row looks for its own reviews, and a student with
     // no application record still shows the legacy ones.
-    const statsFor = (key: string) => {
+    const statsFor = (key: string, status?: string) => {
       const reviews = allReviews.filter(r => r.applicationId === key && r.status !== 'Draft');
       const reviewCount = reviews.length;
       const totalScore = reviews.reduce((acc, r) => acc + (r.totalScore || 0), 0);
       const averageScore = reviewCount > 0 ? totalScore / reviewCount : 0;
       const scores = reviews.map(r => r.totalScore || 0);
+      // Discussion Required is a work queue, not a tally: once the award is
+      // decided there is nothing left for the committee to discuss, so the
+      // row drops out of the count and loses its urgency marker. Who asked
+      // for the discussion is still on the applicant's Committee Audit.
+      const isDecided = status === 'Awarded' || status === 'Not Awarded';
       return {
         averageScore,
         reviewCount,
         hasOutlier: scores.length >= 2 && scores.some(s => Math.abs(s - averageScore) > 1.5),
-        needsDiscussion: reviews.some(r => r.markForDiscussion),
+        needsDiscussion: !isDecided && reviews.some(r => r.markForDiscussion),
       };
     };
 
@@ -181,7 +186,7 @@ function AdminApplicantsBoard() {
         if (!legacyStatus || legacyStatus === 'draft') return [];
         return [{
           ...shared,
-          ...statsFor(applicant.id),
+          ...statsFor(applicant.id, applicant.status),
           rowId: applicant.id,
           applicationId: null,
           scholarshipId: null,
@@ -196,7 +201,7 @@ function AdminApplicantsBoard() {
         .filter((application: any) => application.status && application.status !== 'Draft')
         .map((application: any) => ({
           ...shared,
-          ...statsFor(application.id),
+          ...statsFor(application.id, application.status),
           rowId: application.id,
           applicationId: application.id,
           scholarshipId: application.scholarshipId || null,

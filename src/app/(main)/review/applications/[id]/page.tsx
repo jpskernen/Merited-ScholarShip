@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect, use } from 'react';
+import { useState, useMemo, useEffect, useRef, use } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
@@ -34,6 +34,7 @@ import Link from 'next/link';
 import { useDoc, useFirebase, useMemoFirebase } from '@/firebase';
 import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { orgIdOf } from '@/lib/org';
+import { cn } from '@/lib/utils';
 import type { Applicant } from '@/types/applicant';
 import type { Scholarship } from '@/types/scholarship';
 import { useToast } from '@/hooks/use-toast';
@@ -135,6 +136,11 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
   const [aiAnalysis, setAiAnalysis] = useState<AnalyzeFitOutput | null>(null);
   const [nextApplicationId, setNextApplicationId] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Kept apart from submitError, which reports save failures for the whole
+  // panel. A missing recommendation is a field problem, so it is shown on the
+  // field - the panel scrolls, and the top of it is often out of view.
+  const [recommendationError, setRecommendationError] = useState(false);
+  const recommendationRef = useRef<HTMLDivElement>(null);
 
   const hasAlreadyReviewed = useMemo(() => {
     return myReview?.status === 'Submitted';
@@ -239,7 +245,8 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
     if (!firestore || !reviewer || !applicationId || !canScore) return;
 
     if (!recommendation) {
-      setSubmitError("Please provide a recommendation.");
+      setRecommendationError(true);
+      recommendationRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
 
@@ -580,18 +587,34 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
               
               <Separator />
 
-              <div className="space-y-3">
+              <div className="space-y-3" ref={recommendationRef}>
                 <Label className="text-sm font-black uppercase tracking-tight block">Final Recommendation</Label>
-                <Select value={recommendation} onValueChange={(val) => canScore && setRecommendation(val)} disabled={!canScore}>
-                  <SelectTrigger className="w-full">
+                <Select
+                  value={recommendation}
+                  onValueChange={(val) => {
+                    if (!canScore) return;
+                    setRecommendation(val);
+                    setRecommendationError(false);
+                  }}
+                  disabled={!canScore}
+                >
+                  <SelectTrigger className={cn('w-full', recommendationError && 'border-destructive ring-1 ring-destructive')}>
                     <SelectValue placeholder="Select outcome..." />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Recommend">Highly Recommend</SelectItem>
                     <SelectItem value="Do Not Recommend">Do Not Recommend</SelectItem>
-                    <SelectItem value="Undecided">Undecided / Needs Discussion</SelectItem>
+                    {/* Just "Undecided": asking for committee time is the
+                        separate flag below, and the old label implied picking
+                        this set it. */}
+                    <SelectItem value="Undecided">Undecided</SelectItem>
                   </SelectContent>
                 </Select>
+                {recommendationError && (
+                  <p className="flex items-center gap-1.5 text-sm text-destructive">
+                    <AlertCircle className="h-4 w-4 shrink-0" /> Please provide a recommendation.
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">

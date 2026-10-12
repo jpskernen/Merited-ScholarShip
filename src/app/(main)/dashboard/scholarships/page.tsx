@@ -10,15 +10,16 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { ArrowRight, Clock, Loader2, Search } from 'lucide-react';
+import { ArrowRight, Building2, Clock, Loader2, Search } from 'lucide-react';
 import Link from 'next/link';
 import { useCollection, useFirebase, useMemoFirebase } from '@/firebase';
 import { collection, query, where } from 'firebase/firestore';
 import type { Scholarship } from '@/types/scholarship';
 import { orgIdOf } from '@/lib/org';
+import { getPublicOrganization } from '@/app/org-actions';
 import { formatDeadline } from '@/lib/deadline';
 import { cn } from '@/lib/utils';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 function isPastDeadline(deadline: string | undefined): boolean {
   if (!deadline) return false;
@@ -37,6 +38,20 @@ export default function ScholarshipsPage() {
   }, [firestore, orgId]);
 
   const { data: dbScholarships, isLoading } = useCollection<Scholarship>(scholarshipsQuery);
+
+  
+  const [organizationName, setOrganizationName] = useState<string | null>(null);
+  useEffect(() => {
+    if (!orgId) {
+      setOrganizationName(null);
+      return;
+    }
+    let cancelled = false;
+    getPublicOrganization(orgId).then((org) => {
+      if (!cancelled) setOrganizationName(org?.name ?? null);
+    });
+    return () => { cancelled = true; };
+  }, [orgId]);
 
   // A student can hold one application per scholarship, so each card shows the
   // state of *its own* application rather than a single global portfolio status.
@@ -141,6 +156,11 @@ export default function ScholarshipsPage() {
                 <div className="flex justify-between items-start">
                     <div className="max-w-[70%]">
                       <CardTitle className="text-base md:text-lg leading-tight">{scholarship.name}</CardTitle>
+                      {organizationName && (
+                        <p className="flex items-center gap-1 text-[10px] md:text-xs text-muted-foreground mt-1">
+                          <Building2 className="h-3 w-3" /> {organizationName}
+                        </p>
+                      )}
                     </div>
                     <Badge variant="secondary" className="whitespace-nowrap text-[10px] md:text-xs bg-primary/10 text-primary border-none">{scholarship.amount}</Badge>
                 </div>

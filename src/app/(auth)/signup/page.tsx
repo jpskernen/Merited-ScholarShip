@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useAuth, initiateEmailSignUp, useFirestore } from '@/firebase';
+import { useAuth, initiateEmailSignUp, useFirestore, useFirebase } from '@/firebase';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, useEffect, useMemo, Suspense } from 'react';
 import { useToast } from '@/hooks/use-toast';
@@ -26,6 +26,7 @@ import type { PublicOrganization } from '@/lib/org-server';
 function SignupForm() {
   const auth = useAuth();
   const firestore = useFirestore();
+  const { refreshUserRole } = useFirebase();
   const router = useRouter();
   const { toast } = useToast();
   const searchParams = useSearchParams();
@@ -143,19 +144,15 @@ function SignupForm() {
             updatedAt: serverTimestamp(),
           }, { merge: true });
 
-          // The server sets the role and organization claims and sends the
-          // welcome email; refresh the token so this session carries the
-          // claims straight away.
+        
           const completed = await completeSignup(await user.getIdToken(), effectiveOrgId);
           if (!completed.success) throw new Error(completed.error);
-          await user.getIdToken(true);
+          await refreshUserRole();
 
           toast({ title: "Account Created", description: "Welcome to Merited." });
           router.push('/dashboard');
         } catch (err) {
-          // The Auth account already exists at this point, so swallowing this
-          // silently leaves the applicant staring at an unchanged form while
-          // their email is now taken.
+         
           console.error('Failed to finish account setup', err);
           toast({
             variant: 'destructive',

@@ -197,6 +197,15 @@ function ProfilePageContent() {
   const [essayQualMethod, setEssayQualMethod] = useState<'text' | 'file'>('text');
   const [promptMethod, setPromptMethod] = useState<Record<string, 'text' | 'file'>>({});
 
+  // Mirrors the submit dialog's check. Scholarships define their own prompts,
+  // so the answers live under `prompt:<id>` (or an upload tagged with that id)
+  // and never in the legacy single `essay` field.
+  const narrativesComplete = prompts.length > 0 && prompts.every((prompt) => {
+    const typed = watch(`prompt:${prompt.id}` as any);
+    const uploaded = applicantData?.essays?.some((essay: any) => essay.promptId === prompt.id);
+    return !!typed || !!uploaded;
+  });
+
   // The application document changes on every invite, reminder, upload and
   // autosave. Resetting the whole form each time threw away anything typed but
   // not yet saved (a changed school, the other endorsement's details), so a
@@ -711,7 +720,7 @@ function ProfilePageContent() {
             <CardHeader className="p-4 md:p-6 bg-muted/10 border-b"><CardTitle className="text-base md:text-lg flex items-center gap-2"><CheckCircle className="h-5 w-5 text-primary" /> Submission Checklist</CardTitle></CardHeader>
             <CardContent className="space-y-4 text-xs md:text-sm p-4 md:p-6">
               <div className="flex items-center gap-3"><div className={cn("h-6 w-6 rounded-full flex items-center justify-center border-2 text-[10px] font-bold", getValues('name') ? "bg-primary text-primary-foreground border-primary" : "border-muted text-muted-foreground")}>{getValues('name') ? '✓' : '1'}</div><span>Personal Details</span></div>
-              <div className="flex items-center gap-3"><div className={cn("h-6 w-6 rounded-full flex items-center justify-center border-2 text-[10px] font-bold", (watch('essay') || applicantData?.essays?.some(e => e.promptId === 'personal-statement')) ? "bg-primary text-primary-foreground border-primary" : "border-muted-foreground/30 text-muted-foreground")}>{(watch('essay') || applicantData?.essays?.some(e => e.promptId === 'personal-statement')) ? '✓' : '2'}</div><span>Personal Statement</span></div>
+              <div className="flex items-center gap-3"><div className={cn("h-6 w-6 rounded-full flex items-center justify-center border-2 text-[10px] font-bold", narrativesComplete ? "bg-primary text-primary-foreground border-primary" : "border-muted-foreground/30 text-muted-foreground")}>{narrativesComplete ? '✓' : '2'}</div><span>{prompts.length === 1 ? prompts[0].title : 'Narrative Responses'}</span></div>
               <div className="flex items-center gap-3"><div className={cn("h-6 w-6 rounded-full flex items-center justify-center border-2 text-[10px] font-bold", ((applicantData as any)?.recommendationStatus1 === 'Received') ? "bg-primary text-primary-foreground border-primary" : "border-muted-foreground/30 text-muted-foreground")}>{((applicantData as any)?.recommendationStatus1 === 'Received') ? '✓' : '3'}</div><span>Endorsement Verified</span></div>
               {!isAlreadySubmitted && <div className="mt-6 p-4 rounded-lg bg-amber-50 border border-amber-200"><p className="text-[10px] font-bold text-amber-700 leading-relaxed uppercase">Important: once submitted, this application is locked. You can still apply to other scholarships.</p></div>}
             </CardContent>

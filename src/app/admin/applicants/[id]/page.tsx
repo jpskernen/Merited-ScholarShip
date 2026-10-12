@@ -419,7 +419,17 @@ export default function AdminApplicantDetail({
                       <div className="flex justify-between items-start">
                         <div className="space-y-0.5">
                           <p className="font-black text-sm">{review.reviewerName}</p>
-                          <p className="text-[10px] text-muted-foreground uppercase font-medium">{review.recommendation}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-[10px] text-muted-foreground uppercase font-medium">{review.recommendation}</p>
+                            {/* The decision is made on this page, so the reviewer
+                                who asked for a discussion has to be named here,
+                                not only counted on the applicants list. */}
+                            {review.markForDiscussion && (
+                              <Badge variant="outline" className="gap-1 text-[8px] bg-amber-50 text-amber-700 border-amber-200">
+                                <MessageSquare className="h-2.5 w-2.5" /> Flagged for discussion
+                              </Badge>
+                            )}
+                          </div>
                           {/* A student can hold an application per scholarship,
                               so a score means nothing without naming the one it
                               was given against. */}

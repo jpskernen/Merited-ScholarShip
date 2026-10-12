@@ -55,7 +55,11 @@ function ReviewerDashboardContent() {
     setMounted(true);
   }, []);
 
-  // 1. Get all programs where this reviewer is assigned
+  // 1. Get all programs where this reviewer is assigned.
+  // Only `organizationId` can be queried here: the programs rule authorises a
+  // read via `resource.data.organizationId`, and Firestore denies a list query
+  // whose filters can't prove the rule holds — so a `schoolId` query is always
+  // rejected, even when it would match nothing.
   const programsQuery = useMemoFirebase(() => {
     if (!firestore || !user || !orgId) return null;
     return query(
@@ -78,7 +82,7 @@ function ReviewerDashboardContent() {
   const assignedKey = assignedScholarshipIds.join(',');
 
   useEffect(() => {
-    if (!firestore) return;
+    if (!firestore || !orgId) return;
     const scholarshipIds = assignedKey ? assignedKey.split(',') : [];
     if (scholarshipIds.length === 0) {
       setAssignedApplications([]);
@@ -90,8 +94,12 @@ function ReviewerDashboardContent() {
     const byScholarship = new Map<string, any[]>();
     const unsubscribes = scholarshipIds.map((scholarshipId) =>
       onSnapshot(
+        // `organizationId` and `status` are both required by the applications
+        // rule (readableByReviewer): Firestore rejects a list query whose
+        // filters can't prove the rule holds, so dropping either is denied.
         query(
           collection(firestore, 'applications'),
+          where('organizationId', '==', orgId),
           where('scholarshipId', '==', scholarshipId),
           where('status', 'in', ['Submitted', 'In Review', 'Awarded', 'Not Awarded']),
         ),
@@ -108,7 +116,7 @@ function ReviewerDashboardContent() {
     );
 
     return () => unsubscribes.forEach((unsubscribe) => unsubscribe());
-  }, [firestore, assignedKey, isProgramsLoading]);
+  }, [firestore, orgId, assignedKey, isProgramsLoading]);
 
   // 3. Get all reviews by this reviewer. The rules let a reviewer read only
   //    their own reviews, so the filter is required, not an optimization.
