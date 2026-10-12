@@ -10,6 +10,7 @@ import { getAdminDb } from '@/firebase/admin';
 import { DEFAULT_ORG_SETTINGS } from './org';
 import { setUserClaims, type Caller } from './auth-server';
 import { assertCanJoinAsStaff, createInviteFor, resendInviteFor } from './invites-server';
+import { writeAudit } from './audit';
 
 function slugify(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
@@ -34,6 +35,16 @@ export async function createOrganizationAs(caller: Caller, rawName: string): Pro
   batch.set(orgRef, { id: orgId, name, status: 'active', createdAt: FieldValue.serverTimestamp(), createdBy: caller.uid });
   batch.set(orgRef.collection('config').doc('settings'), { ...settings, updatedAt: FieldValue.serverTimestamp() });
   await batch.commit();
+
+  await writeAudit({
+    organizationId: orgId,
+    action: 'Organization created',
+    actorId: caller.uid,
+    actorName: caller.email,
+    targetId: orgId,
+    targetType: 'organization',
+    subject: name,
+  });
   return { orgId };
 }
 
@@ -67,6 +78,17 @@ export async function assignOrgAdminAs(caller: Caller, orgId: string, rawEmail: 
   await batch.commit();
 
   await setUserClaims(existing.uid, { orgId, role: 'org_admin' });
+
+  await writeAudit({
+    organizationId: orgId,
+    action: 'Role granted',
+    actorId: caller.uid,
+    actorName: caller.email,
+    targetId: existing.uid,
+    targetType: 'user',
+    subject: email,
+    details: { role: 'org_admin', grantedBy: 'platform admin' },
+  });
   return { assigned: true as const, invited: false as const, uid: existing.uid };
 }
 

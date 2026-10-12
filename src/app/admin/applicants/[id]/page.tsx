@@ -30,6 +30,18 @@ import { doc, collectionGroup, query, where, collection, onSnapshot } from 'fire
 import { orgIdOf } from '@/lib/org';
 import type { Applicant } from '@/types/applicant';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { useToast } from '@/hooks/use-toast';
+import { recordDecisions, type Decision } from '@/app/admin/decision-actions';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 
 
@@ -50,7 +62,8 @@ export default function AdminApplicantDetail({
   // another scholarship's evaluation and consensus score.
   const { application: selectedApplicationId } = use(searchParams);
   const router = useRouter();
-  const { firestore, userData } = useFirebase();
+  const { firestore, user, userData } = useFirebase();
+  const { toast } = useToast();
   const orgId = orgIdOf(userData);
   
   const applicantRef = useMemoFirebase(() => {
@@ -73,7 +86,25 @@ export default function AdminApplicantDetail({
     );
   }, [firestore, applicantId, orgId]);
 
-  const { data: applications } = useCollection<any>(applicationsQuery);
+  const { data: applications, isLoading: isApplicationsLoading } = useCollection<any>(applicationsQuery);
+
+  const sortedApplications = useMemo(
+    () => (applications || [])
+      .filter((a: any) => a.status && a.status !== 'Draft')
+      .sort((a: any, b: any) =>
+        String(b.submissionDate || '').localeCompare(String(a.submissionDate || ''))),
+    [applications],
+  );
+
+  const application = useMemo(
+    () => sortedApplications.find((a: any) => a.id === selectedApplicationId) || sortedApplications[0] || null,
+    [sortedApplications, selectedApplicationId],
+  );
+
+  const profile = (application?.profileSnapshot as Record<string, any> | undefined) || applicant || {};
+
+  const [pendingDecision, setPendingDecision] = useState<Decision | null>(null);
+  const [isDeciding, setIsDeciding] = useState(false);
 
   const [allReviews, setAllReviews] = useState<any[]>([]);
   const [isReviewsLoading, setIsReviewsLoading] = useState(true);
@@ -113,20 +144,53 @@ export default function AdminApplicantDetail({
     });
 
     return allReviews
-      .filter((review) =>
-        selectedApplicationId
-          ? review.parentId === selectedApplicationId
-          // Reviews filed by the legacy screen hang off the student rather than an
-          // application, so those are matched on applicantId and stay visible.
-          : review.parentId === applicantId || review.parentId in scholarshipFor
-      )
+      .filter((review) => review.status !== 'Draft')
+      .filter((review) => application
+        ? review.parentId === application.id
+        // Reviews filed by the legacy screen hang off the student rather than an
+        // application, so those are matched on applicantId and stay visible.
+        : review.parentId === applicantId)
       .map((review) => ({ ...review, scholarshipName: scholarshipFor[review.parentId] }));
-  }, [allReviews, applications, applicantId, selectedApplicationId]);
+  }, [allReviews, applications, applicantId, application]);
 
-  const selectedApplication = useMemo(
-    () => (selectedApplicationId ? (applications || []).find((a: any) => a.id === selectedApplicationId) : null),
-    [applications, selectedApplicationId]
-  );
+  const decide = async (status: Decision) => {
+    if (!user || !application) return;
+    setPendingDecision(null);
+    setIsDeciding(true);
+    try {
+      const result = await recordDecisions(await user.getIdToken(), {
+        status,
+        targets: [{ applicationId: application.id, studentId: applicantId }],
+      });
+
+      if (!result.success) {
+        toast({ title: 'Decision not recorded', description: result.error, variant: 'destructive' });
+        return;
+      }
+      if (result.updated === 0) {
+        toast({
+          title: 'Nothing changed',
+          description: result.skipped[0]?.reason
+            ? `This application was left unchanged — ${result.skipped[0].reason}.`
+            : 'This application was left unchanged.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      toast({
+        title: `Marked ${status}`,
+        description: result.emailsSent
+          ? 'The applicant has been emailed.'
+          : result.emailsFailed
+            ? 'The decision is saved, but the notification email could not be sent.'
+            : 'The decision is saved. The applicant had already been emailed about it.',
+      });
+    } catch (error) {
+      toast({ title: 'Decision not recorded', description: 'Please try again.', variant: 'destructive' });
+    } finally {
+      setIsDeciding(false);
+    }
+  };
 
   const stats = useMemo(() => {
     if (!reviews || reviews.length === 0) return null;
@@ -135,7 +199,7 @@ export default function AdminApplicantDetail({
     return { avg, count: reviews.length };
   }, [reviews]);
 
-  if (isAppLoading || isReviewsLoading) {
+  if (isAppLoading || isReviewsLoading || isApplicationsLoading) {
     return <div className="flex h-[80vh] items-center justify-center font-medium text-muted-foreground">Syncing Submission Audit...</div>;
   }
 
@@ -160,16 +224,54 @@ export default function AdminApplicantDetail({
             <h1 className="text-3xl font-bold flex items-center gap-2">
               {applicant.name}
               <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 uppercase text-[10px] tracking-widest font-black">
-                {selectedApplication?.status ?? applicant.status}
+                {application?.status ?? applicant.status}
               </Badge>
             </h1>
-            {selectedApplication && (
-              <p className="text-sm font-semibold">{selectedApplication.scholarshipName || 'Scholarship'}</p>
+            {application && (
+              <p className="text-sm font-semibold">{application.scholarshipName || 'Scholarship'}</p>
             )}
             <p className="text-sm text-muted-foreground">{applicant.email} • ID: {applicantId.substring(0, 8).toUpperCase()}</p>
+            {sortedApplications.length > 1 && (
+              <div className="flex flex-wrap items-center gap-2 pt-2">
+                {sortedApplications.map((entry: any) => (
+                  <Button
+                    key={entry.id}
+                    size="sm"
+                    variant={entry.id === application?.id ? 'default' : 'outline'}
+                    className="h-7 text-xs"
+                    asChild
+                  >
+                    <Link href={`/admin/applicants/${applicantId}?application=${encodeURIComponent(entry.id)}`}>
+                      {entry.scholarshipName || 'Scholarship'}
+                    </Link>
+                  </Button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
-        <div className="flex gap-4">
+        <div className="flex items-center gap-4">
+           {application && (
+             <div className="flex gap-2">
+               <Button
+                 size="sm"
+                 className="bg-green-600 hover:bg-green-700"
+                 disabled={isDeciding || application.status === 'Awarded'}
+                 onClick={() => setPendingDecision('Awarded')}
+               >
+                 {isDeciding ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Award className="h-4 w-4 mr-2" />}
+                 Award
+               </Button>
+               <Button
+                 size="sm"
+                 variant="outline"
+                 disabled={isDeciding || application.status === 'Not Awarded'}
+                 onClick={() => setPendingDecision('Not Awarded')}
+               >
+                 Decline
+               </Button>
+             </div>
+           )}
            {stats && (
              <div className="text-right border-r pr-6">
                 <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Committee Consensus</p>
@@ -178,10 +280,30 @@ export default function AdminApplicantDetail({
            )}
            <div className="text-right">
               <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">GPA</p>
-              <p className="text-3xl font-black">{applicant.gpa.toFixed(2)}</p>
+              <p className="text-3xl font-black">{typeof profile.gpa === 'number' ? profile.gpa.toFixed(2) : '—'}</p>
            </div>
         </div>
       </div>
+
+      <AlertDialog open={!!pendingDecision} onOpenChange={(open) => !open && setPendingDecision(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingDecision === 'Awarded' ? 'Award this application?' : 'Decline this application?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {applicant.name}'s application to {application?.scholarshipName || 'this scholarship'} will be set to{' '}
+              <strong>{pendingDecision}</strong>, and they will be emailed once. Their other applications are not affected.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => pendingDecision && decide(pendingDecision)}>
+              {pendingDecision === 'Awarded' ? 'Award' : 'Decline'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
         <div className="lg:col-span-7 space-y-8">
@@ -190,57 +312,92 @@ export default function AdminApplicantDetail({
               <CardTitle className="text-lg flex items-center gap-2"><UserCircle className="h-5 w-5" /> Submission Portfolio</CardTitle>
             </CardHeader>
             <CardContent className="p-6 space-y-8">
-              <div className="grid grid-cols-2 gap-6">
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-black uppercase text-muted-foreground">Institutional Context</Label>
-                  <p className="font-bold flex items-center gap-1.5"><GraduationCap className="h-4 w-4 text-primary" /> {applicant.school}</p>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-black uppercase text-muted-foreground">Academic Focus</Label>
-                  <p className="font-bold">{applicant.major}</p>
-                </div>
-              </div>
+              {!application ? (
+                <p className="text-sm text-muted-foreground italic">
+                  This student has no submitted application, so there is nothing to show here.
+                </p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-6">
+                    <div className="space-y-1">
+                      <Label className="text-[10px] font-black uppercase text-muted-foreground">Institutional Context</Label>
+                      <p className="font-bold flex items-center gap-1.5"><GraduationCap className="h-4 w-4 text-primary" /> {profile.school || '—'}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[10px] font-black uppercase text-muted-foreground">Academic Focus</Label>
+                      <p className="font-bold">{profile.major || '—'}</p>
+                    </div>
+                  </div>
 
-              <Separator />
+                  {application.profileSnapshot?.capturedAt && (
+                    <p className="text-[11px] text-muted-foreground italic">
+                      Profile as submitted on {new Date(application.profileSnapshot.capturedAt).toLocaleDateString()}. Later edits by the student do not change it.
+                    </p>
+                  )}
 
-              <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-black uppercase tracking-tight">Personal Narrative</Label>
-                  <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">{applicant.essay}</p>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-black uppercase tracking-tight">Qualification Summary</Label>
-                  <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">{applicant.qualificationStatement}</p>
-                </div>
-              </div>
+                  <Separator />
 
-              <Separator />
-
-              <div className="space-y-4">
-                <Label className="text-xs font-black uppercase tracking-tight">Evidence & Documentation</Label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {applicant.resume && <Button variant="outline" className="justify-start h-auto py-3" asChild><Link href={applicant.resume as string} target="_blank"><FileText className="h-4 w-4 mr-2" /> Student Resume</Link></Button>}
-                  {applicant.recommendationLetter1 && <Button variant="outline" className="justify-start h-auto py-3 border-green-200 bg-green-50" asChild><Link href={applicant.recommendationLetter1 as string} target="_blank"><ShieldCheck className="h-4 w-4 mr-2 text-green-600" /> Endorsement #1</Link></Button>}
-                  {applicant.recommendationLetter2 && <Button variant="outline" className="justify-start h-auto py-3 border-green-200 bg-green-50" asChild><Link href={applicant.recommendationLetter2 as string} target="_blank"><ShieldCheck className="h-4 w-4 mr-2 text-green-600" /> Endorsement #2</Link></Button>}
-                </div>
-              </div>
-
-              {(applicant.recommendationLetterText1 || applicant.recommendationLetterText2) && (
-                <div className="space-y-4">
-                  <Label className="text-xs font-black uppercase tracking-tight">Endorsement Text</Label>
-                  {applicant.recommendationLetterText1 && (
+                  <div className="space-y-4">
+                    {(application.promptResponses || []).length > 0 ? (
+                      (application.promptResponses as any[]).map((response) => (
+                        <div key={response.promptId} className="space-y-1.5">
+                          <Label className="text-xs font-black uppercase tracking-tight">{response.title}</Label>
+                          <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">{response.answer || 'Not provided.'}</p>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-black uppercase tracking-tight">Personal Narrative</Label>
+                        <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">{application.essay || 'Not provided.'}</p>
+                      </div>
+                    )}
                     <div className="space-y-1.5">
-                      <Label className="text-xs font-bold text-muted-foreground">Endorsement #1</Label>
-                      <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">{applicant.recommendationLetterText1}</p>
+                      <Label className="text-xs font-black uppercase tracking-tight">Qualification Summary</Label>
+                      <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">{application.qualificationStatement || 'Not provided.'}</p>
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  <div className="space-y-4">
+                    <Label className="text-xs font-black uppercase tracking-tight">Evidence & Documentation</Label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {application.resume && <Button variant="outline" className="justify-start h-auto py-3" asChild><Link href={application.resume as string} target="_blank"><FileText className="h-4 w-4 mr-2" /> Student Resume</Link></Button>}
+                      {[1, 2].map((i) => {
+                        const url = application[`recommendationLetter${i}`];
+                        if (!url) return null;
+                        const name = application[`recommenderName${i}`];
+                        return (
+                          <Button key={`letter-${i}`} variant="outline" className="justify-start h-auto py-3 border-green-200 bg-green-50" asChild>
+                            <Link href={url as string} target="_blank">
+                              <ShieldCheck className="h-4 w-4 mr-2 text-green-600" /> Endorsement #{i}{name ? ` — ${name}` : ''}
+                            </Link>
+                          </Button>
+                        );
+                      })}
+                    </div>
+                    {!application.resume && ![1, 2].some((i) => application[`recommendationLetter${i}`]) && (
+                      <p className="text-sm text-muted-foreground italic">No documents uploaded for this application.</p>
+                    )}
+                  </div>
+
+                  {[1, 2].some((i) => application[`recommendationLetterText${i}`]) && (
+                    <div className="space-y-4">
+                      <Label className="text-xs font-black uppercase tracking-tight">Endorsement Text</Label>
+                      {[1, 2].map((i) => {
+                        const text = application[`recommendationLetterText${i}`];
+                        if (!text) return null;
+                        const name = application[`recommenderName${i}`];
+                        return (
+                          <div key={`letter-text-${i}`} className="space-y-1.5">
+                            <Label className="text-xs font-bold text-muted-foreground">Endorsement #{i}{name ? ` — ${name}` : ''}</Label>
+                            <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">{text}</p>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
-                  {applicant.recommendationLetterText2 && (
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-bold text-muted-foreground">Endorsement #2</Label>
-                      <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">{applicant.recommendationLetterText2}</p>
-                    </div>
-                  )}
-                </div>
+                </>
               )}
             </CardContent>
           </Card>

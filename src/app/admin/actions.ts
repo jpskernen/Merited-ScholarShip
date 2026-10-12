@@ -1,14 +1,14 @@
 'use server';
 
-import { requireOrgRole } from '@/lib/auth-server';
+import { AuthError, requireUser } from '@/lib/auth-server';
 
-/**
- * Server Action to check the health of system integrations. Org Admins only.
- * Email goes through Gmail SMTP (src/app/lib/notifications.ts); the old
- * SendGrid check reported "not configured" even when email worked.
- */
+
 export async function getSystemHealth(idToken: string) {
-  await requireOrgRole(idToken, ['org_admin']);
+
+  const caller = await requireUser(idToken);
+  if (!caller.platformAdmin && caller.role !== 'org_admin') {
+    throw new AuthError('You do not have permission to do this.');
+  }
 
   const gmailUser = process.env.GMAIL_USER;
   const fromEmail = process.env.GMAIL_FROM_EMAIL || gmailUser;

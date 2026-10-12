@@ -14,13 +14,15 @@ import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { PlusCircle, Trash2, Edit, Loader2 } from 'lucide-react';
 import { useCollection, useFirebase, useMemoFirebase } from '@/firebase';
-import { collection, doc, deleteDoc, query, where } from 'firebase/firestore';
+import { collection, query, where } from 'firebase/firestore';
+import { deleteScholarship } from '@/app/admin/scholarship-actions';
 import { orgIdOf } from '@/lib/org';
+import { formatDeadline } from '@/lib/deadline';
 import { useToast } from '@/hooks/use-toast';
 import type { Scholarship } from '@/types/scholarship';
 
 export default function AdminScholarshipsPage() {
-  const { firestore, userData } = useFirebase();
+  const { firestore, user, userData } = useFirebase();
   const { toast } = useToast();
   const orgId = orgIdOf(userData);
 
@@ -32,11 +34,15 @@ export default function AdminScholarshipsPage() {
   const { data: scholarships, isLoading } = useCollection<Scholarship>(scholarshipsQuery);
 
   const handleDelete = async (id: string) => {
-    if (!firestore || !id) return;
+    if (!user || !id) return;
     if (!confirm('Are you sure you want to delete this scholarship?')) return;
 
     try {
-      await deleteDoc(doc(firestore, 'programs', id));
+      const result = await deleteScholarship(await user.getIdToken(), id);
+      if (!result.success) {
+        toast({ title: "Could not delete", description: result.error, variant: "destructive" });
+        return;
+      }
       toast({ title: "Deleted", description: "Scholarship removed successfully." });
     } catch (error) {
       toast({ title: "Error", description: "Failed to delete scholarship.", variant: "destructive" });
@@ -86,7 +92,7 @@ export default function AdminScholarshipsPage() {
                 <TableCell>
                   <Badge variant="secondary">{scholarship.amount}</Badge>
                 </TableCell>
-                <TableCell>{scholarship.deadline}</TableCell>
+                <TableCell>{formatDeadline(scholarship.deadline)}</TableCell>
                 <TableCell className="text-right space-x-2">
                   <Button variant="outline" size="sm" asChild>
                     <Link href={`/admin/scholarships/edit/${scholarship.id}`}>

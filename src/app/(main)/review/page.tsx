@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useMemo, useState, useEffect, Suspense } from 'react';
+import { useMemo, useRef, useState, useEffect, Suspense } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Table,
@@ -26,7 +26,7 @@ import {
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useCollection, useFirebase, useMemoFirebase, useDoc } from '@/firebase';
-import { collection, collectionGroup, doc, query, where, getDocs } from 'firebase/firestore';
+import { collection, collectionGroup, doc, onSnapshot, query, where, getDocs } from 'firebase/firestore';
 import { orgIdOf } from '@/lib/org';
 
 /**
@@ -72,23 +72,43 @@ function ReviewerDashboardContent() {
     [programs],
   );
 
-  // 2. Get the applications submitted to the scholarships this reviewer is
-  //    assigned to. The queue is now one row per APPLICATION, not per student:
-  //    a student who applied to two of this reviewer's scholarships must be
-  //    evaluated twice, against each scholarship's own rubric. Keying the queue
-  //    by student also meant the scoring page had to guess which scholarship it
-  //    was scoring, and it guessed with programs[0].
-  const applicationsQuery = useMemoFirebase(() => {
-    if (!firestore || !orgId || assignedScholarshipIds.length === 0) return null;
-    // Firestore caps 'in' at 30 values and rejects an empty array.
-    return query(
-      collection(firestore, 'applications'),
-      where('organizationId', '==', orgId),
-      where('scholarshipId', 'in', assignedScholarshipIds.slice(0, 30)),
-    );
-  }, [firestore, orgId, assignedScholarshipIds]);
+  const [assignedApplications, setAssignedApplications] = useState<any[]>([]);
+  const [isAppsLoading, setIsAppsLoading] = useState(true);
 
-  const { data: assignedApplications, isLoading: isAppsLoading } = useCollection(applicationsQuery);
+  const assignedKey = assignedScholarshipIds.join(',');
+
+  useEffect(() => {
+    if (!firestore) return;
+    const scholarshipIds = assignedKey ? assignedKey.split(',') : [];
+    if (scholarshipIds.length === 0) {
+      setAssignedApplications([]);
+      setIsAppsLoading(isProgramsLoading);
+      return;
+    }
+
+    setIsAppsLoading(true);
+    const byScholarship = new Map<string, any[]>();
+    const unsubscribes = scholarshipIds.map((scholarshipId) =>
+      onSnapshot(
+        query(
+          collection(firestore, 'applications'),
+          where('scholarshipId', '==', scholarshipId),
+          where('status', 'in', ['Submitted', 'In Review', 'Awarded', 'Not Awarded']),
+        ),
+        (snapshot) => {
+          byScholarship.set(scholarshipId, snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+          setAssignedApplications(Array.from(byScholarship.values()).flat());
+          setIsAppsLoading(false);
+        },
+        (error) => {
+          console.error('Assignments listener failed:', error.message);
+          setIsAppsLoading(false);
+        },
+      ),
+    );
+
+    return () => unsubscribes.forEach((unsubscribe) => unsubscribe());
+  }, [firestore, assignedKey, isProgramsLoading]);
 
   // 3. Get all reviews by this reviewer. The rules let a reviewer read only
   //    their own reviews, so the filter is required, not an optimization.
@@ -99,36 +119,39 @@ function ReviewerDashboardContent() {
 
   const { data: allReviews, isLoading: isReviewsLoading } = useCollection(myReviewsQuery);
 
-  const randomSortKeys = useMemo(() => {
-    if (!assignedApplications || !mounted) return {};
-    const keys: Record<string, number> = {};
-    assignedApplications.forEach(application => {
-      keys[application.id] = Math.random();
-    });
-    return keys;
-  }, [assignedApplications, mounted]);
+  const randomSortKeys = useRef<Record<string, number>>({});
+  assignedApplications.forEach((application: any) => {
+    if (randomSortKeys.current[application.id] === undefined) {
+      randomSortKeys.current[application.id] = Math.random();
+    }
+  });
 
   const assignments = useMemo(() => {
     if (!assignedApplications || !allReviews || !user || !mounted || !programs) return [];
 
     const myReviews = allReviews.filter(r => r.reviewerId === user.uid);
     const programsById = new Map(programs.map(p => [p.id, p]));
+    const isFiled = (review: any) => !!review && review.status !== 'Draft';
 
     return assignedApplications
-      // Drafts aren't ready to be judged, and decided applications are closed.
-      .filter((application: any) => application.status === 'Submitted' || application.status === 'In Review')
+      .filter((application: any) => {
+        if (application.status === 'Submitted' || application.status === 'In Review') return true;
+        return isFiled(myReviews.find((r) => r.applicationId === application.id));
+      })
       .map((application: any) => {
         const review = myReviews.find(r => r.applicationId === application.id);
         return {
           ...application,
           scholarshipName: application.scholarshipName || programsById.get(application.scholarshipId)?.name || 'Scholarship',
-          reviewStatus: review ? review.status : 'Not Started',
-          score: review ? review.totalScore : null,
+          isClosed: application.status === 'Awarded' || application.status === 'Not Awarded',
+          reviewStatus: review ? (review.status || 'Submitted') : 'Not Started',
+          hasFiled: isFiled(review),
+          score: isFiled(review) ? review.totalScore : null,
           needsDiscussion: review ? review.markForDiscussion : false,
-          randomSortKey: randomSortKeys[application.id] || 0,
+          randomSortKey: randomSortKeys.current[application.id] || 0,
         };
       });
-  }, [assignedApplications, allReviews, user, mounted, randomSortKeys, programs]);
+  }, [assignedApplications, allReviews, user, mounted, programs]);
 
   const processedData = useMemo(() => {
     let data = [...assignments];
@@ -143,8 +166,8 @@ function ReviewerDashboardContent() {
       data.sort((a, b) => toMillis(b.submissionDate) - toMillis(a.submissionDate));
     }
 
-    if (filter === 'pending') data = data.filter(d => d.reviewStatus !== 'Submitted');
-    if (filter === 'completed') data = data.filter(d => d.reviewStatus === 'Submitted');
+    if (filter === 'pending') data = data.filter(d => !d.hasFiled && !d.isClosed);
+    if (filter === 'completed') data = data.filter(d => d.hasFiled);
     if (filter === 'discussion') data = data.filter(d => d.needsDiscussion);
 
     return data;
@@ -152,8 +175,8 @@ function ReviewerDashboardContent() {
 
   const stats = useMemo(() => {
     const total = assignments.length;
-    const completed = assignments.filter(d => d.reviewStatus === 'Submitted').length;
-    const pending = total - completed;
+    const completed = assignments.filter(d => d.hasFiled).length;
+    const pending = assignments.filter(d => !d.hasFiled && !d.isClosed).length;
     const progress = total > 0 ? (completed / total) * 100 : 0;
     return { total, completed, pending, progress };
   }, [assignments]);
@@ -189,7 +212,7 @@ function ReviewerDashboardContent() {
             <ArrowUpDown className="h-4 w-4 mr-2" /> Randomize Order
           </Button>
           <Button variant={filter === 'discussion' ? 'secondary' : 'outline'} onClick={() => navigateFilter('discussion')} size="sm">
-            <MessageSquare className="h-4 w-4 mr-2" /> Panel Discussion
+            <MessageSquare className="h-4 w-4 mr-2" /> Flagged by me
           </Button>
         </div>
       </div>
@@ -271,12 +294,17 @@ function ReviewerDashboardContent() {
                       <span className="text-xs font-medium">{app.scholarshipName}</span>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={app.reviewStatus === 'Submitted' ? 'default' : 'secondary'}>
-                        {app.reviewStatus}
-                      </Badge>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Badge variant={app.hasFiled ? 'default' : 'secondary'}>
+                          {app.reviewStatus === 'Draft' ? 'Draft saved' : app.reviewStatus}
+                        </Badge>
+                        {app.isClosed && (
+                          <Badge variant="outline" className="text-[10px]">Decision made</Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
-                      {app.score !== null ? (
+                      {typeof app.score === 'number' ? (
                         <span className="font-mono font-bold text-primary">{app.score.toFixed(2)}</span>
                       ) : (
                         <span className="text-muted-foreground text-xs italic">--</span>
@@ -285,7 +313,8 @@ function ReviewerDashboardContent() {
                     <TableCell className="text-right">
                       <Button variant="outline" size="sm" asChild>
                         <Link href={`/review/applications/${app.id}`}>
-                          {app.reviewStatus === 'Submitted' ? 'View' : 'Evaluate'} <ArrowRight className="h-4 w-4 ml-2" />
+                          {app.hasFiled || app.isClosed ? 'View' : app.reviewStatus === 'Draft' ? 'Continue' : 'Evaluate'}
+                          <ArrowRight className="h-4 w-4 ml-2" />
                         </Link>
                       </Button>
                     </TableCell>
@@ -303,9 +332,15 @@ function ReviewerDashboardContent() {
       ) : (
         <div className="flex flex-col items-center justify-center py-20 bg-muted/10 rounded-2xl border-2 border-dashed">
           <Inbox className="h-12 w-12 text-muted-foreground mb-4 opacity-20" />
-          <p className="text-lg font-bold text-muted-foreground">No Assignments</p>
+          <p className="text-lg font-bold text-muted-foreground">
+            {!orgId ? 'Account not set up' : assignedScholarshipIds.length === 0 ? 'No assignments yet' : 'Nothing to review yet'}
+          </p>
           <p className="text-sm text-muted-foreground max-w-sm text-center mt-1">
-            You are not currently assigned to any active scholarship committee programs.
+            {!orgId
+              ? 'Your account is not linked to an organization yet, so there is nothing to show. Ask your administrator to check your invitation.'
+              : assignedScholarshipIds.length === 0
+                ? 'You have not been assigned to a scholarship committee yet. Your administrator assigns reviewers on each scholarship.'
+                : 'You are on the committee, but none of your scholarships has a submitted application waiting. They will appear here as students submit.'}
           </p>
         </div>
       )}

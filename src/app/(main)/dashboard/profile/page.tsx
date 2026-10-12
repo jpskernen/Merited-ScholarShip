@@ -114,6 +114,17 @@ function ProfilePageContent() {
   const scholarshipName =
     applicationData?.scholarshipName || programData?.name || 'Scholarship Application';
 
+  const prompts = useMemo<{ id: string; title: string; description: string }[]>(() => {
+    const defined = Array.isArray(programData?.prompts) ? programData.prompts : [];
+    return defined.length > 0
+      ? defined.map((prompt: any, index: number) => ({
+          id: String(prompt.id || `prompt-${index + 1}`),
+          title: String(prompt.title || `Essay ${index + 1}`),
+          description: prompt.description ? String(prompt.description) : '',
+        }))
+      : [{ id: 'personal-statement', title: 'Personal Statement', description: 'Tell your unique story.' }];
+  }, [programData]);
+
   // Shared profile fields live on users/{uid}, application-specific ones on
   // applications/{id}. The rest of this form reads a single merged object, so
   // the split stays confined to load and save.
@@ -133,8 +144,20 @@ function ProfilePageContent() {
         if (value !== undefined) shared[field] = value;
       }
     }
-    return { ...shared, ...(applicationData || {}) } as Applicant;
-  }, [profileData, applicationData]);
+    const merged: Record<string, any> = { ...shared, ...(applicationData || {}) };
+
+    const answers: Record<string, string> = {};
+    (applicationData?.promptResponses || []).forEach((response: any) => {
+      if (response?.promptId) answers[response.promptId] = response.answer || '';
+    });
+    prompts.forEach((prompt, index) => {
+      const existing = answers[prompt.id];
+      merged[`prompt:${prompt.id}`] =
+        existing ?? (index === 0 && !applicationData?.promptResponses?.length ? (applicationData?.essay || '') : '');
+    });
+
+    return merged as Applicant;
+  }, [profileData, applicationData, prompts]);
 
   const isApplicantDataLoading = isProfileLoading || isApplicationLoading;
 
@@ -172,7 +195,7 @@ function ProfilePageContent() {
   });
 
   const [essayQualMethod, setEssayQualMethod] = useState<'text' | 'file'>('text');
-  const [essayGeneralMethod, setEssayGeneralMethod] = useState<'text' | 'file'>('text');
+  const [promptMethod, setPromptMethod] = useState<Record<string, 'text' | 'file'>>({});
 
   // The application document changes on every invite, reminder, upload and
   // autosave. Resetting the whole form each time threw away anything typed but
@@ -438,6 +461,7 @@ function ProfilePageContent() {
   // here would lock a brand-new application to a different scholarship.
   const applicationStatus = applicationData?.status;
   const isAlreadySubmitted = !!applicationStatus && applicationStatus !== 'Draft';
+  const isPastDeadline = !!programData?.deadline && new Date(programData.deadline).getTime() < Date.now();
 
   // Endorsements outlive submission deliberately. A recommender's deadline is
   // normally later than the application's, and chasing or replacing a teacher
@@ -501,24 +525,46 @@ function ProfilePageContent() {
                 <Textarea {...register('activities')} rows={5} placeholder="List your extracurricular activities, leadership roles, and community involvement..." disabled={isAlreadySubmitted} onBlur={performAutoSave} className="text-sm leading-relaxed" />
               </div>
               <Separator />
-              <div className="space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <Label className="text-sm font-black uppercase tracking-tight">Personal Statement (Core Essay)</Label>
-                  {!isAlreadySubmitted && (
-                    <div className="flex bg-muted rounded-md p-1 w-fit border">
-                      <Button type="button" size="sm" variant={essayGeneralMethod === 'text' ? 'secondary' : 'ghost'} className="h-8 text-[10px] font-bold" onClick={() => setEssayGeneralMethod('text')}><Type className="h-3 w-3 mr-1.5" /> Direct Entry</Button>
-                      <Button type="button" size="sm" variant={essayGeneralMethod === 'file' ? 'secondary' : 'ghost'} className="h-8 text-[10px] font-bold" onClick={() => setEssayGeneralMethod('file')}><Upload className="h-3 w-3 mr-1.5" /> PDF Upload</Button>
+              {prompts.map((prompt, index) => {
+                const method = promptMethod[prompt.id] || 'text';
+                const uploaded = applicantData?.essays?.find((essay: any) => essay.promptId === prompt.id);
+                return (
+                  <div key={prompt.id} className="space-y-4">
+                    {index > 0 && <Separator />}
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-sm font-black uppercase tracking-tight">{prompt.title}</Label>
+                        {prompt.description && (
+                          <p className="text-xs text-muted-foreground max-w-xl leading-relaxed">{prompt.description}</p>
+                        )}
+                      </div>
+                      {!isAlreadySubmitted && (
+                        <div className="flex bg-muted rounded-md p-1 w-fit border shrink-0">
+                          <Button type="button" size="sm" variant={method === 'text' ? 'secondary' : 'ghost'} className="h-8 text-[10px] font-bold" onClick={() => setPromptMethod(prev => ({ ...prev, [prompt.id]: 'text' }))}><Type className="h-3 w-3 mr-1.5" /> Direct Entry</Button>
+                          <Button type="button" size="sm" variant={method === 'file' ? 'secondary' : 'ghost'} className="h-8 text-[10px] font-bold" onClick={() => setPromptMethod(prev => ({ ...prev, [prompt.id]: 'file' }))}><Upload className="h-3 w-3 mr-1.5" /> PDF Upload</Button>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-                {essayGeneralMethod === 'text' ? (
-                  <Textarea {...register('essay')} rows={8} placeholder="Tell your unique story..." disabled={isAlreadySubmitted} onBlur={performAutoSave} className="text-sm leading-relaxed" />
-                ) : (
-                  <div className="p-8 border-2 border-dashed rounded-xl bg-muted/10 space-y-4 text-center">
-                    <Input type="file" accept=".pdf" onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], 'essays', 'personal-statement')} disabled={isAlreadySubmitted} className="text-xs h-10 w-full max-w-sm mx-auto cursor-pointer" />
+                    {method === 'text' ? (
+                      <Textarea
+                        {...register(`prompt:${prompt.id}` as any)}
+                        rows={8}
+                        placeholder="Write your answer..."
+                        disabled={isAlreadySubmitted}
+                        onBlur={performAutoSave}
+                        className="text-sm leading-relaxed"
+                      />
+                    ) : (
+                      <div className="p-8 border-2 border-dashed rounded-xl bg-muted/10 space-y-4 text-center">
+                        <Input type="file" accept=".pdf" onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], 'essays', prompt.id)} disabled={isAlreadySubmitted} className="text-xs h-10 w-full max-w-sm mx-auto cursor-pointer" />
+                        {uploaded && (
+                          <p className="text-xs text-muted-foreground">Uploaded: {uploaded.fileName}</p>
+                        )}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                );
+              })}
             </CardContent>
           </Card>
 
@@ -601,6 +647,11 @@ function ProfilePageContent() {
                   {formError}
                 </div>
               )}
+              {isPastDeadline && (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">
+                  The deadline for this scholarship has passed. Your draft is saved, but it can no longer be submitted.
+                </div>
+              )}
               <div className="flex flex-col sm:flex-row gap-4 justify-end">
                 <Button type="button" variant="outline" onClick={() => onSave(false)} disabled={isSaving || isSubmitting} className="w-full sm:w-auto h-12 px-8 font-bold">Save Draft Progress</Button>
                 {/* Submitting locks the application for good, so it is confirmed
@@ -608,15 +659,17 @@ function ProfilePageContent() {
                     checks mirror the Submission Checklist. */}
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
-                    <Button type="button" className="font-black uppercase tracking-widest w-full sm:w-auto h-12 px-10 shadow-lg" disabled={isSaving || isSubmitting}>Finalize & Submit</Button>
+                    <Button type="button" className="font-black uppercase tracking-widest w-full sm:w-auto h-12 px-10 shadow-lg" disabled={isSaving || isSubmitting || isPastDeadline}>Finalize & Submit</Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     {(() => {
                       const missing: string[] = [];
                       if (!getValues('name')) missing.push('Personal details (your name)');
-                      if (!watch('essay') && !applicantData?.essays?.some(e => e.promptId === 'personal-statement')) {
-                        missing.push('Personal statement (no essay typed or uploaded)');
-                      }
+                      prompts.forEach((prompt) => {
+                        const typed = watch(`prompt:${prompt.id}` as any);
+                        const uploaded = applicantData?.essays?.some((essay: any) => essay.promptId === prompt.id);
+                        if (!typed && !uploaded) missing.push(`${prompt.title} (nothing written or uploaded)`);
+                      });
                       const pendingLetters = [1, 2].filter(i => (applicantData as any)?.[`recommendationStatus${i}`] !== 'Received');
                       return (
                         <>

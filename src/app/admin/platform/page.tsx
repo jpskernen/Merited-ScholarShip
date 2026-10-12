@@ -17,12 +17,23 @@ import {
 } from '@/components/ui/dialog';
 import { useCollection, useFirebase, useMemoFirebase } from '@/firebase';
 import { collection, deleteDoc, doc, query, where } from 'firebase/firestore';
-import { Building2, Check, Copy, Loader2, Plus, Send, ShieldAlert, UserPlus } from 'lucide-react';
+import { Building2, Check, Copy, Loader2, Plus, Send, ShieldAlert, UserPlus, X } from 'lucide-react';
 import { RevokeInviteButton } from '@/components/shared/RevokeInviteButton';
 import { useToast } from '@/hooks/use-toast';
-import { assignOrgAdmin, createOrganization, resendOrgAdminInvite } from '@/app/admin/platform-actions';
+import { assignOrgAdmin, createOrganization, resendOrgAdminInvite, resolveOrgSwitchRequest } from '@/app/admin/platform-actions';
 
 type Org = { id: string; name?: string; status?: string; createdAt?: { toDate?: () => Date } };
+
+type OrgSwitchRequest = {
+  id: string;
+  studentEmail?: string;
+  studentName?: string;
+  currentOrgId: string;
+  requestedOrgId: string;
+  requestedOrgName?: string;
+  reason?: string;
+  createdAt?: { toDate?: () => Date };
+};
 
 function isExpired(invite: any): boolean {
   const expires: Date | undefined = invite.expiresAt?.toDate?.();
@@ -64,9 +75,16 @@ export default function PlatformOrganizationsPage() {
     return query(collection(firestore, 'admin_invites'), where('status', '==', 'Pending'));
   }, [firestore, isPlatformAdmin]);
 
+  const switchRequestsQuery = useMemoFirebase(() => {
+    if (!firestore || !isPlatformAdmin) return null;
+    return query(collection(firestore, 'orgSwitchRequests'), where('status', '==', 'pending'));
+  }, [firestore, isPlatformAdmin]);
+
   const { data: orgs, isLoading: isOrgsLoading } = useCollection<Org>(orgsQuery);
   const { data: admins } = useCollection<any>(adminsQuery);
   const { data: invites } = useCollection<any>(invitesQuery);
+  const { data: switchRequests } = useCollection<OrgSwitchRequest>(switchRequestsQuery);
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
 
   const sortedOrgs = useMemo(
     () => [...(orgs || [])].sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id)),
@@ -155,6 +173,33 @@ export default function PlatformOrganizationsPage() {
     toast({ title: 'Copied', description: 'Admin onboarding link copied.' });
   };
 
+  const copyPublicLink = (orgId: string) => {
+    navigator.clipboard.writeText(`${window.location.origin}/org/${orgId}`);
+    setCopiedId(`public:${orgId}`);
+    setTimeout(() => setCopiedId(null), 2000);
+    toast({ title: 'Copied', description: "The organization's public sign-up page link was copied." });
+  };
+
+  const handleResolveSwitch = async (request: OrgSwitchRequest, approve: boolean) => {
+    if (!user) return;
+    setResolvingId(request.id);
+    try {
+      const result = await resolveOrgSwitchRequest(await user.getIdToken(), request.id, approve);
+      if (!result.success) {
+        toast({ title: 'Could Not Resolve Request', description: result.error, variant: 'destructive' });
+        return;
+      }
+      toast({
+        title: approve ? 'Switch Approved' : 'Switch Denied',
+        description: approve
+          ? `${request.studentEmail || 'The student'} is now in ${request.requestedOrgName || request.requestedOrgId}.`
+          : `${request.studentEmail || 'The student'}'s request was denied.`,
+      });
+    } finally {
+      setResolvingId(null);
+    }
+  };
+
   const revokeInvite = async (id: string) => {
     if (!firestore) return;
     try {
@@ -218,6 +263,51 @@ export default function PlatformOrganizationsPage() {
           </form>
         </CardContent>
       </Card>
+
+      {switchRequests && switchRequests.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Organization Switch Requests</CardTitle>
+            <CardDescription>
+              A student asking to move to a different organization. Approving moves their account and scholarship
+              access immediately.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {switchRequests.map((req) => (
+              <div key={req.id} className="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="space-y-0.5">
+                  <p className="text-sm font-semibold">{req.studentName || req.studentEmail || req.id}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {req.currentOrgId} <span className="mx-1">&rarr;</span> {req.requestedOrgName || req.requestedOrgId}
+                  </p>
+                  {req.reason && <p className="text-xs text-muted-foreground italic">&ldquo;{req.reason}&rdquo;</p>}
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={resolvingId === req.id}
+                    onClick={() => handleResolveSwitch(req, true)}
+                  >
+                    {resolvingId === req.id ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Check className="mr-1.5 h-3.5 w-3.5 text-green-600" />}
+                    Approve
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={resolvingId === req.id}
+                    onClick={() => handleResolveSwitch(req, false)}
+                  >
+                    <X className="mr-1.5 h-3.5 w-3.5 text-red-600" />
+                    Deny
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="rounded-lg border bg-card shadow-sm">
         <Table>
@@ -285,10 +375,16 @@ export default function PlatformOrganizationsPage() {
                     </div>
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button variant="outline" size="sm" onClick={() => { setAdminEmail(''); setInviteOrg(org); }}>
-                      <UserPlus className="mr-2 h-4 w-4" />
-                      Invite Admin
-                    </Button>
+                    <div className="flex justify-end gap-2">
+                      <Button variant="ghost" size="sm" onClick={() => copyPublicLink(org.id)} title="Copy the organization's public sign-up page link">
+                        {copiedId === `public:${org.id}` ? <Check className="mr-2 h-4 w-4 text-green-500" /> : <Copy className="mr-2 h-4 w-4" />}
+                        Public Link
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => { setAdminEmail(''); setInviteOrg(org); }}>
+                        <UserPlus className="mr-2 h-4 w-4" />
+                        Invite Admin
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               );

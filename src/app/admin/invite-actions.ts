@@ -4,12 +4,24 @@
 // invite is limited to the caller's own organization's Org Admin; accepting
 // is open to the invitee (the invite ID is the credential) and is checked in
 // acceptInviteAs.
-import { requireOrgRole } from '@/lib/auth-server';
-import { acceptInviteAs, createInviteFor, resendInviteFor, type InviteKind } from '@/lib/invites-server';
+import { AuthError, requireOrgRole } from '@/lib/auth-server';
+import {
+  acceptInviteAs,
+  createInviteFor,
+  resendInviteFor,
+  revokeInviteFor,
+  InviteError,
+  StaffEligibilityError,
+  type InviteKind,
+} from '@/lib/invites-server';
 
 function failure(err: unknown) {
-  console.error('Invite action failed:', err);
-  return { success: false as const, error: err instanceof Error ? err.message : 'Something went wrong. Please try again.' };
+  const expected = err instanceof AuthError || err instanceof InviteError || err instanceof StaffEligibilityError;
+  if (!expected) console.error('Invite action failed:', err);
+  return {
+    success: false as const,
+    error: expected ? (err as Error).message : 'The invitation could not be processed. Please try again.',
+  };
 }
 
 export async function createInvite(idToken: string, kind: InviteKind, email: string) {
@@ -25,6 +37,15 @@ export async function resendInvite(idToken: string, kind: InviteKind, inviteId: 
   try {
     const inviter = await requireOrgRole(idToken, ['org_admin']);
     return { success: true as const, ...(await resendInviteFor(inviter, kind, inviteId)) };
+  } catch (err) {
+    return failure(err);
+  }
+}
+
+export async function revokeInvite(idToken: string, kind: InviteKind, inviteId: string) {
+  try {
+    const caller = await requireOrgRole(idToken, ['org_admin']);
+    return { success: true as const, ...(await revokeInviteFor(caller, kind, inviteId)) };
   } catch (err) {
     return failure(err);
   }

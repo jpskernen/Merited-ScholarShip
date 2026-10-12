@@ -10,13 +10,21 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { ArrowRight, Loader2, Search } from 'lucide-react';
+import { ArrowRight, Clock, Loader2, Search } from 'lucide-react';
 import Link from 'next/link';
 import { useCollection, useFirebase, useMemoFirebase } from '@/firebase';
 import { collection, query, where } from 'firebase/firestore';
 import type { Scholarship } from '@/types/scholarship';
 import { orgIdOf } from '@/lib/org';
-import { useMemo } from 'react';
+import { formatDeadline } from '@/lib/deadline';
+import { cn } from '@/lib/utils';
+import { useMemo, useState } from 'react';
+
+function isPastDeadline(deadline: string | undefined): boolean {
+  if (!deadline) return false;
+  const parsed = new Date(deadline);
+  return !Number.isNaN(parsed.getTime()) && parsed.getTime() < Date.now();
+}
 
 export default function ScholarshipsPage() {
   const { firestore, user, userData } = useFirebase();
@@ -54,6 +62,19 @@ export default function ScholarshipsPage() {
   // Apply opened an application against a scholarship that does not exist.
   const scholarships = dbScholarships ?? [];
 
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
+
+  const allTags = useMemo(() => {
+    const tags = new Set<string>();
+    scholarships.forEach((s) => Array.isArray(s.tags) && s.tags.forEach((t) => tags.add(t)));
+    return Array.from(tags).sort();
+  }, [scholarships]);
+
+  const filteredScholarships = useMemo(() => {
+    if (!selectedTag) return scholarships;
+    return scholarships.filter((s) => Array.isArray(s.tags) && s.tags.includes(selectedTag));
+  }, [scholarships, selectedTag]);
+
   // Programs the student can still act on come first: anything not applied to,
   // then drafts waiting to be finished, then applications already submitted.
   // Buried behind two "View Application" cards, an open opportunity reads as if
@@ -67,8 +88,10 @@ export default function ScholarshipsPage() {
 
     // Array.prototype.sort is stable, so programs within a group keep the
     // order Firestore returned them in.
-    return [...scholarships].sort((a, b) => rankOf(a) - rankOf(b));
-  }, [scholarships, applicationByScholarship]);
+    return [...filteredScholarships].sort((a, b) => rankOf(a) - rankOf(b));
+  }, [filteredScholarships, applicationByScholarship]);
+
+  const toggleTag = (tag: string) => setSelectedTag((current) => (current === tag ? null : tag));
 
   if (isLoading) {
     return (
@@ -87,7 +110,30 @@ export default function ScholarshipsPage() {
         </p>
       </div>
 
+      {allTags.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          <Badge
+            variant={selectedTag === null ? 'default' : 'outline'}
+            className="cursor-pointer text-[10px] md:text-xs font-bold uppercase tracking-widest"
+            onClick={() => setSelectedTag(null)}
+          >
+            All
+          </Badge>
+          {allTags.map((tag) => (
+            <Badge
+              key={tag}
+              variant={selectedTag === tag ? 'default' : 'outline'}
+              className="cursor-pointer text-[10px] md:text-xs font-bold uppercase tracking-widest"
+              onClick={() => toggleTag(tag)}
+            >
+              {tag}
+            </Badge>
+          ))}
+        </div>
+      )}
+
       {scholarships.length > 0 ? (
+        sortedScholarships.length > 0 ? (
         <div className="grid grid-cols-1 gap-4 md:gap-6 md:grid-cols-2 lg:grid-cols-3">
           {sortedScholarships.map((scholarship) => (
             <Card key={scholarship.id} className="flex flex-col border-primary/10 shadow-sm hover:shadow-md transition-shadow">
@@ -103,18 +149,36 @@ export default function ScholarshipsPage() {
                 <p className="text-xs md:text-sm text-muted-foreground mb-4 line-clamp-3 leading-relaxed">{scholarship.description}</p>
                 <div className="flex flex-wrap gap-2">
                   {Array.isArray(scholarship.tags) && scholarship.tags.map(tag => (
-                    <Badge key={tag} variant="outline" className="text-[9px] md:text-[10px] font-bold uppercase tracking-widest">{tag}</Badge>
+                    <Badge
+                      key={tag}
+                      variant={selectedTag === tag ? 'default' : 'outline'}
+                      className="cursor-pointer text-[9px] md:text-[10px] font-bold uppercase tracking-widest"
+                      onClick={() => toggleTag(tag)}
+                    >
+                      {tag}
+                    </Badge>
                   ))}
                 </div>
               </CardContent>
               <CardFooter className="flex justify-between items-center border-t p-4 md:p-6">
                 <div className="text-[10px] md:text-xs text-muted-foreground">
                   <p className="font-bold text-foreground">Deadline</p>
-                  <p>{scholarship.deadline}</p>
+                  <p className={cn(isPastDeadline(scholarship.deadline) && 'text-destructive font-semibold')}>
+                    {formatDeadline(scholarship.deadline)}
+                  </p>
                 </div>
                 {(() => {
                   const application = applicationByScholarship[scholarship.id];
                   const isSubmitted = application && application.status !== 'Draft';
+                  // Already-submitted applications stay viewable past the
+                  // deadline; starting or continuing a new one does not.
+                  if (!isSubmitted && isPastDeadline(scholarship.deadline)) {
+                    return (
+                      <Button size="sm" variant="outline" disabled className="font-bold">
+                        <Clock className="mr-2 h-3 w-3" /> Deadline Passed
+                      </Button>
+                    );
+                  }
                   return (
                     <Button asChild size="sm" variant={isSubmitted ? 'outline' : 'default'} className="font-bold">
                       <Link href={`/dashboard/profile?scholarshipId=${encodeURIComponent(scholarship.id)}`}>
@@ -128,6 +192,13 @@ export default function ScholarshipsPage() {
             </Card>
           ))}
         </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-16 bg-muted/10 rounded-2xl border-2 border-dashed">
+            <Search className="h-10 w-10 text-muted-foreground mb-4 opacity-20" />
+            <p className="text-lg font-bold text-muted-foreground">No Matches for &ldquo;{selectedTag}&rdquo;</p>
+            <Button variant="link" onClick={() => setSelectedTag(null)} className="mt-1">Clear filter</Button>
+          </div>
+        )
       ) : (
         <div className="flex flex-col items-center justify-center py-20 bg-muted/10 rounded-2xl border-2 border-dashed">
           <Search className="h-12 w-12 text-muted-foreground mb-4 opacity-20" />

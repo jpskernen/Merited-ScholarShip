@@ -3,21 +3,24 @@
 import { useEffect, useState, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { useFirebase, useDoc, useMemoFirebase, useCollection } from '@/firebase';
-import { doc, updateDoc, serverTimestamp, collection, query, where } from 'firebase/firestore';
-import { useForm, useFieldArray } from 'react-hook-form';
+import { doc, collection, query, where } from 'firebase/firestore';
+import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ScholarshipSchema, type Scholarship } from '@/types/scholarship';
 import { Button } from '@/components/ui/button';
+import { DatePickerField } from '@/components/shared/DatePickerField';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { ChevronLeft, Loader2, Users, Check, Plus, Trash2, Calculator } from 'lucide-react';
+import { ChevronLeft, Loader2, Users, Check, Plus, Trash2, Calculator, Lock } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 import { notifyReviewAssignment } from '@/app/admin/notify-actions';
+import { saveScholarship, isRubricLocked } from '@/app/admin/scholarship-actions';
+import { rubricWeightTotal, validateRubric } from '@/lib/rubric';
 import { orgIdOf } from '@/lib/org';
 
 export default function EditScholarshipPage({ params }: { params: Promise<{ id: string }> }) {
@@ -72,7 +75,20 @@ export default function EditScholarshipPage({ params }: { params: Promise<{ id: 
 
   const selectedReviewerIds = watch('reviewerIds') || [];
   const rubricFields = watch('rubric') || [];
-  const totalWeight = rubricFields.reduce((acc, curr) => acc + (Number(curr.weight) || 0), 0);
+  const totalWeight = rubricWeightTotal(rubricFields as any);
+
+  const [isLocked, setIsLocked] = useState(false);
+
+  useEffect(() => {
+    if (!user || !id) return;
+    let cancelled = false;
+    (async () => {
+      const result = await isRubricLocked(await user.getIdToken(), id);
+      if (cancelled) return;
+      if (result.success) setIsLocked(result.locked);
+    })();
+    return () => { cancelled = true; };
+  }, [user, id]);
 
   useEffect(() => {
     if (scholarship) {
@@ -96,11 +112,7 @@ export default function EditScholarshipPage({ params }: { params: Promise<{ id: 
     setValue('reviewerIds', current, { shouldDirty: true });
   };
 
-  /**
-   * Assigning a reviewer is the only signal they get that work is waiting, so
-   * the save now tells them. Failures are reported but never roll back the
-   * save — the assignment itself already succeeded.
-   */
+ 
   const notifyNewReviewers = async (reviewerIds: string[]) => {
     const result = { sent: 0, simulated: 0, failed: 0 };
     if (!user) return { ...result, failed: reviewerIds.length };
@@ -131,13 +143,11 @@ export default function EditScholarshipPage({ params }: { params: Promise<{ id: 
   };
 
   const onSubmit = async (data: Scholarship) => {
-    if (!firestore || !id) return;
-    if (totalWeight !== 100) {
-      toast({ 
-        title: "Invalid Rubric", 
-        description: `Total weight must equal 100%. Currently: ${totalWeight}%`, 
-        variant: "destructive" 
-      });
+    if (!user || !id) return;
+
+    const rubricCheck = validateRubric(data.rubric as any);
+    if (!rubricCheck.ok) {
+      toast({ title: 'Invalid Rubric', description: rubricCheck.error, variant: 'destructive' });
       return;
     }
     setIsSubmitting(true);
@@ -150,12 +160,22 @@ export default function EditScholarshipPage({ params }: { params: Promise<{ id: 
     );
 
     try {
-      const formattedData = {
-        ...data,
-        updatedAt: serverTimestamp(),
-      };
+      const result = await saveScholarship(await user.getIdToken(), {
+        id,
+        name: data.name,
+        amount: data.amount,
+        deadline: data.deadline,
+        description: data.description,
+        tags: data.tags as any,
+        reviewerIds: data.reviewerIds || [],
+        rubric: data.rubric as any,
+      });
 
-      await updateDoc(doc(firestore, 'programs', id), formattedData);
+      if (!result.success) {
+        toast({ title: 'Could not save', description: result.error, variant: 'destructive' });
+        setIsSubmitting(false);
+        return;
+      }
 
       const notified = await notifyNewReviewers(newlyAssignedIds);
 
@@ -207,7 +227,13 @@ export default function EditScholarshipPage({ params }: { params: Promise<{ id: 
               </div>
               <div className="space-y-2">
                 <Label htmlFor="deadline">Deadline</Label>
-                <Input id="deadline" {...register('deadline')} placeholder="e.g. May 1st" />
+                <Controller
+                  name="deadline"
+                  control={control}
+                  render={({ field }) => (
+                    <DatePickerField id="deadline" value={field.value} onChange={field.onChange} />
+                  )}
+                />
                 {errors.deadline && <p className="text-xs text-destructive">{errors.deadline.message}</p>}
               </div>
             </div>
@@ -241,27 +267,39 @@ export default function EditScholarshipPage({ params }: { params: Promise<{ id: 
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {isLocked && (
+              <div className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm">
+                <Lock className="h-4 w-4 mt-0.5 shrink-0 text-amber-700" />
+                <p className="text-amber-900">
+                  <span className="font-bold">Scoring has started.</span> Evaluations have already been filed against
+                  these criteria and weights, so they can no longer be changed — changing them would restate scores
+                  that are already on record. The rest of the programme details can still be edited.
+                </p>
+              </div>
+            )}
             <div className="space-y-3">
               {fields.map((field, index) => (
                 <div key={field.id} className="flex items-end gap-4 animate-in slide-in-from-left-2">
                   <div className="flex-1 space-y-2">
                     <Label className="text-[10px] uppercase font-black text-muted-foreground">Criterion</Label>
-                    <Input {...register(`rubric.${index}.label`)} placeholder="e.g. Leadership Potential" />
+                    <Input {...register(`rubric.${index}.label`)} placeholder="e.g. Leadership Potential" disabled={isLocked} />
                   </div>
                   <div className="w-24 space-y-2">
                     <Label className="text-[10px] uppercase font-black text-muted-foreground">Weight (%)</Label>
-                    <Input type="number" {...register(`rubric.${index}.weight`, { valueAsNumber: true })} />
+                    <Input type="number" {...register(`rubric.${index}.weight`, { valueAsNumber: true })} disabled={isLocked} />
                   </div>
-                  <Button type="button" variant="ghost" size="icon" onClick={() => remove(index)} className="text-destructive hover:bg-destructive/10">
+                  <Button type="button" variant="ghost" size="icon" onClick={() => remove(index)} className="text-destructive hover:bg-destructive/10" disabled={isLocked}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
               ))}
             </div>
-            
-            <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => append({ id: `criterion-${Date.now()}`, label: '', weight: 0 })}>
-              <Plus className="h-4 w-4 mr-2" /> Add Criteria
-            </Button>
+
+            {!isLocked && (
+              <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => append({ id: `criterion-${Date.now()}`, label: '', weight: 0 })}>
+                <Plus className="h-4 w-4 mr-2" /> Add Criteria
+              </Button>
+            )}
 
             <Separator className="my-4" />
             

@@ -26,3 +26,22 @@ export async function getOrgSettings(orgId: string): Promise<OrgSettings> {
     features: { ...DEFAULT_ORG_SETTINGS.features, ...stored.features },
   };
 }
+
+export type PublicOrganization = { id: string; name: string };
+
+export async function getActiveOrganization(orgId: string): Promise<PublicOrganization | null> {
+  if (!orgId) return null;
+  const snap = await getAdminDb().collection('organizations').doc(orgId).get();
+  if (!snap.exists) return null;
+  const data = snap.data()!;
+  if (data.status && data.status !== 'active') return null;
+  return { id: snap.id, name: data.name || orgId };
+}
+
+
+export async function getActiveOrganizations(): Promise<PublicOrganization[]> {
+  const snap = await getAdminDb().collection('organizations').where('status', '==', 'active').get();
+  return snap.docs
+    .map((doc) => ({ id: doc.id, name: doc.data().name || doc.id }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}

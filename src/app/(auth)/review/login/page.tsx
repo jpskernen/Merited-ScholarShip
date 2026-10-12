@@ -38,7 +38,7 @@ export default function ReviewerLoginPage() {
           // Redirect by the token's role claims. Accounts the claims backfill
           // hasn't reached yet fall back to the role documents (not users.role,
           // which the user can edit).
-          const { claims } = await user.getIdTokenResult();
+          const { claims } = await  user.getIdTokenResult();
           let isAdmin = claims.platformAdmin === true || claims.role === 'org_admin';
           let isReviewer = claims.role === 'reviewer';
           if (!claims.role) {

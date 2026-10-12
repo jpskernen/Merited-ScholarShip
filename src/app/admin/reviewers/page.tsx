@@ -9,12 +9,13 @@ import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { useCollection, useFirebase, useMemoFirebase } from '@/firebase';
-import { collection, deleteDoc, doc, query, where } from 'firebase/firestore';
-import { UserPlus, Copy, Check, Loader2, Send } from 'lucide-react';
+import { collection, query, where } from 'firebase/firestore';
+import { UserPlus, Copy, Check, Loader2, Send, Mail, Users } from 'lucide-react';
 import { RevokeInviteButton } from '@/components/shared/RevokeInviteButton';
 import { useToast } from '@/hooks/use-toast';
 import { orgIdOf } from '@/lib/org';
-import { createInvite, resendInvite } from '@/app/admin/invite-actions';
+import { createInvite, resendInvite, revokeInvite } from '@/app/admin/invite-actions';
+import { StaffAccessCard } from '@/components/shared/StaffAccessCard';
 
 // Invitations carry no password and are not written by AI (docs/07 §5.3): the
 // server creates the invite and emails a fixed message with the link, and the
@@ -92,94 +93,136 @@ export default function ManageReviewersPage() {
   };
 
   const deleteInvite = async (id: string) => {
-    if (!firestore) return;
+    if (!user) return;
     try {
-      await deleteDoc(doc(firestore, 'invites', id));
-      toast({ title: "Deleted", description: "Invitation revoked." });
+      const result = await revokeInvite(await user.getIdToken(), 'reviewer', id);
+      if (!result.success) {
+        toast({ title: "Could not revoke", description: result.error, variant: "destructive" });
+        return;
+      }
+      toast({ title: "Revoked", description: "The invitation link no longer works." });
     } catch (error) {
-      toast({ title: "Error", description: "Failed to delete invitation.", variant: "destructive" });
+      toast({ title: "Error", description: "The invitation could not be revoked. Please try again.", variant: "destructive" });
     }
   };
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold">Manage Reviewers</h1>
-        <p className="text-muted-foreground">Invite committee members to review applications for your organization.</p>
+      <div className="flex items-center gap-3">
+        <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary/10">
+          <Users className="h-5 w-5 text-primary" />
+        </div>
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Manage Reviewers</h1>
+          <p className="text-muted-foreground">Invite committee members to review applications for your organization.</p>
+        </div>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Invite New Reviewer</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <UserPlus className="h-4 w-4 text-primary" />
+            Invite New Reviewer
+          </CardTitle>
           <CardDescription>The reviewer receives an email with a personal link, valid for 14 days, to set their own password.</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleInvite} className="flex gap-4">
+          <form onSubmit={handleInvite} className="flex flex-col gap-4 sm:flex-row">
             <div className="flex-1 space-y-2">
               <Label htmlFor="email" className="sr-only">Email Address</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="reviewer@example.org"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
+              <div className="relative">
+                <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="reviewer@example.org"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
             </div>
             <Button type="submit" disabled={isInviting}>
-              <UserPlus className="mr-2 h-4 w-4" />
+              {isInviting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}
               {isInviting ? 'Sending...' : 'Send Invite'}
             </Button>
           </form>
         </CardContent>
       </Card>
 
-      <div className="rounded-lg border bg-card">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Email Address</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow><TableCell colSpan={4} className="text-center py-10">Loading invites...</TableCell></TableRow>
-            ) : invites?.map((invite) => (
-              <TableRow key={invite.id}>
-                <TableCell>
-                  <span className="font-medium">{invite.email}</span>
-                </TableCell>
-                <TableCell>
-                  <Badge variant={invite.status === 'Accepted' ? 'default' : 'secondary'}>
-                    {invite.status}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  {invite.emailSent ? (
-                    <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50 font-bold">Sent</Badge>
-                  ) : (
-                    <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50">Pending</Badge>
-                  )}
-                </TableCell>
-                <TableCell className="text-right flex justify-end gap-2">
-                  {invite.status === 'Pending' && (
-                    <Button variant="outline" size="sm" onClick={() => handleResend(invite)} title="Resend invitation email" disabled={sendingFor === invite.id}>
-                      {sendingFor === invite.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4 text-primary" />}
-                    </Button>
-                  )}
-                  <Button variant="outline" size="sm" onClick={() => copyInviteLink(invite.id)} title="Copy invite link">
-                    {copiedId === invite.id ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
-                  </Button>
-                  <RevokeInviteButton email={invite.email} onConfirm={() => deleteInvite(invite.id)} />
-                </TableCell>
+      <StaffAccessCard kind="reviewer" />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Invitations</CardTitle>
+          <CardDescription>
+            Links that have been sent. Accepting one puts the person in the active reviewers list above.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Email Address</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center py-10">
+                    <Loader2 className="h-4 w-4 animate-spin inline" />
+                  </TableCell>
+                </TableRow>
+              ) : !invites || invites.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center py-10 text-sm text-muted-foreground italic">
+                    No invitations sent yet.
+                  </TableCell>
+                </TableRow>
+              ) : invites.map((invite) => (
+                <TableRow key={invite.id}>
+                  <TableCell>
+                    <span className="font-medium">{invite.email}</span>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={invite.status === 'Accepted' ? 'default' : 'secondary'}>
+                      {invite.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {invite.emailSent ? (
+                      <Badge variant="outline" className="text-green-700 border-green-200 bg-green-50 font-bold">Sent</Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-amber-700 border-amber-200 bg-amber-50">Pending</Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      {invite.status === 'Pending' && (
+                        <Button variant="outline" size="sm" onClick={() => handleResend(invite)} title="Resend invitation email" disabled={sendingFor === invite.id}>
+                          {sendingFor === invite.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4 text-primary" />}
+                        </Button>
+                      )}
+                      <Button variant="outline" size="sm" onClick={() => copyInviteLink(invite.id)} title="Copy invite link">
+                        {copiedId === invite.id ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+                      </Button>
+                      {/* Nothing to revoke once it has been accepted — the person
+                          has an account. Their access is managed above. */}
+                      {invite.status !== 'Accepted' && (
+                        <RevokeInviteButton email={invite.email} onConfirm={() => deleteInvite(invite.id)} />
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </div>
   );
 }

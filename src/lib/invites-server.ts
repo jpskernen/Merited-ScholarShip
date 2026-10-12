@@ -13,6 +13,7 @@ import { sendInvitationEmail } from '@/app/lib/notifications';
 import { appLink } from './app-url';
 import { profileRoleFor, requireUser, setUserClaims, type Caller } from './auth-server';
 import { staffEligibilityError, type StaffRole } from './staff-eligibility';
+import { writeAudit } from './audit';
 
 export type InviteKind = 'reviewer' | 'admin';
 
@@ -27,6 +28,8 @@ const PATH: Record<InviteKind, string> = { reviewer: '/reviewer/invite/', admin:
 
 /** A refusal whose message is safe to show to the person sending or accepting the invite. */
 export class StaffEligibilityError extends Error {}
+
+export class InviteError extends Error {}
 
 /**
  * One email, one account, one organization, one role (docs/07 D1, backlog S-6).
@@ -106,7 +109,13 @@ export async function createInviteFor(inviter: Caller & { orgId: string }, kind:
   const db = getAdminDb();
   const pending = await db.collection(COLLECTION[kind])
     .where('email', '==', email).where('status', '==', 'Pending').limit(1).get();
-  if (!pending.empty) throw new Error('There is already a pending invitation for this email.');
+  if (!pending.empty) {
+    const existing = pending.docs[0];
+    if (!inviteExpired(existing.data())) {
+      throw new InviteError('There is already a pending invitation for this email. Resend it instead, or revoke it first.');
+    }
+    await existing.ref.update({ status: 'Expired', expiredAt: FieldValue.serverTimestamp() });
+  }
   await assertCanJoinAsStaff(email, inviter.orgId, ROLE[kind]);
 
   const expiresAt = new Date(Date.now() + INVITE_DAYS * 24 * 60 * 60 * 1000);
@@ -121,18 +130,72 @@ export async function createInviteFor(inviter: Caller & { orgId: string }, kind:
     createdBy: inviter.uid,
     expiresAt,
   });
-  return { inviteId: ref.id, ...(await sendInvite(kind, ref.id, email, inviter.orgId)) };
+  const sent = await sendInvite(kind, ref.id, email, inviter.orgId);
+  await writeAudit({
+    organizationId: inviter.orgId,
+    action: 'Staff invited',
+    actorId: inviter.uid,
+    actorName: inviter.email,
+    targetId: ref.id,
+    targetType: 'invite',
+    subject: email,
+    details: { role: ROLE[kind], emailSent: sent.emailSent },
+  });
+  return { inviteId: ref.id, ...sent };
 }
 
 /** Re-sends an existing Pending invite from the inviter's own organization. */
 export async function resendInviteFor(inviter: Caller & { orgId: string }, kind: InviteKind, inviteId: string) {
-  const snap = await getAdminDb().collection(COLLECTION[kind]).doc(inviteId).get();
+  const ref = getAdminDb().collection(COLLECTION[kind]).doc(inviteId);
+  const snap = await ref.get();
   const invite = snap.data();
-  if (!invite || (invite.organizationId || invite.schoolId) !== inviter.orgId) throw new Error('Invitation not found.');
-  if (invite.status !== 'Pending') throw new Error('This invitation has already been used.');
+  if (!invite || (invite.organizationId || invite.schoolId) !== inviter.orgId) throw new InviteError('Invitation not found.');
+  if (invite.status === 'Accepted') throw new InviteError('This invitation has already been accepted.');
+  if (invite.status !== 'Pending' && invite.status !== 'Expired') throw new InviteError('This invitation can no longer be sent.');
   // The email may have been registered since the invite was created.
   await assertCanJoinAsStaff(invite.email, inviter.orgId, ROLE[kind]);
-  return sendInvite(kind, inviteId, invite.email, inviter.orgId);
+
+  await ref.update({
+    status: 'Pending',
+    expiresAt: new Date(Date.now() + INVITE_DAYS * 24 * 60 * 60 * 1000),
+    expiredAt: FieldValue.delete(),
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+  const sent = await sendInvite(kind, inviteId, invite.email, inviter.orgId);
+  await writeAudit({
+    organizationId: inviter.orgId,
+    action: 'Staff invitation resent',
+    actorId: inviter.uid,
+    actorName: inviter.email,
+    targetId: inviteId,
+    targetType: 'invite',
+    subject: invite.email,
+    details: { role: ROLE[kind], emailSent: sent.emailSent },
+  });
+  return sent;
+}
+
+export async function revokeInviteFor(caller: Caller & { orgId: string }, kind: InviteKind, inviteId: string) {
+  const ref = getAdminDb().collection(COLLECTION[kind]).doc(inviteId);
+  const snap = await ref.get();
+  const invite = snap.data();
+  if (!invite || (invite.organizationId || invite.schoolId) !== caller.orgId) throw new InviteError('Invitation not found.');
+  if (invite.status === 'Accepted') {
+    throw new InviteError('This invitation has already been accepted, so revoking it would change nothing. Remove the person\'s access instead.');
+  }
+
+  await ref.delete();
+  await writeAudit({
+    organizationId: caller.orgId,
+    action: 'Staff invitation revoked',
+    actorId: caller.uid,
+    actorName: caller.email,
+    targetId: inviteId,
+    targetType: 'invite',
+    subject: invite.email,
+    details: { role: ROLE[kind], status: invite.status ?? null },
+  });
+  return { revoked: true as const };
 }
 
 function inviteExpired(invite: FirebaseFirestore.DocumentData): boolean {
@@ -163,8 +226,10 @@ export async function acceptInviteAs(
   const invite = (await inviteRef.get()).data();
 
   if (!invite) return { success: false, code: 'invalid', error: 'This invitation link is not valid.' };
+  if (invite.status === 'Expired' || inviteExpired(invite)) {
+    return { success: false, code: 'expired', error: 'This invitation has expired. Ask your administrator to send a new one.' };
+  }
   if (invite.status !== 'Pending') return { success: false, code: 'used', error: 'This invitation has already been used. Please sign in instead.' };
-  if (inviteExpired(invite)) return { success: false, code: 'expired', error: 'This invitation has expired. Ask your administrator to send a new one.' };
 
   const orgId: string | undefined = invite.organizationId || invite.schoolId;
   if (!orgId) return { success: false, code: 'invalid', error: 'This invitation is not linked to an organization.' };
@@ -235,5 +300,26 @@ export async function acceptInviteAs(
   await batch.commit();
 
   await setUserClaims(uid, { orgId, role });
+
+  await writeAudit({
+    organizationId: orgId,
+    action: 'Staff invitation accepted',
+    actorId: uid,
+    actorName: name || email,
+    targetId: inviteId,
+    targetType: 'invite',
+    subject: email,
+    details: { role, newAccount: isNew },
+  });
+  await writeAudit({
+    organizationId: orgId,
+    action: 'Role granted',
+    actorId: uid,
+    actorName: name || email,
+    targetId: uid,
+    targetType: 'user',
+    subject: email,
+    details: { role, grantedBy: 'invitation', inviteId },
+  });
   return { success: true, email };
 }

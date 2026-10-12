@@ -1,12 +1,4 @@
-// src/lib/org.ts
-//
-// Organization (tenant) helpers that are safe to use in both client and server
-// code. Design: docs/07-ARCHITECTURE-multi-tenant-compliance.md §3-4.
-//
-// Server-only reads (getOrgSettings) live in ./org-server so this file never
-// pulls the Admin SDK into the browser bundle.
 
-/** Self-service settings stored at organizations/{orgId}/config/settings. */
 export type OrgSettings = {
   branding: {
     displayName: string;
@@ -22,8 +14,7 @@ export type OrgSettings = {
     name: string;
     criteria: { id: string; label: string; description?: string; weight: number }[];
   }[];
-  // null = not yet agreed with the client (docs/07 Q3). Nothing is deleted
-  // automatically while a value is null.
+
   retention: {
     draftInactiveMonths: number | null;
     decidedApplicationMonths: number | null;
@@ -37,7 +28,7 @@ export type OrgSettings = {
   };
 };
 
-/** Defaults written when an organization is created. Mirrors the default rubric in src/types/scholarship.ts. */
+
 export const DEFAULT_ORG_SETTINGS: OrgSettings = {
   branding: { displayName: '', logoPath: null, primaryColor: null },
   email: { senderName: null, replyTo: null },
@@ -58,19 +49,12 @@ export const DEFAULT_ORG_SETTINGS: OrgSettings = {
   features: { recommendationsRequired: true, maxRecommenders: 2, aiFitAnalysis: false },
 };
 
-/**
- * The organization a signed-in user belongs to, read from their user document.
- * `schoolId` is the legacy name for the same value. Returns null instead of
- * guessing: callers must not fall back to a hardcoded organization.
- */
+
 export function orgIdOf(userData: { organizationId?: string | null; schoolId?: string | null } | null | undefined): string | null {
   return userData?.organizationId || userData?.schoolId || null;
 }
 
-/**
- * The organization new applicant accounts join, until per-organization signup
- * links exist (docs/08 runbook 2.5). Configured per environment, never hardcoded.
- */
+
 export function getDefaultOrgId(): string {
   const orgId = process.env.NEXT_PUBLIC_DEFAULT_ORG_ID;
   if (!orgId) {

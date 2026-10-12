@@ -9,12 +9,13 @@ import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { useCollection, useFirebase, useMemoFirebase } from '@/firebase';
-import { collection, deleteDoc, doc, query, where } from 'firebase/firestore';
+import { collection, query, where } from 'firebase/firestore';
 import { UserPlus, Copy, Check, ShieldAlert, Loader2, Send } from 'lucide-react';
 import { RevokeInviteButton } from '@/components/shared/RevokeInviteButton';
 import { useToast } from '@/hooks/use-toast';
 import { orgIdOf } from '@/lib/org';
-import { createInvite, resendInvite } from '@/app/admin/invite-actions';
+import { createInvite, resendInvite, revokeInvite } from '@/app/admin/invite-actions';
+import { StaffAccessCard } from '@/components/shared/StaffAccessCard';
 
 // Invitations carry no password and are not written by AI (docs/07 §5.3): the
 // server creates the invite and emails a fixed message with the link, and the
@@ -91,12 +92,16 @@ export default function ManageAdminsPage() {
   };
 
   const deleteInvite = async (id: string) => {
-    if (!firestore) return;
+    if (!user) return;
     try {
-      await deleteDoc(doc(firestore, 'admin_invites', id));
-      toast({ title: "Deleted", description: "Invitation revoked." });
+      const result = await revokeInvite(await user.getIdToken(), 'admin', id);
+      if (!result.success) {
+        toast({ title: "Could not revoke", description: result.error, variant: "destructive" });
+        return;
+      }
+      toast({ title: "Revoked", description: "The invitation link no longer works." });
     } catch (error) {
-      toast({ title: "Error", description: "Failed to revoke invitation.", variant: "destructive" });
+      toast({ title: "Error", description: "The invitation could not be revoked. Please try again.", variant: "destructive" });
     }
   };
 
@@ -140,6 +145,15 @@ export default function ManageAdminsPage() {
 
       </Card>
 
+      <StaffAccessCard kind="admin" />
+
+      <div className="space-y-2">
+        <h2 className="text-lg font-bold">Invitations</h2>
+        <p className="text-sm text-muted-foreground">
+          Links that have been sent. Accepting one puts the person in the list above.
+        </p>
+      </div>
+
       <div className="rounded-lg border bg-card shadow-sm">
         <Table>
           <TableHeader>
@@ -179,7 +193,11 @@ export default function ManageAdminsPage() {
                   <Button variant="outline" size="sm" onClick={() => copyInviteLink(invite.id)} title="Copy Onboarding Link">
                     {copiedId === invite.id ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
                   </Button>
-                  <RevokeInviteButton email={invite.email} onConfirm={() => deleteInvite(invite.id)} />
+                  {/* Nothing to revoke once it has been accepted — the person
+                      has an account. Their access is managed above. */}
+                  {invite.status !== 'Accepted' && (
+                    <RevokeInviteButton email={invite.email} onConfirm={() => deleteInvite(invite.id)} />
+                  )}
                 </TableCell>
               </TableRow>
             ))}

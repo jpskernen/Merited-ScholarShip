@@ -11,7 +11,8 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test:rules": "firebase emulators:exec --only firestore --project demo-merited-rules \"node --test --test-reporter=spec tests/rules/firestore.rules.test.mjs\"",
-    "test:unit": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test --test-reporter=spec tests/unit/staff-eligibility.test.mjs"
+    "test:unit": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test --test-reporter=spec tests/unit/staff-eligibility.test.mjs",
+    "test:storage": "firebase emulators:exec --only storage --project demo-merited-rules \"node --test --test-reporter=spec tests/rules/storage.rules.test.mjs\""
   },
   "dependencies": {
     "@genkit-ai/googleai": "^1.14.1",

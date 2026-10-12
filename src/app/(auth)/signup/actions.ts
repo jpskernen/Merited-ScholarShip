@@ -4,25 +4,26 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { getAdminAuth, getAdminDb } from '@/firebase/admin';
 import { requireUser, setUserClaims } from '@/lib/auth-server';
 import { sendWelcomeEmail } from '@/app/lib/notifications';
+import { getActiveOrganization } from '@/lib/org-server';
 
-/**
- * Finishes a new student account (docs/07 §3.2):
- *  - gives it the applicant role in the default organization. Never changes an
- *    account that already has a role, so it can't be used to switch roles or
- *    organizations;
- *  - sends the welcome email once, to the account's own login address.
- */
-export async function completeSignup(idToken: string) {
+
+export async function completeSignup(idToken: string, requestedOrgId?: string | null) {
   try {
     const caller = await requireUser(idToken);
 
     const userRef = getAdminDb().collection('users').doc(caller.uid);
 
     if (!caller.role) {
-      const orgId = process.env.NEXT_PUBLIC_DEFAULT_ORG_ID;
+      let orgId: string | null = null;
+      if (requestedOrgId) {
+        const org = await getActiveOrganization(requestedOrgId);
+        orgId = org?.id ?? null;
+      }
+      if (!orgId) orgId = process.env.NEXT_PUBLIC_DEFAULT_ORG_ID ?? null;
       if (!orgId) throw new Error('NEXT_PUBLIC_DEFAULT_ORG_ID is not set.');
+
       await setUserClaims(caller.uid, { orgId, role: 'applicant' });
-      // The browser can't write these fields (firestore.rules, users).
+      
       await userRef.set({
         id: caller.uid,
         role: 'applicant',

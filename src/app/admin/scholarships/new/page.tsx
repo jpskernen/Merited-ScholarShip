@@ -3,12 +3,12 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useFirebase, useUser } from '@/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { useForm, useFieldArray } from 'react-hook-form';
+import { useUser } from '@/firebase';
+import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ScholarshipSchema, type Scholarship } from '@/types/scholarship';
 import { Button } from '@/components/ui/button';
+import { DatePickerField } from '@/components/shared/DatePickerField';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -18,10 +18,11 @@ import { ChevronLeft, Loader2, Plus, Trash2, Calculator, FileText } from 'lucide
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { orgIdOf } from '@/lib/org';
+import { saveScholarship } from '@/app/admin/scholarship-actions';
+import { rubricWeightTotal, validateRubric } from '@/lib/rubric';
 
 export default function NewScholarshipPage() {
-  const { firestore } = useFirebase();
-  const { userData } = useUser();
+  const { user, userData } = useUser();
   const router = useRouter();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -60,33 +61,38 @@ export default function NewScholarshipPage() {
   });
 
   const currentRubric = watch('rubric') || [];
-  const totalWeight = currentRubric.reduce((acc, curr) => acc + (Number(curr.weight) || 0), 0);
+  const totalWeight = rubricWeightTotal(currentRubric as any);
 
   const onSubmit = async (data: Scholarship) => {
-    if (!firestore) return;
+    if (!user) return;
     if (!organizationId) {
       toast({ title: "No organization", description: "Your account is not linked to an organization, so the scholarship cannot be created.", variant: "destructive" });
       return;
     }
-    if (totalWeight !== 100) {
-      toast({ title: "Invalid Rubric", description: `Total weight must be 100%. Currently ${totalWeight}%`, variant: "destructive" });
+
+    const rubricCheck = validateRubric(data.rubric as any);
+    if (!rubricCheck.ok) {
+      toast({ title: 'Invalid Rubric', description: rubricCheck.error, variant: 'destructive' });
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const scholarshipData = {
-        ...data,
-        organizationId: organizationId,
-        schoolId: organizationId,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      };
+      const result = await saveScholarship(await user.getIdToken(), {
+        name: data.name,
+        amount: data.amount,
+        deadline: data.deadline,
+        description: data.description,
+        tags: data.tags as any,
+        rubric: data.rubric as any,
+        prompts: data.prompts,
+      });
 
-      // programs/ is the only copy. The duplicate under
-      // organizations/{orgId}/scholarships was never read and is no longer
-      // writable (docs/07 §3.3).
-      await addDoc(collection(firestore, 'programs'), scholarshipData);
+      if (!result.success) {
+        toast({ title: 'Could not create the program', description: result.error, variant: 'destructive' });
+        setIsSubmitting(false);
+        return;
+      }
 
       toast({ title: "Scholarship Published", description: "Program is now live for applicants." });
       router.push('/admin/scholarships');
@@ -127,10 +133,20 @@ export default function NewScholarshipPage() {
                 {errors.amount && <p className="text-xs text-destructive">{errors.amount.message}</p>}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="deadline">Deadline Description</Label>
-                <Input id="deadline" {...register('deadline')} placeholder="June 30th" />
+                <Label htmlFor="deadline">Deadline</Label>
+                <Controller
+                  name="deadline"
+                  control={control}
+                  render={({ field }) => (
+                    <DatePickerField id="deadline" value={field.value} onChange={field.onChange} />
+                  )}
+                />
                 {errors.deadline && <p className="text-xs text-destructive">{errors.deadline.message}</p>}
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="tags">Focus Area Tags (Comma Separated)</Label>
+              <Input id="tags" {...register('tags')} placeholder="Academics, Merit" />
             </div>
             <div className="space-y-2">
               <Label htmlFor="description">Full Description</Label>

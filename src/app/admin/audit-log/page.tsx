@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Table,
   TableBody,
@@ -33,7 +33,7 @@ export default function AuditLogPage() {
   const orgId = orgIdOf(userData);
   
   const [logs, setLogs] = useState<any[]>([]);
-  const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const lastDoc = useRef<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -51,8 +51,8 @@ export default function AuditLogPage() {
       const ownOrg = where('organizationId', '==', orgId);
       let q = query(logsRef, ownOrg, orderBy('timestamp', 'desc'), limit(PAGE_SIZE));
 
-      if (!isInitial && lastDoc) {
-        q = query(logsRef, ownOrg, orderBy('timestamp', 'desc'), startAfter(lastDoc), limit(PAGE_SIZE));
+      if (!isInitial && lastDoc.current) {
+        q = query(logsRef, ownOrg, orderBy('timestamp', 'desc'), startAfter(lastDoc.current), limit(PAGE_SIZE));
       }
 
       const snapshot = await getDocs(q);
@@ -68,7 +68,7 @@ export default function AuditLogPage() {
         setLogs(prev => [...prev, ...newLogs]);
       }
 
-      setLastDoc(snapshot.docs[snapshot.docs.length - 1] || null);
+      lastDoc.current = snapshot.docs[snapshot.docs.length - 1] || null;
       setHasMore(snapshot.docs.length === PAGE_SIZE);
 
     } catch (err: any) {
@@ -82,11 +82,18 @@ export default function AuditLogPage() {
       setIsLoading(false);
       setIsLoadingMore(false);
     }
-  }, [firestore, lastDoc, toast]);
+  }, [firestore, orgId, toast]);
 
   useEffect(() => {
+    if (!firestore) return;
+    if (!orgId) {
+      setLogs([]);
+      setHasMore(false);
+      setIsLoading(false);
+      return;
+    }
     fetchLogs(true);
-  }, [fetchLogs]);
+  }, [firestore, orgId, fetchLogs]);
 
   if (isLoading) {
     return (
@@ -143,8 +150,16 @@ export default function AuditLogPage() {
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-col">
-                    <span className="text-sm font-medium">{log.affectedStudent || 'Application Record'}</span>
+                    <span className="text-sm font-medium">{log.affectedStudent || log.targetType || 'Record'}</span>
                     <span className="text-[10px] text-muted-foreground font-mono">{log.targetId}</span>
+                    {log.details && Object.keys(log.details).length > 0 && (
+                      <span className="text-[10px] text-muted-foreground">
+                        {Object.entries(log.details)
+                          .filter(([, value]) => value !== null && value !== '')
+                          .map(([key, value]) => `${key}: ${value}`)
+                          .join(' · ')}
+                      </span>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>
@@ -154,7 +169,9 @@ export default function AuditLogPage() {
         
         {logs.length === 0 && (
           <div className="text-center py-20 text-muted-foreground italic">
-            No audit records found in the current history.
+            {orgId
+              ? 'No audit records yet. Submissions, decisions, invitations and scholarship changes are recorded here as they happen.'
+              : 'Your account is not linked to an organization, so there is no history to show.'}
           </div>
         )}
       </div>

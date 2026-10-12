@@ -11,11 +11,11 @@ import {
 } from '@/components/ui/card';
 import { AppLogo } from '@/components/shared/AppLogo';
 import { Badge } from '@/components/ui/badge';
-import { FileText, CheckCircle, Search, ArrowRight, Loader2, AlertCircle, LayoutDashboard } from 'lucide-react';
+import { Building2, FileText, CheckCircle, Search, ArrowRight, Loader2, AlertCircle, LayoutDashboard } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
-import { useCollection, useFirebase, useMemoFirebase, useUser } from '@/firebase';
-import { collection, query, where } from 'firebase/firestore';
-import type { Scholarship } from '@/types/scholarship';
+import { useFirebase, useUser } from '@/firebase';
+import { getAllPublicScholarships, type PublicScholarshipWithOrg } from '@/app/org-actions';
+import { formatDeadline } from '@/lib/deadline';
 
 // How many programs the landing page shows before the "View All" CTA has
 // anything left to show.
@@ -23,7 +23,7 @@ const VISIBLE_PROGRAMS = 6;
 
 export default function Home() {
   const [mounted, setMounted] = useState(false);
-  const { firestore, areServicesAvailable } = useFirebase();
+  const { areServicesAvailable } = useFirebase();
   const { user, role, isUserLoading } = useUser();
 
   useEffect(() => {
@@ -51,25 +51,39 @@ export default function Home() {
     return false;
   }, [mounted, areServicesAvailable]);
 
-  // Only the default organization's scholarships are public (docs/07 D7);
-  // the rules refuse an unfiltered query.
-  const scholarshipsQuery = useMemoFirebase(() => {
-    const defaultOrgId = process.env.NEXT_PUBLIC_DEFAULT_ORG_ID;
-    if (!firestore || !defaultOrgId) return null;
-    return query(collection(firestore, 'programs'), where('organizationId', '==', defaultOrgId));
-  }, [firestore]);
+  // Every active organization's scholarships are public here (not just one
+  // hardcoded default) now that /organizations and /org/[orgId] let a visitor
+  // reach any organization directly — a trimmed, public-safe server action
+  // (org-actions.ts), since Firestore rules intentionally don't allow listing
+  // `programs` across organizations from the client.
+  const [scholarships, setScholarships] = useState<PublicScholarshipWithOrg[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const { data: dbScholarships, isLoading } = useCollection<Scholarship>(scholarshipsQuery);
+  useEffect(() => {
+    let cancelled = false;
+    getAllPublicScholarships().then((list) => {
+      if (!cancelled) {
+        setScholarships(list);
+        setIsLoading(false);
+      }
+    });
+    return () => { cancelled = true; };
+  }, []);
 
-  // No static fallback. The bundled sample programs used to render here
-  // whenever `programs` was empty, which showed visitors six awards that do not
-  // exist. An empty list now falls through to the empty state in the
-  // #scholarships section below. Still gated on `mounted` to keep the server
-  // and first client render identical.
-  const scholarships = useMemo(() => {
-    if (!mounted) return [];
-    return dbScholarships ?? [];
-  }, [dbScholarships, mounted]);
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
+
+  const allTags = useMemo(() => {
+    const tags = new Set<string>();
+    scholarships.forEach((s) => Array.isArray(s.tags) && s.tags.forEach((t) => tags.add(t)));
+    return Array.from(tags).sort();
+  }, [scholarships]);
+
+  const filteredScholarships = useMemo(() => {
+    if (!selectedTag) return scholarships;
+    return scholarships.filter((s) => Array.isArray(s.tags) && s.tags.includes(selectedTag));
+  }, [scholarships, selectedTag]);
+
+  const toggleTag = (tag: string) => setSelectedTag((current) => (current === tag ? null : tag));
 
   const dashboardLink = useMemo(() => {
     if (!user) return '/login';
@@ -113,11 +127,17 @@ export default function Home() {
             ) : (
               <>
                 <Button variant="ghost" asChild>
+                  <Link href="/organizations">Browse Organizations</Link>
+                </Button>
+
+                <Button variant="ghost" asChild>
                   <Link href="/login">Log In</Link>
                 </Button>
+
                 <Button asChild>
                   <Link href="/signup">Sign Up</Link>
                 </Button>
+
               </>
             )}
           </nav>
@@ -125,6 +145,7 @@ export default function Home() {
       </header>
 
       <main className="flex-1">
+        
         {showConfigWarning && (
           <div className="bg-amber-500/10 border-b border-amber-500/20 py-2">
             <div className="container mx-auto px-4 flex items-center gap-2 text-amber-600 text-xs font-medium">
@@ -142,9 +163,9 @@ export default function Home() {
             <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground md:text-xl">
               Apply for scholarships, track your progress, and connect with academic opportunities designed to fuel your future.
             </p>
-            <div className="mt-10 flex justify-center gap-4">
+            <div className="mt-10 flex flex-wrap justify-center gap-4">
               <Button size="lg" asChild className="rounded-full px-8">
-                <Link href="#scholarships">Browse Scholarships</Link>
+                <Link href="/organizations">Find Your Organization</Link>
               </Button>
               {mounted && user ? (
                 <Button size="lg" variant="outline" asChild className="rounded-full px-8">
@@ -170,6 +191,28 @@ export default function Home() {
               </p>
             </div>
             
+            {allTags.length > 0 && (
+              <div className="flex flex-wrap justify-center gap-2 mb-8">
+                <Badge
+                  variant={selectedTag === null ? 'default' : 'outline'}
+                  className="cursor-pointer text-[10px] uppercase tracking-widest px-2 py-0.5 font-bold"
+                  onClick={() => setSelectedTag(null)}
+                >
+                  All
+                </Badge>
+                {allTags.map((tag) => (
+                  <Badge
+                    key={tag}
+                    variant={selectedTag === tag ? 'default' : 'outline'}
+                    className="cursor-pointer text-[10px] uppercase tracking-widest px-2 py-0.5 font-bold"
+                    onClick={() => toggleTag(tag)}
+                  >
+                    {tag}
+                  </Badge>
+                ))}
+              </div>
+            )}
+
             {isLoading ? (
               <div className="flex justify-center py-20">
                 <Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" />
@@ -183,14 +226,26 @@ export default function Home() {
                   posted here as they open — create an account to be ready when they do.
                 </p>
               </div>
+            ) : filteredScholarships.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 bg-muted/10 rounded-2xl border-2 border-dashed">
+                <Search className="h-12 w-12 text-muted-foreground mb-4 opacity-20" />
+                <p className="text-lg font-bold text-muted-foreground">No Matches for &ldquo;{selectedTag}&rdquo;</p>
+                <Button variant="link" onClick={() => setSelectedTag(null)} className="mt-1">Clear filter</Button>
+              </div>
             ) : (
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {scholarships.slice(0, VISIBLE_PROGRAMS).map((scholarship) => (
+                {filteredScholarships.slice(0, VISIBLE_PROGRAMS).map((scholarship) => (
                   <Card key={scholarship.id} className="flex flex-col border-primary/10 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md">
                     <CardHeader>
                       <div className="flex justify-between items-start gap-2">
                         <div className="flex-1">
-                          <CardTitle className="text-xl leading-tight">{scholarship.name}</CardTitle>
+                          <Link
+                            href={`/org/${encodeURIComponent(scholarship.organizationId)}`}
+                            className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:text-primary"
+                          >
+                            <Building2 className="h-3 w-3" /> {scholarship.organizationName}
+                          </Link>
+                          <CardTitle className="text-xl leading-tight mt-1">{scholarship.name}</CardTitle>
                         </div>
                         <Badge variant="secondary" className="whitespace-nowrap bg-primary/10 text-primary border-none">{scholarship.amount}</Badge>
                       </div>
@@ -201,7 +256,12 @@ export default function Home() {
                       </p>
                       <div className="flex flex-wrap gap-2">
                         {Array.isArray(scholarship.tags) && scholarship.tags.map(tag => (
-                          <Badge key={tag} variant="outline" className="text-[10px] uppercase tracking-widest px-2 py-0 font-bold">
+                          <Badge
+                            key={tag}
+                            variant={selectedTag === tag ? 'default' : 'outline'}
+                            className="cursor-pointer text-[10px] uppercase tracking-widest px-2 py-0 font-bold"
+                            onClick={() => toggleTag(tag)}
+                          >
                             {tag}
                           </Badge>
                         ))}
@@ -210,10 +270,10 @@ export default function Home() {
                     <CardFooter className="flex justify-between items-center border-t pt-4">
                       <div className="text-xs text-muted-foreground">
                         <p className="font-black text-foreground uppercase tracking-tighter">Deadline</p>
-                        <p>{scholarship.deadline}</p>
+                        <p>{formatDeadline(scholarship.deadline)}</p>
                       </div>
                       <Button asChild size="sm" variant="ghost" className="text-primary font-bold hover:bg-primary/5">
-                        <Link href={mounted && user ? dashboardLink : '/signup'}>
+                        <Link href={mounted && user ? dashboardLink : `/signup?org=${encodeURIComponent(scholarship.organizationId)}`}>
                           Apply <ArrowRight className="ml-1 h-4 w-4" />
                         </Link>
                       </Button>
@@ -227,7 +287,7 @@ export default function Home() {
                 reveal: no programs at all makes it contradict itself, and with
                 everything already on screen it leads nowhere new. The hero keeps
                 its own sign-up call to action. */}
-            {scholarships.length > VISIBLE_PROGRAMS && (
+            {filteredScholarships.length > VISIBLE_PROGRAMS && (
               <div className="mt-12 text-center">
                 <Button variant="outline" size="lg" asChild className="rounded-full font-bold px-10">
                   <Link href={mounted && user ? dashboardLink : '/signup'}>View All Opportunities</Link>

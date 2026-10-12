@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   Table,
   TableBody,
@@ -39,15 +40,26 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { useFirebase, useUser } from '@/firebase';
-import { collection, doc, updateDoc, collectionGroup, query, where, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { collection, collectionGroup, query, where, onSnapshot } from 'firebase/firestore';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import Papa from 'papaparse';
-import { notifyStatusChange } from '@/app/admin/notify-actions';
+import { recordDecisions, type Decision } from '@/app/admin/decision-actions';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
 import { orgIdOf } from '@/lib/org';
 
-export default function AdminApplicantsPage() {
+function AdminApplicantsBoard() {
+  const searchParams = useSearchParams();
   const { firestore } = useFirebase();
   const { user, userData, isUserLoading } = useUser();
   const { toast } = useToast();
@@ -56,7 +68,8 @@ export default function AdminApplicantsPage() {
   const [scholarshipApplications, setScholarshipApplications] = useState<any[]>([]);
   const [allReviews, setAllReviews] = useState<any[]>([]);
   const [isDataLoading, setIsDataLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>(() => searchParams.get('status')?.toLowerCase() || 'all');
+  const [scholarshipFilter, setScholarshipFilter] = useState<string>(() => searchParams.get('scholarship') || 'all');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -64,6 +77,7 @@ export default function AdminApplicantsPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkStatus, setBulkStatus] = useState<string>('');
   const [isBulkUpdating, setIsBulkUpdating] = useState(false);
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
 
   const schoolId = orgIdOf(userData);
 
@@ -129,13 +143,13 @@ export default function AdminApplicantsPage() {
   // per-application badges and a global users/{uid}.status that matched neither.
   // Awards are granted per scholarship, so the row the admin ticks has to be
   // the thing the award applies to.
-  const tableData = useMemo(() => {
+  const allRows = useMemo(() => {
     // Reviews are stored under the application they score. Reviews filed before
     // the reviewer migration sit under the student instead, so the key can be
     // either — an application row looks for its own reviews, and a student with
     // no application record still shows the legacy ones.
     const statsFor = (key: string) => {
-      const reviews = allReviews.filter(r => r.applicationId === key);
+      const reviews = allReviews.filter(r => r.applicationId === key && r.status !== 'Draft');
       const reviewCount = reviews.length;
       const totalScore = reviews.reduce((acc, r) => acc + (r.totalScore || 0), 0);
       const averageScore = reviewCount > 0 ? totalScore / reviewCount : 0;
@@ -170,6 +184,7 @@ export default function AdminApplicantsPage() {
           ...statsFor(applicant.id),
           rowId: applicant.id,
           applicationId: null,
+          scholarshipId: null,
           scholarshipName: null,
           applicationStatus: applicant.status,
         }];
@@ -184,13 +199,32 @@ export default function AdminApplicantsPage() {
           ...statsFor(application.id),
           rowId: application.id,
           applicationId: application.id,
+          scholarshipId: application.scholarshipId || null,
           scholarshipName: application.scholarshipName,
           applicationStatus: application.status,
         }));
     });
 
+    return data;
+  }, [applications, allReviews, applicationsByStudent]);
+
+  const scholarshipOptions = useMemo(() => {
+    const byId = new Map<string, string>();
+    allRows.forEach((row: any) => {
+      if (row.scholarshipId) byId.set(row.scholarshipId, row.scholarshipName || 'Scholarship');
+    });
+    return Array.from(byId, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [allRows]);
+
+  const tableData = useMemo(() => {
+    let data = allRows;
+
     if (statusFilter !== 'all') {
       data = data.filter(item => item.applicationStatus?.toLowerCase() === statusFilter.toLowerCase());
+    }
+
+    if (scholarshipFilter !== 'all') {
+      data = data.filter(item => item.scholarshipId === scholarshipFilter);
     }
 
     const term = search.trim().toLowerCase();
@@ -202,7 +236,17 @@ export default function AdminApplicantsPage() {
     }
 
     return data;
-  }, [applications, allReviews, statusFilter, applicationsByStudent, search]);
+  }, [allRows, statusFilter, scholarshipFilter, search]);
+
+  const selectedRows = useMemo(
+    () => allRows.filter(row => selectedIds.includes(row.rowId)),
+    [allRows, selectedIds],
+  );
+
+  const hiddenSelectedCount = useMemo(
+    () => selectedRows.filter(row => !tableData.some(visible => visible.rowId === row.rowId)).length,
+    [selectedRows, tableData],
+  );
 
   // Filtering can shrink the list under the current page, so clamp rather than
   // stranding the admin on an empty page with no obvious way back.
@@ -214,7 +258,7 @@ export default function AdminApplicantsPage() {
     [tableData, currentPage, pageSize],
   );
 
-  useEffect(() => { setPage(1); }, [search, statusFilter, pageSize]);
+  useEffect(() => { setPage(1); }, [search, statusFilter, scholarshipFilter, pageSize]);
 
   const allOnPageSelected = pagedData.length > 0 && pagedData.every(row => selectedIds.includes(row.rowId));
 
@@ -226,49 +270,39 @@ export default function AdminApplicantsPage() {
   };
 
   const handleBulkUpdate = async () => {
-    if (!firestore || !user || !bulkStatus || selectedIds.length === 0) return;
+    if (!user || !bulkStatus || selectedRows.length === 0) return;
+    setIsConfirmOpen(false);
     setIsBulkUpdating(true);
     try {
-      const selectedRows = tableData.filter(row => selectedIds.includes(row.rowId));
-      const idToken = await user.getIdToken();
-      let emailFailures = 0;
-
-      const promises = selectedRows.map(async row => {
-        if (row.applicationId) {
-          // The decision belongs to the application, so awarding one scholarship
-          // no longer marks the student as awarded everywhere.
-          await updateDoc(doc(firestore, 'applications', row.applicationId), {
-            status: bulkStatus,
-            updatedAt: serverTimestamp()
-          });
-        }
-
-        // The reviewer queue and the legacy mirror still read users/{uid}.status,
-        // so keep it in step for the application it currently mirrors — and for
-        // students who have no application record yet.
-        if (!row.applicationId || row.legacyMirrorOf === row.applicationId) {
-          await updateDoc(doc(firestore, 'users', row.studentId), {
-            status: bulkStatus,
-            updatedAt: serverTimestamp()
-          });
-        }
-
-        // The server reads the address and the new status itself.
-        const sent = await notifyStatusChange(idToken, { applicationId: row.applicationId || null, studentId: row.studentId });
-        if (!sent.success) emailFailures += 1;
+      const result = await recordDecisions(await user.getIdToken(), {
+        status: bulkStatus as Decision,
+        targets: selectedRows.map(row => ({
+          applicationId: row.applicationId || null,
+          studentId: row.studentId,
+        })),
       });
 
-      await Promise.all(promises);
+      if (!result.success) {
+        toast({ title: 'Decisions not recorded', description: result.error, variant: 'destructive' });
+        return;
+      }
+
+      const parts = [`${result.updated} application(s) set to ${bulkStatus}.`];
+      if (result.emailsSent) parts.push(`${result.emailsSent} applicant(s) notified.`);
+      if (result.emailsFailed) parts.push(`${result.emailsFailed} notification(s) could not be sent.`);
+      if (result.skipped.length) {
+        parts.push(`${result.skipped.length} left unchanged — ${result.skipped[0].reason}${result.skipped.length > 1 ? ', and others' : ''}.`);
+      }
+
       toast({
-        title: "Decisions Recorded",
-        description: emailFailures
-          ? `${selectedRows.length} application(s) updated. ${emailFailures} notification email(s) could not be sent.`
-          : `${selectedRows.length} application(s) updated and applicants notified.`,
+        title: result.updated ? 'Decisions recorded' : 'Nothing to change',
+        description: parts.join(' '),
+        variant: result.updated ? undefined : 'destructive',
       });
       setSelectedIds([]);
       setBulkStatus('');
     } catch (err: any) {
-      toast({ title: "Update Failed", variant: "destructive" });
+      toast({ title: "Update Failed", description: 'The decisions could not be recorded. Please try again.', variant: "destructive" });
     } finally {
       setIsBulkUpdating(false);
     }
@@ -283,7 +317,7 @@ export default function AdminApplicantsPage() {
       'GPA': row.gpa,
       'Scholarship': row.scholarshipName || '',
       'Status': row.applicationStatus,
-      'Avg Score': row.averageScore.toFixed(2),
+      'Avg Score': row.reviewCount === 0 ? '' : row.averageScore.toFixed(2),
       'Reviews': row.reviewCount
     })));
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -315,8 +349,25 @@ export default function AdminApplicantsPage() {
             />
           </div>
           <Button variant="outline" onClick={handleExportCSV}><Download className="mr-2 h-4 w-4" /> Export CSV</Button>
-          <Button variant={statusFilter === 'all' ? 'default' : 'outline'} onClick={() => setStatusFilter('all')}>All</Button>
-          <Button variant={statusFilter === 'submitted' ? 'default' : 'outline'} onClick={() => setStatusFilter('submitted')}>Pending</Button>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="h-10 w-[170px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              <SelectItem value="submitted">Submitted</SelectItem>
+              <SelectItem value="in review">In Review</SelectItem>
+              <SelectItem value="awarded">Awarded</SelectItem>
+              <SelectItem value="not awarded">Not Awarded</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={scholarshipFilter} onValueChange={setScholarshipFilter}>
+            <SelectTrigger className="h-10 w-[200px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All scholarships</SelectItem>
+              {scholarshipOptions.map(option => (
+                <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
@@ -365,16 +416,53 @@ export default function AdminApplicantsPage() {
               <SelectContent>
                 <SelectItem value="Awarded">Grant Award</SelectItem>
                 <SelectItem value="Not Awarded">Deny Application</SelectItem>
-                <SelectItem value="In Review">Move to Panel Discussion</SelectItem>
               </SelectContent>
             </Select>
+            {hiddenSelectedCount > 0 && (
+              <span className="text-xs text-muted-foreground">
+                {hiddenSelectedCount} of these {hiddenSelectedCount === 1 ? 'is' : 'are'} hidden by the current search or filter.
+              </span>
+            )}
           </div>
-          <Button onClick={handleBulkUpdate} disabled={!bulkStatus || isBulkUpdating} className="h-10 font-bold">
+          <Button onClick={() => setIsConfirmOpen(true)} disabled={!bulkStatus || isBulkUpdating} className="h-10 font-bold">
             {isBulkUpdating ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
             Finalize Selections
           </Button>
         </Card>
       )}
+
+      <AlertDialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {bulkStatus === 'Awarded' ? 'Award these applications?' : 'Decline these applications?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>
+                  {selectedRows.length} application{selectedRows.length === 1 ? '' : 's'} will be set to{' '}
+                  <strong>{bulkStatus}</strong>, and each applicant will be emailed once.
+                </p>
+                {hiddenSelectedCount > 0 && (
+                  <p>
+                    {hiddenSelectedCount} of them {hiddenSelectedCount === 1 ? 'is' : 'are'} not currently on screen,
+                    because of the search or status filter. {hiddenSelectedCount === 1 ? 'It is' : 'They are'} included.
+                  </p>
+                )}
+                <p className="text-muted-foreground">
+                  Applications that are still drafts, or already set to {bulkStatus}, are left alone and reported back.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleBulkUpdate}>
+              {bulkStatus === 'Awarded' ? 'Award' : 'Decline'} {selectedRows.length}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       
 
@@ -424,8 +512,8 @@ export default function AdminApplicantsPage() {
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-2">
-                    <span className={cn("text-lg font-black", row.averageScore >= 8 ? "text-green-600" : row.averageScore >= 6 ? "text-primary" : "text-amber-600")}>
-                      {row.averageScore.toFixed(2)}
+                    <span className={cn("text-lg font-black", row.reviewCount === 0 ? "text-muted-foreground" : row.averageScore >= 8 ? "text-green-600" : row.averageScore >= 6 ? "text-primary" : "text-amber-600")}>
+                      {row.reviewCount === 0 ? '—' : row.averageScore.toFixed(2)}
                     </span>
                     {row.hasOutlier && <Badge variant="outline" className="text-[8px] bg-red-50 text-red-600 border-red-200">High Variance</Badge>}
                   </div>
@@ -505,5 +593,12 @@ export default function AdminApplicantsPage() {
       </div>
     </div>
 
+  );
+}
+export default function AdminApplicantsPage() {
+  return (
+    <Suspense fallback={<div className="flex h-64 items-center justify-center"><Loader2 className="animate-spin" /></div>}>
+      <AdminApplicantsBoard />
+    </Suspense>
   );
 }

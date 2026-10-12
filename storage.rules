@@ -1,28 +1,94 @@
-
 rules_version = '2';
 
+// Storage access control (T7).
+//
+// Mirrors the model in firestore.rules: the login token carries
+//   { orgId: string, role: 'org_admin' | 'reviewer' | 'applicant', platformAdmin?: true }
+// and every object lives under the organization that owns it, so a path can
+// only be reached by someone whose `orgId` claim matches the path segment.
+//
+// Layout, keyed by the application the file belongs to:
+//   orgs/{orgId}/applications/{studentId}/{scholarshipId}/documents/{file}  resume, transcript
+//   orgs/{orgId}/applications/{studentId}/{scholarshipId}/essays/{file}     one per essay prompt
+//   orgs/{orgId}/applications/{studentId}/{scholarshipId}/letters/{slot}    recommendation letters
+//
+// Letters have NO client write rule at all. A recommender is never signed in,
+// so their upload goes through the `uploadRecommendationLetter` server action,
+// which runs on the Admin SDK and bypasses these rules after validating the
+// token. That also means letters are stored without a public download token,
+// so the only way to read one is a short-lived signed URL issued by the
+// server to staff — a student who learns the path still gets nothing.
 service firebase.storage {
   match /b/{bucket}/o {
 
-    function isSignedIn() {
+    function signedIn() {
       return request.auth != null;
     }
 
+    function claim(name) {
+      return signedIn() ? request.auth.token.get(name, null) : null;
+    }
+
+    function isPlatformAdmin() {
+      return claim('platformAdmin') == true;
+    }
+
+    function inOrg(orgId) {
+      return orgId != null && claim('orgId') == orgId;
+    }
+
+    function isOrgStaff(orgId) {
+      return isPlatformAdmin()
+        || (inOrg(orgId) && (claim('role') == 'org_admin' || claim('role') == 'reviewer'));
+    }
+
+    function isOwner(orgId, studentId) {
+      return inOrg(orgId) && request.auth.uid == studentId;
+    }
+
+    // Enforced here, not just in the browser: the form checks are a
+    // convenience and can be skipped by calling the SDK directly.
+    function isAllowedUpload() {
+      return request.resource.size > 0
+        && request.resource.size <= 10 * 1024 * 1024
+        && request.resource.contentType == 'application/pdf';
+    }
+
+    match /orgs/{orgId}/applications/{studentId}/{scholarshipId} {
+
+      // The student owns their own supporting documents; staff read them.
+      match /documents/{fileName} {
+        allow read:   if isOwner(orgId, studentId) || isOrgStaff(orgId);
+        allow write:  if isOwner(orgId, studentId) && isAllowedUpload();
+        allow delete: if isOwner(orgId, studentId);
+      }
+
+      match /essays/{fileName} {
+        allow read:   if isOwner(orgId, studentId) || isOrgStaff(orgId);
+        allow write:  if isOwner(orgId, studentId) && isAllowedUpload();
+        allow delete: if isOwner(orgId, studentId);
+      }
+
+      // Confidential. Written only by the server; never readable by the
+      // student the letter is about, which is what the recommender page
+      // promises them.
+      match /letters/{slot} {
+        allow read: if isOrgStaff(orgId);
+      }
+    }
+
+    // ---------------------------------------------------------------------
+    // Legacy paths, pre-T7. Read-only so nothing already uploaded disappears;
+    // no rule grants a write, so the old `allow write: if true` hole is shut.
+    // These are emptied by the migration in task 1.2.
+    // ---------------------------------------------------------------------
+
     match /recommendations/{tokenId} {
-      // Allow internal read for committee, public write for anyone with the token
-      allow read: if isSignedIn();
-      allow write: if true;
+      allow read: if isPlatformAdmin();
     }
 
-    match /applications/{userId}/{allPaths=**} {
-      // Direct UID comparison is the fastest way to verify ownership
-      allow read: if isSignedIn() && (request.auth.uid == userId);
-      allow write: if isSignedIn() && request.auth.uid == userId;
-    }
-
-    match /{userId}/{document=**} {
-      allow read: if isSignedIn() && request.auth.uid == userId;
-      allow write: if isSignedIn() && request.auth.uid == userId;
+    match /applications/{studentId}/{allPaths=**} {
+      allow read: if isPlatformAdmin() || (signedIn() && request.auth.uid == studentId);
     }
   }
 }

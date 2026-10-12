@@ -67,17 +67,15 @@ service cloud.firestore {
 
       allow get: if signedIn() && (
         request.auth.uid == userId ||
-        isOrgStaff(resource.data.organizationId)
+        isOrgAdmin(resource.data.organizationId)
       );
       allow list: if isOrgAdmin(resource.data.organizationId);
       allow create: if signedIn()
         && request.auth.uid == userId
         && !request.resource.data.keys().hasAny(protectedUserFields());
-      allow update: if signedIn() && (
-        (request.auth.uid == userId && !changed().hasAny(protectedUserFields())) ||
-        // The applicants page mirrors the application status onto the profile.
-        (isOrgAdmin(resource.data.organizationId) && changed().hasOnly(['status', 'updatedAt']))
-      );
+      allow update: if signedIn()
+        && request.auth.uid == userId
+        && !changed().hasAny(protectedUserFields());
       allow delete: if false;
     }
 
@@ -109,7 +107,8 @@ service cloud.firestore {
         || isPlatformAdmin();
       allow create: if isOrgAdmin(request.resource.data.organizationId);
       allow update: if isOrgAdmin(resource.data.organizationId)
-        && request.resource.data.organizationId == resource.data.organizationId;
+        && request.resource.data.organizationId == resource.data.organizationId
+        && !changed().hasAny(['rubric']);
       allow delete: if isOrgAdmin(resource.data.organizationId);
     }
 
@@ -123,17 +122,33 @@ service cloud.firestore {
         return ['essay', 'qualificationStatement', 'activities', 'essays', 'updatedAt'];
       }
 
+      function assignedReviewer(application) {
+        return inOrg(application.organizationId)
+          && claim('role') == 'reviewer'
+          && request.auth.uid in programOf(application.scholarshipId).get('reviewerIds', []);
+      }
+
+      function readableByReviewer(application) {
+        return application.status != 'Draft' && assignedReviewer(application);
+      }
+
       // `resource == null` comes first: opening a scholarship the student
       // hasn't applied to yet reads a missing document, and `resource.data`
       // on null would deny the whole read. There is nothing to leak.
       allow get: if signedIn() && (
         resource == null ||
         resource.data.studentId == request.auth.uid ||
-        isOrgStaff(resource.data.organizationId)
+        isOrgAdmin(resource.data.organizationId) ||
+        readableByReviewer(resource.data)
       );
+      // Every document a query returns must pass this on its own, so the
+      // reviewer queue asks for one scholarship at a time with the statuses
+      // spelled out (src/app/(main)/review/page.tsx). A query that reaches
+      // wider is denied rather than silently filtered.
       allow list: if signedIn() && (
         resource.data.studentId == request.auth.uid ||
-        isOrgStaff(resource.data.organizationId)
+        isOrgAdmin(resource.data.organizationId) ||
+        readableByReviewer(resource.data)
       );
 
       // First write to a new application can come from an essay upload. The
@@ -150,19 +165,10 @@ service cloud.firestore {
              ['id', 'studentId', 'scholarshipId', 'organizationId', 'status', 'createdAt']
                .concat(studentEditableFields()));
 
-      allow update: if signedIn() && (
-        (
-          resource.data.studentId == request.auth.uid &&
-          resource.data.status == 'Draft' &&
-          changed().hasOnly(studentEditableFields())
-        ) ||
-        // The applicants page sets the decision. Moves to a server action later.
-        (
-          isOrgAdmin(resource.data.organizationId) &&
-          changed().hasOnly(['status', 'updatedAt']) &&
-          request.resource.data.status in ['Submitted', 'In Review', 'Awarded', 'Not Awarded']
-        )
-      );
+      allow update: if signedIn()
+        && resource.data.studentId == request.auth.uid
+        && resource.data.status == 'Draft'
+        && changed().hasOnly(studentEditableFields());
       allow delete: if isOrgAdmin(resource.data.organizationId);
 
       // One review per reviewer: the document ID is the reviewer's UID, so a
@@ -179,6 +185,7 @@ service cloud.firestore {
           && claim('role') in ['reviewer', 'org_admin']
           && application().organizationId == claim('orgId')
           && request.auth.uid in programOf(application().scholarshipId).get('reviewerIds', [])
+          && application().status in ['Submitted', 'In Review']
           && request.resource.data.reviewerId == request.auth.uid
           && request.resource.data.applicationId == appId
           && request.resource.data.organizationId == application().organizationId
@@ -216,6 +223,12 @@ service cloud.firestore {
       allow get: if true;
       allow list, delete: if isOrgAdmin(resource.data.organizationId);
       allow create, update: if false;
+    }
+
+
+    match /orgSwitchRequests/{requestId} {
+      allow get, list: if signedIn() && (resource.data.studentId == request.auth.uid || isPlatformAdmin());
+      allow write: if false;
     }
 
     // ------------------------------------------------- recommendation tokens

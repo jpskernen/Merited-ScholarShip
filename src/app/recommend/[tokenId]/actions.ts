@@ -16,17 +16,13 @@ import { getAdminDb } from '@/firebase/admin';
 import { sendNotification } from '@/app/lib/notifications';
 import { appUrl, escapeHtml, renderEmail } from '@/app/lib/email-template';
 import { applicationId, LEGACY_SCHOLARSHIP_ID } from '@/types/application';
+import { writeAudit } from '@/lib/audit';
 
 type LetterPayload =
   | { kind: 'text'; text: string }
   | { kind: 'file'; fileUrl: string };
 
-/**
- * Tokens issued from 2026-09-30 carry an `applications/{id}`. Tokens issued
- * before that carry the student's uid, so fall back to their legacy general
- * portfolio application, and finally to the user document itself, rather than
- * rejecting a recommender who is holding a link that was valid when it was sent.
- */
+
 async function resolveApplicationRef(tokenApplicationId: string) {
   const db = getAdminDb();
 
@@ -39,12 +35,7 @@ async function resolveApplicationRef(tokenApplicationId: string) {
   return null;
 }
 
-/**
- * Writes the letter everywhere it needs to land, and returns the student so the
- * caller can notify them. Deliberately does NOT touch the token: the token is
- * only marked used once this has succeeded, so a failure here leaves the
- * recommender's link still usable.
- */
+
 async function applyRecommendation(tokenData: any, index: number, payload: LetterPayload) {
   const db = getAdminDb();
 
@@ -64,8 +55,7 @@ async function applyRecommendation(tokenData: any, index: number, payload: Lette
 
   
   if (!appRef) {
-    // Pure legacy: no application record exists at all, so the student's user
-    // document is still the only place this letter can live.
+   
     const studentRef = db.collection('users').doc(tokenData.applicationId);
     const studentSnap = await studentRef.get();
     if (!studentSnap.exists) {
@@ -78,16 +68,8 @@ async function applyRecommendation(tokenData: any, index: number, payload: Lette
   await appRef.update(update);
   const application = (await appRef.get()).data()!;
 
-  const studentRef = db.collection('users').doc(application.studentId);
-  const studentSnap = await studentRef.get();
+  const studentSnap = await db.collection('users').doc(application.studentId).get();
   const student = studentSnap.exists ? studentSnap.data()! : null;
-
-  // Keep the legacy mirror in step when this is the application reviewers are
-  // currently reading, otherwise a letter that arrives after submission would
-  // be invisible to them. See mirrorToLegacyUserDocument.
-  if (student?.legacyMirrorOf === appRef.id) {
-    await studentRef.update(update);
-  }
 
   return { ok: true as const, student };
 }
@@ -137,12 +119,7 @@ function isTokenExpired(expiresAt: any): boolean {
   return !isNaN(expires.getTime()) && expires.getTime() < Date.now();
 }
 
-/**
- * The uploaded letter must be the file the recommender page stores for this
- * token, recommendations/{tokenId}.pdf in this project's bucket. Anything else
- * (another student's file, an outside link) is refused, since reviewers open
- * it from the application (docs/13 §3).
- */
+
 function isOwnLetterUrl(tokenId: string, fileUrl: string): boolean {
   const bucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
   let url: URL;
@@ -170,9 +147,7 @@ async function submitRecommendation(tokenId: string, payload: LetterPayload) {
     const db = getAdminDb();
     const tokenRef = db.collection('recommendationTokens').doc(tokenId);
 
-    // 1. Claim the link in a transaction, so two submissions at the same
-    //    moment can't both go through. Everything comes from the stored
-    //    token, never from the browser.
+ 
     const claim = await db.runTransaction(async (tx) => {
       const snap = await tx.get(tokenRef);
       if (!snap.exists) return { error: 'This recommendation link is no longer valid.' };
@@ -185,7 +160,19 @@ async function submitRecommendation(tokenId: string, payload: LetterPayload) {
       tx.update(tokenRef, { used: true, submittedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
       return { token };
     });
-    if ('error' in claim) return { success: false, error: claim.error };
+    if ('error' in claim) {
+      const token = (await tokenRef.get()).data();
+      await writeAudit({
+        organizationId: token?.organizationId,
+        action: 'Recommendation link rejected',
+        actorName: token?.recommenderName ?? null,
+        targetId: tokenId,
+        targetType: 'recommendationToken',
+        subject: token?.recommenderEmail ?? null,
+        details: { applicationId: token?.applicationId ?? null, reason: claim.error },
+      });
+      return { success: false, error: claim.error };
+    }
 
     // 2. Land the letter. If that fails, release the link again so the
     //    recommender can simply retry. The letter is not copied onto the
@@ -202,6 +189,16 @@ async function submitRecommendation(tokenId: string, payload: LetterPayload) {
       await tokenRef.update({ used: false, submittedAt: FieldValue.delete(), updatedAt: FieldValue.serverTimestamp() });
       return { success: false, error: applied.error };
     }
+
+    await writeAudit({
+      organizationId: claim.token.organizationId,
+      action: 'Recommendation letter received',
+      actorName: claim.token.recommenderName ?? null,
+      targetId: claim.token.applicationId ?? null,
+      targetType: 'application',
+      subject: claim.token.studentName ?? null,
+      details: { slot: index, kind: payload.kind, tokenId, recommenderEmail: claim.token.recommenderEmail ?? null },
+    });
 
     // 3. Notifications are best-effort: the letter is already safely stored, so
     //    an email failure must not report the submission as failed.

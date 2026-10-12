@@ -14,6 +14,7 @@ import { ApplicationSchema, applicationId, LEGACY_SCHOLARSHIP_ID } from '@/types
 import { sendSubmissionConfirmation, sendNotification, sendRecommendationReminderEmail } from '@/app/lib/notifications';
 import { escapeHtml, renderEmail } from '@/app/lib/email-template';
 import { AuthError, requireUser, type Caller } from '@/lib/auth-server';
+import { writeAudit } from '@/lib/audit';
 import { appLink } from '@/lib/app-url';
 
 /**
@@ -32,6 +33,8 @@ const SHARED_PROFILE_FIELDS = new Set([
  */
 const APPLICATION_TEXT_FIELDS = new Set(['essay', 'qualificationStatement', 'activities']);
 const RECOMMENDER_FIELD = /^recommender(Name|Email|Title)([12])$/;
+const PROMPT_FIELD = /^prompt:(.+)$/;
+const MAX_PROMPTS = 20;
 
 const MAX_TEXT_LENGTH = 20000;
 const REMINDER_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -62,17 +65,6 @@ function programOrg(program: FirebaseFirestore.DocumentData | undefined | null):
   return program ? (program.organizationId || program.schoolId || null) : null;
 }
 
-/**
- * Saves one application. A student has one of these per scholarship, each with
- * its own essay, its own recommenders and its own submission status, so
- * submitting the Merit Scholarship no longer locks them out of applying to the
- * Academic Excellence Scholarship.
- *
- * Shared profile fields are split out and written to users/{uid}; the allowed
- * application fields are written to applications/{studentId}_{scholarshipId}.
- * Runs in a transaction so it can't overwrite a letter, an invite or a
- * submission that landed between the read and the write.
- */
 export async function saveApplication(
   idToken: string,
   scholarshipId: string,
@@ -85,10 +77,10 @@ export async function saveApplication(
       return { success: false, error: 'No scholarship selected for this application.' };
     }
 
-    // Keep only the fields a student may write. Files are uploaded by the
-    // browser straight to Storage, so nothing but text comes through here.
+    
     const profileInput: Record<string, unknown> = {};
     const applicationInput: Record<string, string> = {};
+    const promptInput: Record<string, string> = {};
     for (const [key, value] of formData.entries()) {
       if (typeof value !== 'string') continue;
       if (SHARED_PROFILE_FIELDS.has(key)) {
@@ -98,6 +90,14 @@ export async function saveApplication(
           return { success: false, error: `"${key}" is too long (maximum ${MAX_TEXT_LENGTH.toLocaleString()} characters).` };
         }
         applicationInput[key] = value;
+      } else {
+        const promptId = PROMPT_FIELD.exec(key)?.[1];
+        if (promptId) {
+          if (value.length > MAX_TEXT_LENGTH) {
+            return { success: false, error: `One of your answers is too long (maximum ${MAX_TEXT_LENGTH.toLocaleString()} characters).` };
+          }
+          promptInput[promptId] = value;
+        }
       }
     }
 
@@ -117,22 +117,24 @@ export async function saveApplication(
         return { error: 'This application has already been submitted and can no longer be edited.' };
       }
 
-      // The application belongs to the scholarship's organization. Only the
-      // legacy general portfolio has no program, so it falls back to the
-      // student's stored profile (existingProfile, not the form).
+      
       const organizationId = program
         ? programOrg(program)
         : (existingApplication.organizationId || existingProfile.organizationId || existingProfile.schoolId);
       if (!organizationId) {
         return { error: 'This scholarship is not linked to an organization. Please contact the administrator.' };
       }
-      // Option A (docs/07 D7): students apply only within their own organization.
+      
       if (organizationId !== student.orgId) {
         return { error: 'This scholarship is not available to your account.' };
       }
 
-      // Recommender details can only change while that endorsement has no
-      // request out; afterwards they describe who the letter is from.
+      // Drafts stay editable past the deadline so a student can still see and
+      // adjust what they had; only the actual submission is refused.
+      if (isSubmit && program?.deadline && new Date(program.deadline).getTime() < Date.now()) {
+        return { error: 'The deadline for this scholarship has passed, so it can no longer be submitted.' };
+      }
+
       const applicationChanges: Record<string, string> = {};
       for (const [key, value] of Object.entries(applicationInput)) {
         const slot = RECOMMENDER_FIELD.exec(key)?.[2];
@@ -141,11 +143,29 @@ export async function saveApplication(
         applicationChanges[key] = value;
       }
 
+      const prompts: { id: string; title: string }[] = Array.isArray(program?.prompts) ? program!.prompts : [];
+      const promptResponses = prompts
+        .slice(0, MAX_PROMPTS)
+        .map((prompt) => ({
+          promptId: String(prompt.id),
+          title: String(prompt.title || 'Essay'),
+          answer: promptInput[String(prompt.id)] ?? findExistingAnswer(existingApplication, String(prompt.id)),
+        }))
+        .filter((response) => response.answer.trim() !== '');
+
       const scholarshipName = existingApplication.scholarshipName || (program
         ? (program.name || 'Scholarship')
         : (scholarshipId === LEGACY_SCHOLARSHIP_ID ? 'General Scholarship Portfolio' : 'Scholarship'));
 
       const profileToSave = { ...existingProfile, ...profileInput };
+
+      // Validate before writing anything, so a rejected submit can't leave a
+      // half-written record behind.
+      const profileValidation = (isSubmit ? ProfileSchema : ProfileSchema.partial()).safeParse(profileToSave);
+      if (!profileValidation.success) {
+        return { error: `Validation failed - ${formatIssues(profileValidation.error.issues)}` };
+      }
+
       const applicationToSave = {
         ...existingApplication,
         ...applicationChanges,
@@ -156,14 +176,20 @@ export async function saveApplication(
         organizationId,
         status: isSubmit ? 'Submitted' : 'Draft',
         submissionDate: isSubmit ? new Date().toISOString() : (existingApplication.submissionDate || null),
+        ...(prompts.length > 0 ? { promptResponses } : {}),
+        ...(isSubmit
+          ? {
+              profileSnapshot: {
+                gpa: profileValidation.data.gpa,
+                major: profileValidation.data.major,
+                school: profileValidation.data.school,
+                interests: profileValidation.data.interests,
+                capturedAt: new Date().toISOString(),
+              },
+            }
+          : {}),
       };
 
-      // Validate before writing anything, so a rejected submit can't leave a
-      // half-written record behind.
-      const profileValidation = (isSubmit ? ProfileSchema : ProfileSchema.partial()).safeParse(profileToSave);
-      if (!profileValidation.success) {
-        return { error: `Validation failed - ${formatIssues(profileValidation.error.issues)}` };
-      }
       const applicationValidation = ApplicationSchema.safeParse(applicationToSave);
       if (!applicationValidation.success) {
         return { error: `Validation failed - ${formatIssues(applicationValidation.error.issues)}` };
@@ -182,7 +208,17 @@ export async function saveApplication(
     if ('error' in outcome) return { success: false, error: outcome.error };
 
     if (isSubmit) {
-      await mirrorToLegacyUserDocument(student.uid, outcome.application);
+      await mirrorSubmissionStatus(student.uid, outcome.application);
+      await writeAudit({
+        organizationId: outcome.application.organizationId,
+        action: 'Application submitted',
+        actorId: student.uid,
+        actorName: outcome.name || student.email,
+        targetId: appId,
+        targetType: 'application',
+        subject: outcome.name || student.email,
+        details: { scholarshipId, scholarshipName: outcome.application.scholarshipName },
+      });
       // To the account's own login address, not a form field.
       if (student.email) {
         await sendSubmissionConfirmation(student.email, outcome.name || 'Student');
@@ -195,65 +231,25 @@ export async function saveApplication(
   }
 }
 
+function findExistingAnswer(existingApplication: FirebaseFirestore.DocumentData, promptId: string): string {
+  const existing = (existingApplication.promptResponses || [])
+    .find((response: any) => response?.promptId === promptId);
+  return typeof existing?.answer === 'string' ? existing.answer : '';
+}
+
 function formatIssues(issues: { path: (string | number)[]; message: string }[]) {
   return issues.map(issue => `${issue.path.join('.') || 'form'}: ${issue.message}`).join('; ');
 }
 
-/**
- * The reviewer queue, the reviewer scoring page and the admin committee board
- * all still read the flat users/{uid} document. Until those are migrated to
- * read `applications` directly, copy the most recently submitted application's
- * content back onto the user doc so they keep working unchanged.
- *
- * This is a compatibility shim with a known limitation: a student with two
- * submitted applications shows only their latest one to reviewers. Removing it
- * is the first task of the reviewer/admin migration — see
- * docs/09-E2E-BUG-HUNT-2026-09-30.md BUG-05 and BUG-11.
- */
-async function mirrorToLegacyUserDocument(userId: string, application: any) {
+
+async function mirrorSubmissionStatus(userId: string, application: any) {
   const db = getAdminDb();
   await db.collection('users').doc(userId).set({
-    essay: application.essay ?? null,
-    qualificationStatement: application.qualificationStatement ?? null,
-    activities: application.activities ?? null,
-    essays: application.essays ?? [],
     status: application.status,
     submissionDate: application.submissionDate,
-    recommenderName1: application.recommenderName1 ?? '',
-    recommenderEmail1: application.recommenderEmail1 ?? '',
-    recommenderTitle1: application.recommenderTitle1 ?? '',
-    recommendationStatus1: application.recommendationStatus1 ?? 'Not Requested',
-    recommendationLetter1: application.recommendationLetter1 ?? null,
-    recommendationLetterText1: application.recommendationLetterText1 ?? null,
-    recommenderName2: application.recommenderName2 ?? '',
-    recommenderEmail2: application.recommenderEmail2 ?? '',
-    recommenderTitle2: application.recommenderTitle2 ?? '',
-    recommendationStatus2: application.recommendationStatus2 ?? 'Not Requested',
-    recommendationLetter2: application.recommendationLetter2 ?? null,
-    recommendationLetterText2: application.recommendationLetterText2 ?? null,
     legacyMirrorOf: application.id,
     updatedAt: FieldValue.serverTimestamp(),
   }, { merge: true });
-}
-
-/**
- * mirrorToLegacyUserDocument only runs at submit time, but endorsements can be
- * invited, reminded and replaced after that. Without this, a recommender
- * invited post-submission would never reach the mirror and the reviewer would
- * see their letter with a blank attribution. No-op unless this application is
- * the one currently mirrored.
- */
-async function syncRecommenderToLegacyMirror(
-  studentId: string,
-  appId: string,
-  fields: Record<string, any>,
-) {
-  const db = getAdminDb();
-  const studentRef = db.collection('users').doc(studentId);
-  const snap = await studentRef.get();
-  if (!snap.exists || snap.data()?.legacyMirrorOf !== appId) return;
-
-  await studentRef.set({ ...fields, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
 }
 
 /**
@@ -476,7 +472,16 @@ export async function sendRecommendationRequest(idToken: string, params: {
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
 
-    await syncRecommenderToLegacyMirror(student.uid, appId, slotFields);
+    await writeAudit({
+      organizationId,
+      action: 'Recommendation requested',
+      actorId: student.uid,
+      actorName: studentName,
+      targetId: appId,
+      targetType: 'application',
+      subject: recommenderEmail,
+      details: { slot: requestIndex, tokenId: tokenRef.id, scholarshipId: params.scholarshipId },
+    });
 
     return { success: true, deliveryMethod: emailResult.method };
   } catch (error) {
@@ -555,7 +560,7 @@ export async function cancelRecommendationRequest(idToken: string, params: {
     }
 
     // 1. Cancel every open link for this slot, not just one.
-    await cancelOpenTokens(appId, requestIndex);
+    const cancelled = await cancelOpenTokens(appId, requestIndex);
 
     // 2. Reset this application's recommender slot. Cancel is a recovery path,
     //    so it must not fail on an application that was never created — there
@@ -569,8 +574,18 @@ export async function cancelRecommendationRequest(idToken: string, params: {
         [`recommendationLastReminder${requestIndex}`]: null,
       };
       await appRef.update({ ...reset, updatedAt: FieldValue.serverTimestamp() });
-      await syncRecommenderToLegacyMirror(student.uid, appId, reset);
     }
+
+    await writeAudit({
+      organizationId: appSnap.get('organizationId') ?? student.orgId,
+      action: 'Recommendation request cancelled',
+      actorId: student.uid,
+      actorName: student.email,
+      targetId: appId,
+      targetType: 'application',
+      subject: appSnap.get(`recommenderEmail${requestIndex}`) || null,
+      details: { slot: requestIndex, linksCancelled: cancelled },
+    });
 
     return { success: true };
   } catch (error) {

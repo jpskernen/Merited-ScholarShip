@@ -1,9 +1,9 @@
 'use server';
 
-// Platform Admin actions (docs/07 §4). Limited to accounts with the
-// platformAdmin claim. UI: src/app/admin/platform/page.tsx (runbook 2.1).
+
 import { requirePlatformAdmin } from '@/lib/auth-server';
 import { assignOrgAdminAs, createOrganizationAs, resendOrgAdminInviteAs } from '@/lib/platform-server';
+import { resolveOrgSwitchRequestAs } from '@/lib/org-switch-server';
 
 function failure(err: unknown) {
   console.error('Platform action failed:', err);
@@ -32,6 +32,15 @@ export async function resendOrgAdminInvite(idToken: string, inviteId: string) {
   try {
     const caller = await requirePlatformAdmin(idToken);
     return { success: true as const, ...(await resendOrgAdminInviteAs(caller, inviteId)) };
+  } catch (err) {
+    return failure(err);
+  }
+}
+
+export async function resolveOrgSwitchRequest(idToken: string, requestId: string, approve: boolean) {
+  try {
+    const caller = await requirePlatformAdmin(idToken);
+    return { success: true as const, ...(await resolveOrgSwitchRequestAs(caller, requestId, approve)) };
   } catch (err) {
     return failure(err);
   }

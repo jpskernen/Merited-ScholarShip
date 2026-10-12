@@ -4,9 +4,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Award, FileCheck, Users, Clock, Mail, ExternalLink, Loader2, FileText, CheckCircle, Search, ClipboardList, Activity, ShieldCheck, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import { useCollection, useFirebase, useMemoFirebase, useUser } from '@/firebase';
-import { collection, query, orderBy, limit, where, onSnapshot } from 'firebase/firestore';
+import { collection, collectionGroup, query, orderBy, limit, where, onSnapshot } from 'firebase/firestore';
 import { Badge } from '@/components/ui/badge';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { getSystemHealth } from './actions';
 import { orgIdOf } from '@/lib/org';
 
@@ -14,86 +14,89 @@ export default function AdminDashboardPage() {
   const { firestore } = useFirebase();
   const { user, userData } = useUser();
   
-  // Multi-tenant Org ID (SaaS School ID). No fallback: the counts below stay
-  // empty for an account that isn't linked to an organization.
+
   const orgId = orgIdOf(userData);
 
-  const [counts, setCounts] = useState({
-    total: 0,
-    submitted: 0,
-    underReview: 0,
-    awarded: 0
-  });
+ 
+  const [applications, setApplications] = useState<any[] | null>(null);
+  const [reviews, setReviews] = useState<any[] | null>(null);
 
   const [systemHealth, setSystemHealth] = useState<any>(null);
+  const [healthError, setHealthError] = useState(false);
 
   useEffect(() => {
     if (!user) return;
     async function checkHealth() {
       try {
         setSystemHealth(await getSystemHealth(await user!.getIdToken()));
+        setHealthError(false);
       } catch {
+    
         setSystemHealth(null);
+        setHealthError(true);
       }
     }
     checkHealth();
   }, [user]);
 
   useEffect(() => {
-    if (!firestore || !orgId) return;
+    if (!firestore || !orgId) {
+      setApplications(null);
+      setReviews(null);
+      return;
+    }
 
-    const applicantsRef = collection(firestore, 'users');
-    
-    // Listener for Total Applications in this Org
-    const qTotal = query(
-      applicantsRef, 
-      where('role', '==', 'applicant'), 
-      where('organizationId', '==', orgId)
+    const unsubscribeApplications = onSnapshot(
+      query(collection(firestore, 'applications'), where('organizationId', '==', orgId)),
+      (snapshot) => setApplications(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      (error) => { console.error('Dashboard applications listener failed:', error.message); setApplications([]); },
     );
-    const unsubscribeTotal = onSnapshot(qTotal, (snapshot) => {
-      setCounts(prev => ({ ...prev, total: snapshot.size }));
-    });
 
-    // Listener for 'Submitted'
-    const qSubmitted = query(
-      applicantsRef, 
-      where('role', '==', 'applicant'), 
-      where('organizationId', '==', orgId), 
-      where('status', '==', 'Submitted')
+  
+    const unsubscribeReviews = onSnapshot(
+      query(collectionGroup(firestore, 'reviews'), where('organizationId', '==', orgId)),
+      (snapshot) => setReviews(snapshot.docs.map((d) => ({ id: d.id, ...d.data(), applicationId: d.ref.parent.parent?.id }))),
+      (error) => { console.error('Dashboard reviews listener failed:', error.message); setReviews([]); },
     );
-    const unsubscribeSubmitted = onSnapshot(qSubmitted, (snapshot) => {
-      setCounts(prev => ({ ...prev, submitted: snapshot.size }));
-    });
 
-    // Listener for 'Under Review'
-    const qReview = query(
-      applicantsRef, 
-      where('role', '==', 'applicant'), 
-      where('organizationId', '==', orgId), 
-      where('status', '==', 'In Review')
-    );
-    const unsubscribeReview = onSnapshot(qReview, (snapshot) => {
-      setCounts(prev => ({ ...prev, underReview: snapshot.size }));
-    });
-
-    // Listener for 'Awarded'
-    const qAwarded = query(
-      applicantsRef, 
-      where('role', '==', 'applicant'), 
-      where('organizationId', '==', orgId), 
-      where('status', '==', 'Awarded')
-    );
-    const unsubscribeAwarded = onSnapshot(qAwarded, (snapshot) => {
-      setCounts(prev => ({ ...prev, awarded: snapshot.size }));
-    });
-
-    return () => {
-      unsubscribeTotal();
-      unsubscribeSubmitted();
-      unsubscribeReview();
-      unsubscribeAwarded();
-    };
+    return () => { unsubscribeApplications(); unsubscribeReviews(); };
   }, [firestore, orgId]);
+
+  const counts = useMemo(() => {
+    const all = applications || [];
+    const by = (status: string) => all.filter((a: any) => a.status === status).length;
+    return {
+    
+      total: all.filter((a: any) => a.status && a.status !== 'Draft').length,
+      drafts: by('Draft'),
+      submitted: by('Submitted'),
+      underReview: by('In Review'),
+      awarded: by('Awarded'),
+      declined: by('Not Awarded'),
+    };
+  }, [applications]);
+
+
+  const committee = useMemo(() => {
+    const filed = (reviews || []).filter((r: any) => r.status !== 'Draft');
+    const decidable = (applications || []).filter((a: any) =>
+      ['Submitted', 'In Review', 'Awarded', 'Not Awarded'].includes(a.status));
+    const reviewedIds = new Set(filed.map((r: any) => r.applicationId));
+    const covered = decidable.filter((a: any) => reviewedIds.has(a.id)).length;
+    const scored = filed.filter((r: any) => typeof r.totalScore === 'number');
+
+    return {
+      reviewCount: filed.length,
+      averageScore: scored.length
+        ? Number((scored.reduce((sum: number, r: any) => sum + r.totalScore, 0) / scored.length).toFixed(2))
+        : null,
+      covered,
+      coverage: decidable.length ? Math.round((covered / decidable.length) * 100) : null,
+      awaiting: decidable.length - covered,
+    };
+  }, [applications, reviews]);
+
+  const isLoadingCounts = orgId ? applications === null : false;
 
   // Outbox entries carry no organizationId yet, so the rules let only the
   // platform admin read them.
@@ -105,10 +108,25 @@ export default function AdminDashboardPage() {
 
   const { data: recentEmails, isLoading: isOutboxLoading } = useCollection(outboxQuery);
 
+
+  const activityQuery = useMemoFirebase(() => {
+    if (!firestore || isPlatformAdmin || !orgId) return null;
+    return query(
+      collection(firestore, 'auditLog'),
+      where('organizationId', '==', orgId),
+      orderBy('timestamp', 'desc'),
+      limit(5),
+    );
+  }, [firestore, isPlatformAdmin, orgId]);
+
+  const { data: recentActivity, isLoading: isActivityLoading } = useCollection(activityQuery);
+
+
   const stats = [
     {
-      title: 'Total Applications',
+      title: 'Applications Received',
       value: counts.total.toString(),
+      note: counts.drafts ? `${counts.drafts} draft${counts.drafts === 1 ? '' : 's'} not yet submitted` : null,
       icon: <FileText className="h-6 w-6 text-primary" />,
       link: '/admin/applicants',
       linkLabel: 'View All',
@@ -116,22 +134,25 @@ export default function AdminDashboardPage() {
     {
       title: 'Submitted',
       value: counts.submitted.toString(),
+      note: 'Waiting for a first evaluation',
       icon: <ClipboardList className="h-6 w-6 text-blue-500" />,
-      link: '/admin/applicants',
+      link: '/admin/applicants?status=submitted',
       linkLabel: 'Process Queue',
     },
     {
       title: 'Under Review',
       value: counts.underReview.toString(),
+      note: 'At least one evaluation filed',
       icon: <Clock className="h-6 w-6 text-amber-500" />,
-      link: '/admin/applicants',
+      link: '/admin/applicants?status=in%20review',
       linkLabel: 'Committee Progress',
     },
     {
       title: 'Awarded',
       value: counts.awarded.toString(),
+      note: counts.declined ? `${counts.declined} declined` : null,
       icon: <CheckCircle className="h-6 w-6 text-green-500" />,
-      link: '/admin/applicants',
+      link: '/admin/applicants?status=awarded',
       linkLabel: 'View Recipients',
     },
   ];
@@ -140,14 +161,23 @@ export default function AdminDashboardPage() {
     <div className="space-y-8">
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-bold">Admin Dashboard</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
            <Badge variant="outline" className="bg-primary/5 text-[10px] font-black uppercase tracking-widest px-2 py-0.5">
-             Org: {orgId}
+             {orgId ? `Org: ${orgId}` : isPlatformAdmin ? 'Platform administrator' : 'No organization'}
            </Badge>
            <p className="text-muted-foreground text-sm">
-             Real-time monitoring of scholarship cycles and committee results.
+             {orgId
+               ? 'Real-time monitoring of scholarship cycles and committee results.'
+               : isPlatformAdmin
+                 ? 'You are not a member of an organization, so there are no applications to show here.'
+                 : 'Your account is not linked to an organization yet, so there is nothing to show.'}
            </p>
         </div>
+        {!orgId && isPlatformAdmin && (
+          <Link href="/admin/platform" className="text-sm text-primary hover:underline flex items-center gap-1 w-fit">
+            Manage organizations <ExternalLink className="h-3 w-3" />
+          </Link>
+        )}
       </div>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
@@ -158,7 +188,8 @@ export default function AdminDashboardPage() {
               {stat.icon}
             </CardHeader>
             <CardContent>
-              <div className="text-4xl font-bold">{stat.value}</div>
+              <div className="text-4xl font-bold">{isLoadingCounts ? '—' : stat.value}</div>
+              {stat.note && <p className="text-[11px] text-muted-foreground mt-1">{stat.note}</p>}
               <Link
                 href={stat.link}
                 className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1 mt-2"
@@ -185,7 +216,9 @@ export default function AdminDashboardPage() {
                  <span className="text-sm font-bold">{systemHealth?.email?.provider || 'Email'}</span>
                  <span className="text-[10px] text-muted-foreground">Email Dispatch Service</span>
                </div>
-               {systemHealth?.email?.isConfigured ? (
+               {healthError ? (
+                 <Badge variant="outline" className="text-muted-foreground">Check unavailable</Badge>
+               ) : systemHealth?.email?.isConfigured ? (
                  <Badge className="bg-green-600 text-white font-bold">Active</Badge>
                ) : (
                  <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50">Simulation Mode</Badge>
@@ -194,7 +227,7 @@ export default function AdminDashboardPage() {
              <div className="flex items-center justify-between py-2 border-b">
                <div className="flex flex-col">
                  <span className="text-sm font-bold">Sender Email</span>
-                 <span className="text-[10px] text-muted-foreground truncate max-w-[120px]">{systemHealth?.email?.senderEmail}</span>
+                 <span className="text-[10px] text-muted-foreground truncate max-w-[120px]">{systemHealth?.email?.senderEmail || '—'}</span>
                </div>
                {systemHealth?.email?.senderVerified ? (
                  <CheckCircle className="h-4 w-4 text-green-500" />
@@ -212,34 +245,63 @@ export default function AdminDashboardPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
               <Mail className="h-5 w-5 text-primary" />
-              Recent Notifications
+              {isPlatformAdmin ? 'Recent Notifications' : 'Recent Activity'}
             </CardTitle>
-            <CardDescription>Records of invitations and requests.</CardDescription>
+            <CardDescription>
+              {isPlatformAdmin ? 'Records of invitations and requests.' : 'The latest entries in your audit log.'}
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            {isOutboxLoading ? (
-              <div className="flex justify-center py-6"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
-            ) : recentEmails && recentEmails.length > 0 ? (
-              <div className="space-y-4">
-                {recentEmails.map((email: any) => (
-                  <div key={email.id} className="flex items-start justify-between border-b pb-3 last:border-0 last:pb-0">
-                    <div className="space-y-1">
-                      <p className="text-sm font-bold truncate max-w-[150px]">{email.recipient}</p>
-                      <p className="text-[10px] text-muted-foreground line-clamp-1">{email.subject}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                         <Badge variant="outline" className="text-[9px] px-1 py-0 h-4">
-                            {email.deliveryMethod || 'Auto'}
-                         </Badge>
-                         <span className="text-[9px] text-muted-foreground font-mono">
-                            {email.sentAt && new Date(email.sentAt.seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                         </span>
+            {isPlatformAdmin ? (
+              isOutboxLoading ? (
+                <div className="flex justify-center py-6"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
+              ) : recentEmails && recentEmails.length > 0 ? (
+                <div className="space-y-4">
+                  {recentEmails.map((email: any) => (
+                    <div key={email.id} className="flex items-start justify-between border-b pb-3 last:border-0 last:pb-0">
+                      <div className="space-y-1">
+                        <p className="text-sm font-bold truncate max-w-[150px]">{email.recipient}</p>
+                        <p className="text-[10px] text-muted-foreground line-clamp-1">{email.subject}</p>
+                        <div className="flex items-center gap-2 mt-1">
+                           <Badge variant="outline" className="text-[9px] px-1 py-0 h-4">
+                              {email.deliveryMethod || 'Auto'}
+                           </Badge>
+                           <span className="text-[9px] text-muted-foreground font-mono">
+                              {email.sentAt && new Date(email.sentAt.seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                           </span>
+                        </div>
                       </div>
                     </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground italic text-center py-6">No emails sent yet.</p>
+              )
+            ) : isActivityLoading ? (
+              <div className="flex justify-center py-6"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
+            ) : recentActivity && recentActivity.length > 0 ? (
+              <div className="space-y-4">
+                {recentActivity.map((item: any) => (
+                  <div key={item.id} className="border-b pb-3 last:border-0 last:pb-0 space-y-1">
+                    <p className="text-sm font-bold">{item.action}</p>
+                    <p className="text-[10px] text-muted-foreground line-clamp-1">
+                      {item.affectedStudent || item.targetId || ''}
+                    </p>
+                    <span className="text-[9px] text-muted-foreground font-mono">
+                      {item.timestamp?.seconds
+                        ? new Date(item.timestamp.seconds * 1000).toLocaleString()
+                        : ''}
+                    </span>
                   </div>
                 ))}
+                <Link href="/admin/audit-log" className="text-xs text-primary hover:underline flex items-center gap-1">
+                  Open the audit log <ExternalLink className="h-3 w-3" />
+                </Link>
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground italic text-center py-6">No emails sent yet.</p>
+              <p className="text-sm text-muted-foreground italic text-center py-6">
+                {orgId ? 'Nothing has happened yet.' : 'No organization, so there is no activity to show.'}
+              </p>
             )}
           </CardContent>
         </Card>
@@ -247,28 +309,34 @@ export default function AdminDashboardPage() {
         <Card className="lg:col-span-1 shadow-sm">
           <CardHeader>
             <CardTitle className="text-lg">Committee Stats</CardTitle>
-            <CardDescription>Evaluation coverage overview.</CardDescription>
+            <CardDescription>Evaluation coverage, counted from the filed reviews.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4 pt-2">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Portfolio Completion</span>
-                <span className="font-bold">88%</span>
+                <span className="text-muted-foreground">Applications evaluated</span>
+                <span className="font-bold">{committee.coverage === null ? '—' : `${committee.coverage}%`}</span>
               </div>
               <div className="w-full bg-muted h-2 rounded-full overflow-hidden">
-                <div className="bg-primary h-full w-[88%]" />
+                <div className="bg-primary h-full transition-all" style={{ width: `${committee.coverage ?? 0}%` }} />
               </div>
               <p className="text-xs text-muted-foreground italic">
-                Committees are currently processing the active cycle.
+                {committee.coverage === null
+                  ? 'No submitted applications yet.'
+                  : committee.awaiting > 0
+                    ? `${committee.covered} of ${committee.covered + committee.awaiting} have at least one evaluation; ${committee.awaiting} still waiting.`
+                    : 'Every submitted application has at least one evaluation.'}
               </p>
               <div className="grid grid-cols-2 gap-4 pt-4 border-t">
                  <div>
                     <p className="text-[10px] font-black uppercase text-muted-foreground">Avg Score</p>
-                    <p className="text-lg font-bold">7.42</p>
+                    <p className="text-lg font-bold">
+                      {committee.averageScore === null ? '—' : committee.averageScore.toFixed(2)}
+                    </p>
                  </div>
                  <div>
                     <p className="text-[10px] font-black uppercase text-muted-foreground">Reviews</p>
-                    <p className="text-lg font-bold">142</p>
+                    <p className="text-lg font-bold">{committee.reviewCount}</p>
                  </div>
               </div>
             </div>

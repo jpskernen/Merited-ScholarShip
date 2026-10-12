@@ -25,6 +25,7 @@ export default function ReviewerOnboardingPage({ params }: { params: Promise<{ i
   const [name, setName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isAccepting, setIsAccepting] = useState(false);
 
   const inviteRef = useMemoFirebase(() => {
     if (!firestore || !inviteId) return null;
@@ -34,7 +35,7 @@ export default function ReviewerOnboardingPage({ params }: { params: Promise<{ i
   const { data: invite, isLoading: isInviteLoading } = useDoc(inviteRef);
 
   useEffect(() => {
-    if (isInviteLoading) return;
+    if (isInviteLoading || isAccepting) return;
     if (!invite) {
       toast({ title: "Invalid Link", description: "This invitation is no longer valid.", variant: "destructive" });
       router.push('/');
@@ -42,7 +43,7 @@ export default function ReviewerOnboardingPage({ params }: { params: Promise<{ i
       toast({ title: "Invitation Already Used", description: "This invitation has already been accepted. Please sign in." });
       router.push('/review/login');
     }
-  }, [invite, isInviteLoading, router, toast]);
+  }, [invite, isInviteLoading, isAccepting, router, toast]);
 
   // Already signed in with the invited email: accept onto the existing account.
   const signedInAsInvitee = !!invite && auth?.currentUser?.email?.toLowerCase() === String(invite.email).toLowerCase();
@@ -51,6 +52,7 @@ export default function ReviewerOnboardingPage({ params }: { params: Promise<{ i
     e.preventDefault();
     if (!auth || !invite) return;
     setIsSubmitting(true);
+    setIsAccepting(true);
 
     try {
       // The server creates the account, sets the reviewer role and marks the
@@ -62,6 +64,7 @@ export default function ReviewerOnboardingPage({ params }: { params: Promise<{ i
       if (!result.success) {
         toast({ title: "Could Not Activate Account", description: result.error, variant: "destructive" });
         setIsSubmitting(false);
+        setIsAccepting(false);
         return;
       }
 
@@ -74,6 +77,7 @@ export default function ReviewerOnboardingPage({ params }: { params: Promise<{ i
     } catch (error: any) {
       toast({ title: "Signup Failed", description: "Your account was activated, but signing in failed. Please sign in from the login page.", variant: "destructive" });
       setIsSubmitting(false);
+      setIsAccepting(false);
     }
   };
 
