@@ -108,18 +108,53 @@ export default function AuditLogPage() {
     <div className="space-y-8">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-3xl font-bold">System Audit Log</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold">System Audit Log</h1>
           <p className="text-muted-foreground">
             Immutable record of all administrative actions and status changes.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => fetchLogs(true)}>
+        <Button variant="outline" size="sm" onClick={() => fetchLogs(true)} className="w-full md:w-auto">
           <RefreshCcw className="h-4 w-4 mr-2" />
           Refresh Log
         </Button>
       </div>
 
       <div className="rounded-lg border bg-card shadow-sm overflow-hidden">
+        <div className="divide-y md:hidden">
+          {logs.map((log) => {
+            const details = log.details && Object.keys(log.details).length > 0
+              ? Object.entries(log.details)
+                  .filter(([, value]) => value !== null && value !== '')
+                  .map(([key, value]) => `${key}: ${value}`)
+                  .join(' · ')
+              : '';
+            return (
+              <div key={log.id} className="space-y-2 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <Badge variant="outline" className="font-medium bg-primary/5 text-primary border-primary/20">
+                    {log.action}
+                  </Badge>
+                  <span className="shrink-0 text-right font-mono text-[10px] text-muted-foreground">
+                    {log.timestamp?.seconds
+                      ? new Date(log.timestamp.seconds * 1000).toLocaleString()
+                      : log.timestamp || 'N/A'}
+                  </span>
+                </div>
+                <div>
+                  <p className="text-sm font-medium [overflow-wrap:anywhere]">{log.affectedStudent || log.targetType || 'Record'}</p>
+                  {log.targetId && <p className="font-mono text-[10px] text-muted-foreground [overflow-wrap:anywhere]">{log.targetId}</p>}
+                  {details && <p className="mt-1 text-[11px] text-muted-foreground [overflow-wrap:anywhere]">{details}</p>}
+                </div>
+                <p className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
+                  By <span className="font-semibold text-foreground">{log.adminName || 'System'}</span>
+                  {log.adminId ? <span className="font-mono"> · {log.adminId}</span> : null}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="hidden md:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -166,7 +201,8 @@ export default function AuditLogPage() {
             ))}
           </TableBody>
         </Table>
-        
+        </div>
+
         {logs.length === 0 && (
           <div className="text-center py-20 text-muted-foreground italic">
             {orgId

@@ -126,7 +126,7 @@ export default function NewScholarshipPage() {
               <Input id="name" {...register('name')} placeholder="e.g. Merit Scholars 2024" />
               {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="amount">Award Amount</Label>
                 <Input id="amount" {...register('amount')} placeholder="$5,000" />
@@ -185,13 +185,13 @@ export default function NewScholarshipPage() {
           <CardContent className="space-y-4">
             {rubricFields.map((field, index) => (
               <div key={field.id} className="flex flex-col gap-4 p-4 border rounded-lg bg-background mb-4">
-                <div className="flex justify-between items-start gap-4">
-                  <div className="flex-1 space-y-2">
+                <div className="flex flex-wrap items-start gap-x-4 gap-y-2 sm:flex-nowrap">
+                  <div className="w-full min-w-0 space-y-2 sm:w-auto sm:flex-1">
                     <Label className="text-[10px] font-black uppercase">Criterion Label</Label>
                     <Input {...register(`rubric.${index}.label`)} placeholder="Academic Achievement" />
                     {errors.rubric?.[index]?.label && <p className="text-xs text-destructive">{errors.rubric[index]?.label?.message}</p>}
                   </div>
-                  <div className="w-24 space-y-2">
+                  <div className="w-24 flex-1 space-y-2 sm:flex-none">
                     <Label className="text-[10px] font-black uppercase">Weight (%)</Label>
                     <Input type="number" {...register(`rubric.${index}.weight`, { valueAsNumber: true })} />
                     {errors.rubric?.[index]?.weight && <p className="text-xs text-destructive">Enter 0–100.</p>}
@@ -211,7 +211,7 @@ export default function NewScholarshipPage() {
           </CardContent>
         </Card>
 
-        <Button type="submit" className="w-full h-14 font-black uppercase tracking-widest" disabled={isSubmitting}>
+        <Button type="submit" className="w-full h-auto min-h-14 whitespace-normal px-4 py-3 font-black uppercase tracking-wider sm:tracking-widest" disabled={isSubmitting}>
           {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
           Create Scholarship Program
         </Button>

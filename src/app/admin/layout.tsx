@@ -22,7 +22,6 @@ import {
   ShieldCheck,
   Loader2,
   History,
-  FlaskConical,
   Building2
 } from 'lucide-react';
 import Link from 'next/link';
@@ -38,7 +37,6 @@ const adminNav = [
   { href: '/admin/admins', label: 'Administrators', icon: ShieldCheck },
   { href: '/admin/scholarships', label: 'Scholarships', icon: Award },
   { href: '/admin/audit-log', label: 'Audit Log', icon: History },
-  { href: '/admin/test-utils', label: 'Dev Utils', icon: FlaskConical },
 ];
 
 // Only for accounts with the platformAdmin claim (docs/07 §3.1).
@@ -125,7 +123,7 @@ export default function AdminLayout({
           </SidebarContent>
         </Sidebar>
 
-        <main className="flex-1">
+        <main className="min-w-0 flex-1">
           <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b bg-background/80 px-4 backdrop-blur-md sm:justify-end">
             <div className="sm:hidden">
               <SidebarTrigger />

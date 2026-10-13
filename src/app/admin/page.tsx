@@ -180,15 +180,15 @@ export default function AdminDashboardPage() {
         )}
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-6 lg:grid-cols-4">
         {stats.map((stat) => (
-          <Card key={stat.title} className="border-primary/10 shadow-sm transition-all hover:shadow-md">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-xs font-black uppercase tracking-tight text-muted-foreground">{stat.title}</CardTitle>
-              {stat.icon}
+          <Card key={stat.title} className="min-w-0 border-primary/10 shadow-sm transition-all hover:shadow-md">
+            <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0 p-4 pb-2 sm:items-center sm:p-6 sm:pb-2">
+              <CardTitle className="text-[10px] font-black uppercase tracking-tight text-muted-foreground sm:text-xs">{stat.title}</CardTitle>
+              <span className="shrink-0 [&>svg]:h-5 [&>svg]:w-5 sm:[&>svg]:h-6 sm:[&>svg]:w-6">{stat.icon}</span>
             </CardHeader>
-            <CardContent>
-              <div className="text-4xl font-bold">{isLoadingCounts ? '—' : stat.value}</div>
+            <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
+              <div className="text-3xl font-bold sm:text-4xl">{isLoadingCounts ? '—' : stat.value}</div>
               {stat.note && <p className="text-[11px] text-muted-foreground mt-1">{stat.note}</p>}
               <Link
                 href={stat.link}
@@ -234,9 +234,6 @@ export default function AdminDashboardPage() {
                ) : (
                  <AlertCircle className="h-4 w-4 text-amber-500" />
                )}
-             </div>
-             <div className="p-3 bg-muted rounded-md text-[10px] leading-relaxed text-muted-foreground italic">
-               To activate live emails, set GMAIL_USER and GMAIL_APP_PASSWORD in the App Hosting settings.
              </div>
           </CardContent>
         </Card>

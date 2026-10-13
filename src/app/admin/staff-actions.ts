@@ -169,6 +169,7 @@ export async function removeStaffAccess(idToken: string, kind: StaffKind, uid: s
     await batch.commit();
 
     await getAdminAuth().setCustomUserClaims(uid, {});
+    await getAdminAuth().revokeRefreshTokens(uid);
 
     await writeAudit({
       organizationId: caller.orgId,

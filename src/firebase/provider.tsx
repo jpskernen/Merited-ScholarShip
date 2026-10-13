@@ -2,8 +2,8 @@
 
 import React, { DependencyList, createContext, useContext, ReactNode, useMemo, useState, useEffect, useCallback } from 'react';
 import { FirebaseApp } from 'firebase/app';
-import { Firestore, doc, getDoc } from 'firebase/firestore';
-import { Auth, User, onAuthStateChanged } from 'firebase/auth';
+import { Firestore, doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { Auth, User, onAuthStateChanged, signOut } from 'firebase/auth';
 import { Functions } from 'firebase/functions';
 import { FirebaseStorage } from 'firebase/storage';
 import { FirebaseErrorListener } from '@/components/FirebaseErrorListener';
@@ -180,6 +180,18 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
     );
     return () => unsubscribe();
   }, [auth, firestore, resolveUserState]);
+
+  const signedInUid = userAuthState.user?.uid;
+  useEffect(() => {
+    if (!auth || !firestore || !signedInUid) return;
+    return onSnapshot(
+      doc(firestore, 'users', signedInUid),
+      (snapshot) => {
+        if (snapshot.data()?.role === 'revoked') void signOut(auth);
+      },
+      () => { /* an unreadable profile is handled elsewhere */ },
+    );
+  }, [auth, firestore, signedInUid]);
 
   const contextValue = useMemo((): FirebaseContextState => {
     const servicesAvailable = !!(firebaseApp && firestore && auth && storage);

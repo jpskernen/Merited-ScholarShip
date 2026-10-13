@@ -32,6 +32,7 @@ export type NotificationType =
   | 'Status Changed'
   | 'Reviewer Invitation'
   | 'Review Assigned'
+  | 'Review Submitted'
   | 'Admin Invitation';
 
 interface EmailParams {
@@ -196,6 +197,63 @@ export async function sendRecommendationReminderEmail(params: {
       button: { label: 'Upload recommendation letter', url: params.tokenLink },
       showPlainLink: true,
       note: 'This link is personal to you — please do not forward it.',
+    }),
+  });
+}
+
+export async function sendReviewSubmittedEmail(params: {
+  email: string;
+  adminName: string;
+  reviewerName: string;
+  studentName: string;
+  scholarshipName: string;
+  totalScore: number | null;
+  recommendation: string;
+  markForDiscussion: boolean;
+  criteria: { label: string; weight: number; score: number }[];
+  notes: string;
+  reviewUrl: string;
+}) {
+  const score = params.totalScore === null ? 'n/a' : `${params.totalScore.toFixed(2)} / 10`;
+
+  const criteriaRows = params.criteria
+    .map(
+      (c) =>
+        `<tr><td style="padding:6px 0;border-bottom:1px solid #e2e8f0;">${escapeHtml(c.label)} <span style="color:#64748b;">(${escapeHtml(c.weight)}%)</span></td><td align="right" style="padding:6px 0;border-bottom:1px solid #e2e8f0;font-weight:700;">${escapeHtml(c.score)} / 10</td></tr>`
+    )
+    .join('');
+  const criteriaTable = criteriaRows
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="font-size:14px;">${criteriaRows}</table>`
+    : '';
+
+  const body = [
+    `<strong>${escapeHtml(params.reviewerName)}</strong> has submitted an evaluation of <strong>${escapeHtml(params.studentName)}</strong> for the <strong>${escapeHtml(params.scholarshipName)}</strong>.`,
+    `Weighted score: <strong>${escapeHtml(score)}</strong><br />Recommendation: <strong>${escapeHtml(params.recommendation || 'None given')}</strong>${params.markForDiscussion ? '<br /><strong>Flagged for committee discussion.</strong>' : ''}`,
+    criteriaTable,
+    params.notes ? `<strong>Reviewer notes</strong><br />${textToHtml(params.notes)}` : '',
+  ].filter(Boolean);
+
+  const text = [
+    `${params.reviewerName} submitted an evaluation of ${params.studentName} for ${params.scholarshipName}.`,
+    `Weighted score: ${score}`,
+    `Recommendation: ${params.recommendation || 'None given'}${params.markForDiscussion ? ' (flagged for discussion)' : ''}`,
+    ...params.criteria.map((c) => `- ${c.label} (${c.weight}%): ${c.score}/10`),
+    params.notes ? `Notes: ${params.notes}` : '',
+    `Review it here: ${params.reviewUrl}`,
+  ].filter(Boolean).join('\n');
+
+  return sendNotification({
+    to: params.email,
+    subject: `Review submitted: ${params.studentName} — ${params.scholarshipName}`,
+    type: 'Review Submitted',
+    text,
+    html: renderEmail({
+      title: 'A review has been submitted',
+      preheader: `${params.reviewerName} scored ${params.studentName}: ${score}.`,
+      greeting: `Hello <strong>${escapeHtml(params.adminName)}</strong>,`,
+      body,
+      button: { label: 'Open in admin dashboard', url: params.reviewUrl },
+      showPlainLink: true,
     }),
   });
 }

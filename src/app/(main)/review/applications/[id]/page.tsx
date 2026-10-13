@@ -39,7 +39,7 @@ import type { Applicant } from '@/types/applicant';
 import type { Scholarship } from '@/types/scholarship';
 import { useToast } from '@/hooks/use-toast';
 import { analyzeScholarshipFit, type AnalyzeFitOutput } from '@/ai/flows/analyze-scholarship-fit';
-import { markApplicationInReview } from '../../actions';
+import { markApplicationInReview, notifyAdminsReviewSubmitted } from '../../actions';
 import { NEUTRAL_SCORE, criterionKey, weightedTotal, withNeutralDefaults } from '@/lib/rubric';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
@@ -51,9 +51,7 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
   const { firestore, user: reviewer, userData } = useFirebase();
   const orgId = orgIdOf(userData);
   
-  // The route id is an application, not a student. That distinction is the
-  // whole fix: a student may hold several applications and each is judged
-  // separately, against its own scholarship's rubric.
+
   const [applicationRecord, setApplicationRecord] = useState<any | null>(null);
   const [activeScholarship, setActiveScholarship] = useState<Scholarship | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -261,6 +259,10 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
         description: "Evaluation finalized and stored.",
       });
 
+      notifyAdminsReviewSubmitted(await reviewer.getIdToken(), applicationId)
+        .then((r) => { if (!r.success) console.error('Admin notification failed:', r.error); })
+        .catch((error) => console.error('Admin notification failed:', error?.message));
+
       try {
         const marked = await markApplicationInReview(await reviewer.getIdToken(), applicationId);
         if (marked.success && marked.changed) {
@@ -272,12 +274,7 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
         console.error('Could not move the application to In Review:', error.message);
       }
       
-      // Stay on this page so the reviewer sees the evaluation they just saved
-      // (the myReview listener re-renders it locked). Jumping straight to the
-      // next candidate looked like the same page with the scores wiped, so
-      // the next candidate is only offered as a button. Looking it up gets its
-      // own error handling: the evaluation is already stored, and a failure
-      // here must not be reported as "Could not save review".
+   
       try {
         setNextApplicationId(await findNextUnreviewedApplication());
       } catch (error: any) {
@@ -290,20 +287,11 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
     } finally { setIsSubmitting(false); }
   };
 
-  /**
-   * Returns the next submitted applicant this reviewer hasn't scored yet.
-   *
-   * "Already reviewed by me" is checked by reading each candidate's own review
-   * document directly. The obvious alternative — one collection-group query on
-   * reviews filtered by reviewerId — requires a COLLECTION_GROUP_ASC index that
-   * doesn't exist, and it failed at exactly the wrong moment: right after a
-   * review was saved. A handful of direct gets needs no index at all.
-   */
+ 
   const findNextUnreviewedApplication = async (): Promise<string | null> => {
     if (!firestore || !reviewer || !orgId) return null;
 
-    // Firestore rejects an empty array for 'in', so skip the lookup entirely
-    // when this reviewer isn't assigned to any scholarship yet.
+   
     const assignedSnap = await getDocs(query(
       collection(firestore, 'programs'),
       where('organizationId', '==', orgId),
@@ -396,14 +384,14 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
   const anonymousIdentifier = `Applicant ${String(applicationRecord?.studentId || applicationId).substring(0, 6).toUpperCase()}`;
 
   return (
-    <div className="flex flex-col h-[calc(100vh-8rem)]">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="sm" onClick={() => router.back()}>
-            <ChevronLeft className="h-4 w-4 mr-2" /> Back
+    <div className="flex flex-col lg:h-[calc(100vh-8rem)]">
+      <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="flex items-start gap-2 sm:gap-4">
+          <Button variant="ghost" size="sm" onClick={() => router.back()} className="shrink-0">
+            <ChevronLeft className="h-4 w-4 mr-1 sm:mr-2" /> Back
           </Button>
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-2xl font-bold flex flex-wrap items-center gap-2">
               {anonymousIdentifier}
               <Badge variant="secondary" className="bg-primary/10 text-primary">
                 <ShieldAlert className="h-3 w-3 mr-1" /> Blind Review
@@ -413,7 +401,7 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
             </h1>
           </div>
         </div>
-        <div className="flex items-center gap-6">
+        <div className="flex items-center justify-between gap-4 md:justify-end md:gap-6">
           <Button variant="outline" size="sm" onClick={runAiAnalysis} disabled={isAnalyzing || !canScore}>
             {isAnalyzing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2 text-primary" />}
             AI Fit Assessment
@@ -425,9 +413,9 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 flex-1 min-h-0">
-        <div className="lg:col-span-7 flex flex-col min-h-0">
-          <ScrollArea className="flex-1 rounded-xl border bg-card p-6 shadow-sm">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 flex-1 lg:min-h-0">
+        <div className="lg:col-span-7 flex flex-col lg:min-h-0">
+          <ScrollArea className="flex-1 rounded-xl border bg-card p-4 sm:p-6 shadow-sm [&>div>div]:!block">
             <div className="space-y-8">
               <section>
                 <div className="flex items-center gap-2 mb-4">
@@ -479,12 +467,12 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
               <Separator />
               <section>
                 <h3 className="text-lg font-semibold mb-4">Supporting Evidence</h3>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {application.essays?.map((essay, i) => {
                     const title = promptResponses.find((response) => response.promptId === essay.promptId)?.title
                       || (activeScholarship?.prompts || []).find((prompt: any) => prompt.id === essay.promptId)?.title;
                     return (
-                      <Button key={i} variant="outline" className="justify-start" asChild>
+                      <Button key={i} variant="outline" className="h-auto justify-start whitespace-normal py-2 text-left [overflow-wrap:anywhere]" asChild>
                         <Link href={essay.fileUrl} target="_blank">
                           <FileText className="h-4 w-4 mr-2" /> {title || 'Essay'}: {essay.fileName}
                         </Link>
@@ -496,7 +484,7 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
                     if (!url) return null;
                     const name = (application as any)?.[`recommenderName${i}`];
                     return (
-                      <Button key={`rec-pdf-${i}`} variant="outline" className="justify-start" asChild><Link href={url} target="_blank"><FileText className="h-4 w-4 mr-2" /> Recommendation Letter {i}{name ? ` — ${name}` : ''}</Link></Button>
+                      <Button key={`rec-pdf-${i}`} variant="outline" className="h-auto justify-start whitespace-normal py-2 text-left [overflow-wrap:anywhere]" asChild><Link href={url} target="_blank"><FileText className="h-4 w-4 mr-2" /> Recommendation Letter {i}{name ? ` — ${name}` : ''}</Link></Button>
                     );
                   })}
                 </div>
@@ -525,8 +513,8 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
           </ScrollArea>
         </div>
 
-        <div className="lg:col-span-5 flex flex-col gap-6 min-h-0">
-          <Card className={`flex flex-col min-h-0 shadow-lg ${hasAlreadyReviewed ? 'border-green-200' : 'border-primary/20'}`}>
+        <div className="lg:col-span-5 flex flex-col gap-6 lg:min-h-0">
+          <Card className={`flex flex-col lg:min-h-0 shadow-lg ${hasAlreadyReviewed ? 'border-green-200' : 'border-primary/20'}`}>
             <CardHeader className="bg-primary/5 border-b py-4">
               <div className="flex justify-between items-center">
                 <CardTitle className="text-lg flex items-center gap-2"><Calculator className="h-5 w-5" /> Score Rubric</CardTitle>

@@ -219,7 +219,7 @@ export default function EditScholarshipPage({ params }: { params: Promise<{ id: 
               {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="amount">Award Amount</Label>
                 <Input id="amount" {...register('amount')} placeholder="e.g. $5,000" />
@@ -279,12 +279,12 @@ export default function EditScholarshipPage({ params }: { params: Promise<{ id: 
             )}
             <div className="space-y-3">
               {fields.map((field, index) => (
-                <div key={field.id} className="flex items-end gap-4 animate-in slide-in-from-left-2">
-                  <div className="flex-1 space-y-2">
+                <div key={field.id} className="flex flex-wrap items-end gap-x-4 gap-y-2 rounded-lg border p-3 sm:flex-nowrap sm:border-0 sm:p-0 animate-in slide-in-from-left-2">
+                  <div className="w-full min-w-0 space-y-2 sm:w-auto sm:flex-1">
                     <Label className="text-[10px] uppercase font-black text-muted-foreground">Criterion</Label>
                     <Input {...register(`rubric.${index}.label`)} placeholder="e.g. Leadership Potential" disabled={isLocked} />
                   </div>
-                  <div className="w-24 space-y-2">
+                  <div className="w-24 flex-1 space-y-2 sm:flex-none">
                     <Label className="text-[10px] uppercase font-black text-muted-foreground">Weight (%)</Label>
                     <Input type="number" {...register(`rubric.${index}.weight`, { valueAsNumber: true })} disabled={isLocked} />
                   </div>
@@ -303,7 +303,7 @@ export default function EditScholarshipPage({ params }: { params: Promise<{ id: 
 
             <Separator className="my-4" />
             
-            <div className="flex justify-between items-center px-2">
+            <div className="flex flex-wrap justify-between items-center gap-2 px-2">
               <span className="text-sm font-bold">Total Weighted distribution</span>
               <Badge variant={totalWeight === 100 ? "default" : "destructive"} className="text-lg py-1 px-4 font-mono">
                 {totalWeight}%
@@ -314,8 +314,8 @@ export default function EditScholarshipPage({ params }: { params: Promise<{ id: 
 
         <Card className="border-primary/20 bg-primary/5 shadow-sm">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5 text-primary" />
+            <CardTitle className="flex items-center gap-2 text-xl sm:text-2xl">
+              <Users className="h-5 w-5 shrink-0 text-primary" />
               Committee Assignments
             </CardTitle>
             <CardDescription>
@@ -357,7 +357,7 @@ export default function EditScholarshipPage({ params }: { params: Promise<{ id: 
           </CardContent>
         </Card>
 
-        <Button type="submit" className="w-full h-14 text-lg font-black uppercase tracking-widest shadow-xl" disabled={isSubmitting}>
+        <Button type="submit" className="w-full h-auto min-h-14 whitespace-normal px-4 py-3 text-sm sm:text-lg font-black uppercase tracking-wider sm:tracking-widest shadow-xl" disabled={isSubmitting}>
           {isSubmitting ? <Loader2 className="mr-2 h-6 w-6 animate-spin" /> : null}
           {isSubmitting ? 'Syncing...' : 'Save & Distribute to Committee'}
         </Button>

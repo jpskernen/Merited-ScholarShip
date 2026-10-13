@@ -215,13 +215,13 @@ export default function AdminApplicantDetail({
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="sm" onClick={() => router.back()}>
-            <ChevronLeft className="h-4 w-4 mr-2" /> Back
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 items-start gap-2 sm:gap-4">
+          <Button variant="ghost" size="sm" onClick={() => router.back()} className="shrink-0">
+            <ChevronLeft className="h-4 w-4 mr-1 sm:mr-2" /> Back
           </Button>
-          <div>
-            <h1 className="text-3xl font-bold flex items-center gap-2">
+          <div className="min-w-0">
+            <h1 className="text-2xl sm:text-3xl font-bold flex flex-wrap items-center gap-2 [overflow-wrap:anywhere]">
               {applicant.name}
               <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 uppercase text-[10px] tracking-widest font-black">
                 {application?.status ?? applicant.status}
@@ -230,7 +230,7 @@ export default function AdminApplicantDetail({
             {application && (
               <p className="text-sm font-semibold">{application.scholarshipName || 'Scholarship'}</p>
             )}
-            <p className="text-sm text-muted-foreground">{applicant.email} • ID: {applicantId.substring(0, 8).toUpperCase()}</p>
+            <p className="text-sm text-muted-foreground [overflow-wrap:anywhere]">{applicant.email} • ID: {applicantId.substring(0, 8).toUpperCase()}</p>
             {sortedApplications.length > 1 && (
               <div className="flex flex-wrap items-center gap-2 pt-2">
                 {sortedApplications.map((entry: any) => (
@@ -250,12 +250,12 @@ export default function AdminApplicantDetail({
             )}
           </div>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
            {application && (
-             <div className="flex gap-2">
+             <div className="flex w-full gap-2 sm:w-auto">
                <Button
                  size="sm"
-                 className="bg-green-600 hover:bg-green-700"
+                 className="flex-1 bg-green-600 hover:bg-green-700 sm:flex-none"
                  disabled={isDeciding || application.status === 'Awarded'}
                  onClick={() => setPendingDecision('Awarded')}
                >
@@ -265,6 +265,7 @@ export default function AdminApplicantDetail({
                <Button
                  size="sm"
                  variant="outline"
+                 className="flex-1 sm:flex-none"
                  disabled={isDeciding || application.status === 'Not Awarded'}
                  onClick={() => setPendingDecision('Not Awarded')}
                >
@@ -273,7 +274,7 @@ export default function AdminApplicantDetail({
              </div>
            )}
            {stats && (
-             <div className="text-right border-r pr-6">
+             <div className="border-r pr-4 text-left sm:pr-6 sm:text-right">
                 <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Committee Consensus</p>
                 <p className="text-3xl font-black text-primary">{stats.avg.toFixed(2)}<span className="text-sm font-normal text-muted-foreground">/10</span></p>
              </div>
@@ -306,19 +307,19 @@ export default function AdminApplicantDetail({
       </AlertDialog>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
-        <div className="lg:col-span-7 space-y-8">
+        <div className="min-w-0 lg:col-span-7 space-y-8">
           <Card>
             <CardHeader className="bg-muted/30 border-b">
               <CardTitle className="text-lg flex items-center gap-2"><UserCircle className="h-5 w-5" /> Submission Portfolio</CardTitle>
             </CardHeader>
-            <CardContent className="p-6 space-y-8">
+            <CardContent className="p-4 sm:p-6 space-y-8">
               {!application ? (
                 <p className="text-sm text-muted-foreground italic">
                   This student has no submitted application, so there is nothing to show here.
                 </p>
               ) : (
                 <>
-                  <div className="grid grid-cols-2 gap-6">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
                     <div className="space-y-1">
                       <Label className="text-[10px] font-black uppercase text-muted-foreground">Institutional Context</Label>
                       <p className="font-bold flex items-center gap-1.5"><GraduationCap className="h-4 w-4 text-primary" /> {profile.school || '—'}</p>
@@ -403,7 +404,7 @@ export default function AdminApplicantDetail({
           </Card>
         </div>
 
-        <div className="lg:col-span-5 space-y-6">
+        <div className="min-w-0 lg:col-span-5 space-y-6">
           <Card className="border-primary/20 shadow-md">
             <CardHeader className="bg-primary/5 border-b">
               <div className="flex justify-between items-center">

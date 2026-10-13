@@ -25,9 +25,9 @@ import {
   Italic,
   List,
   ArrowLeft,
-  Send
-} from 'lucide-react';
-import Link from 'next/link';
+  Send,
+  Lock
+} from 'lucide-react';import Link from 'next/link';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
@@ -221,31 +221,73 @@ export default function RecommendUploadPage({ params }: { params: Promise<{ toke
     );
   }
 
+  const linkExpiry: Date | null = tokenData?.expiresAt?.toDate
+    ? tokenData.expiresAt.toDate()
+    : (tokenData?.expiresAt ? new Date(tokenData.expiresAt) : null);
+  const linkExpiringSoon = !!linkExpiry && linkExpiry.getTime() - Date.now() < 3 * 24 * 60 * 60 * 1000;
+
   return (
     <div className="flex min-h-screen flex-col items-center bg-gray-50 p-4 md:p-8">
-      <div className="mb-8 flex items-center gap-2">
-        <GraduationCap className="h-8 w-8 text-primary" />
-        <span className="text-2xl font-black uppercase tracking-tighter">Merited</span>
+      <div className="mb-6 flex w-full max-w-3xl items-center justify-between">
+        <Link href="/" className="flex items-center gap-2 text-slate-900">
+          <GraduationCap className="h-7 w-7 text-slate-900" />
+          <span className="text-xl font-bold">ScholarShip</span>
+        </Link>
+        <Badge variant="outline" className="gap-1 px-2 py-1 text-[11px] font-semibold text-muted-foreground">
+          <Lock className="h-3 w-3" /> Secure link
+        </Badge>
       </div>
 
       <Card className="max-w-3xl w-full shadow-2xl border-primary/10 overflow-hidden">
         <CardHeader className="bg-primary/5 border-b">
-          <div className="flex justify-between items-start">
-            <div>
-              <CardTitle className="text-2xl">Professional Endorsement</CardTitle>
-              <CardDescription className="font-medium text-primary/80">
-                Candidate: <strong>{tokenData.studentName}</strong>
-              </CardDescription>
+          <div className="flex flex-col-reverse items-start gap-3 sm:flex-row sm:justify-between sm:gap-4">
+            <div className="min-w-0 space-y-1">
+              <p className="text-[11px] font-black uppercase tracking-widest text-muted-foreground">Recommendation Request</p>
+              <CardTitle className="text-xl leading-snug sm:text-2xl [overflow-wrap:anywhere]">
+                {tokenData.studentName} has asked you to write a recommendation.
+              </CardTitle>
             </div>
             {inputMethod !== 'selection' && (
-              <Button variant="ghost" size="sm" onClick={() => setInputMethod('selection')} className="text-xs">
-                <ArrowLeft className="h-3 w-3 mr-1" /> Change Method
+              <Button variant="outline" size="sm" onClick={() => setInputMethod('selection')} className="shrink-0 text-xs font-bold">
+                <ArrowLeft className="h-3 w-3 mr-1" /> Back to options
               </Button>
             )}
           </div>
+          <dl className="mt-4 grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+            {tokenData.scholarshipTitle && (
+              <div>
+                <dt className="text-[11px] font-bold uppercase text-muted-foreground">Scholarship</dt>
+                <dd className="font-medium">{tokenData.scholarshipTitle}</dd>
+              </div>
+            )}
+            {(tokenData.recommenderName || tokenData.recommenderEmail) && (
+              <div>
+                <dt className="text-[11px] font-bold uppercase text-muted-foreground">Invited as</dt>
+                <dd className="font-medium">
+                  {tokenData.recommenderName && <span className="block">{tokenData.recommenderName}</span>}
+                  {tokenData.recommenderEmail && (
+                    <span className="block text-muted-foreground [overflow-wrap:anywhere]">{tokenData.recommenderEmail}</span>
+                  )}
+                </dd>
+              </div>
+            )}
+            {linkExpiry && (
+              <div>
+                <dt className="text-[11px] font-bold uppercase text-muted-foreground">Link valid until</dt>
+                <dd className={cn('font-medium', linkExpiringSoon && 'text-destructive')}>
+                  {linkExpiry.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })}
+                </dd>
+              </div>
+            )}
+          </dl>
         </CardHeader>
-        
+
         <CardContent className="pt-8 space-y-8">
+          {inputMethod === 'selection' && (
+            <p className="-mb-4 text-sm text-muted-foreground">
+              Choose how you&apos;d like to submit your letter. It must be completed in one sitting.
+            </p>
+          )}
           {inputMethod === 'selection' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Button 
@@ -256,7 +298,7 @@ export default function RecommendUploadPage({ params }: { params: Promise<{ toke
                 <Type className="h-8 w-8 text-primary" />
                 <div className="text-center">
                   <p className="font-bold">Type my letter</p>
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">Direct Entry</p>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">Write here · 2000–5000 words</p>
                 </div>
               </Button>
               <Button 
@@ -267,15 +309,26 @@ export default function RecommendUploadPage({ params }: { params: Promise<{ toke
                 <Upload className="h-8 w-8 text-primary" />
                 <div className="text-center">
                   <p className="font-bold">Upload a PDF</p>
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">Max 10MB</p>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">PDF · Max 10MB</p>
                 </div>
               </Button>
             </div>
           )}
 
+          {inputMethod === 'selection' && (
+            <div className="rounded-lg border bg-muted/20 p-4">
+              <p className="mb-2 text-[11px] font-black uppercase tracking-widest text-muted-foreground">What happens next</p>
+              <ol className="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
+                <li>You submit your letter.</li>
+                <li>The student is notified that it has been received.</li>
+                <li>Only the selection committee reads it.</li>
+              </ol>
+            </div>
+          )}
+
           {inputMethod === 'type' && (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <Label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Recommendation Letter Content</Label>
                 <div className="flex bg-muted rounded-md p-1 border">
                   <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => insertFormatting('**')}><Bold className="h-4 w-4" /></Button>
@@ -293,7 +346,7 @@ export default function RecommendUploadPage({ params }: { params: Promise<{ toke
                   onChange={(e) => setLetterText(e.target.value)}
                   disabled={isUploading}
                 />
-                <div className="flex justify-between items-center">
+                <div className="flex flex-wrap justify-between items-center gap-x-4 gap-y-1">
                   <p className={cn(
                     "text-[10px] font-black uppercase tracking-widest",
                     isWordCountValid ? "text-green-600" : "text-amber-600"
@@ -305,12 +358,13 @@ export default function RecommendUploadPage({ params }: { params: Promise<{ toke
               </div>
 
               <Button 
-                className="w-full h-14 text-lg font-black uppercase tracking-widest shadow-lg"
+                className="w-full h-auto min-h-14 whitespace-normal px-4 py-3 text-sm sm:text-lg font-black uppercase tracking-wider sm:tracking-widest shadow-lg"
                 disabled={!isWordCountValid || isUploading}
                 onClick={handleTextSubmit}
               >
-                {isUploading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Send className="mr-2 h-5 w-5" />}
-                Finalize & Submit Recommendation
+                {isUploading ? <Loader2 className="mr-2 h-5 w-5 shrink-0 animate-spin" /> : <Send className="mr-2 h-5 w-5 shrink-0" />}
+                <span className="sm:hidden">Submit Recommendation</span>
+                <span className="hidden sm:inline">Finalize & Submit Recommendation</span>
               </Button>
             </div>
           )}

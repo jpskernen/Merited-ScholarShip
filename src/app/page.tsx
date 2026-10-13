@@ -115,18 +115,18 @@ export default function Home() {
   ];
 
   return (
-    <div className="flex min-h-screen flex-col bg-background text-foreground font-sans">
+    <div className="flex min-h-screen flex-col overflow-x-clip bg-background text-foreground font-sans">
       <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur-md">
         <div className="container mx-auto flex h-16 items-center justify-between px-4 md:px-6">
           <AppLogo />
-          <nav className="flex items-center space-x-4">
+          <nav className="flex items-center space-x-1 sm:space-x-4">
             {mounted && !isUserLoading && user ? (
               <Button asChild variant="outline" className="font-bold">
                 <Link href={dashboardLink}><LayoutDashboard className="mr-2 h-4 w-4" /> My Portal</Link>
               </Button>
             ) : (
               <>
-                <Button variant="ghost" asChild>
+                <Button variant="ghost" asChild className="hidden sm:inline-flex">
                   <Link href="/organizations">Browse Organizations</Link>
                 </Button>
 
@@ -192,10 +192,11 @@ export default function Home() {
             </div>
             
             {allTags.length > 0 && (
-              <div className="flex flex-wrap justify-center gap-2 mb-8">
+             
+              <div className="mb-8 -mx-4 flex flex-nowrap gap-2 overflow-x-auto px-4 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mx-0 sm:flex-wrap sm:justify-center sm:overflow-visible sm:px-0 sm:pb-0">
                 <Badge
                   variant={selectedTag === null ? 'default' : 'outline'}
-                  className="cursor-pointer text-[10px] uppercase tracking-widest px-2 py-0.5 font-bold"
+                  className="shrink-0 cursor-pointer whitespace-nowrap text-[10px] uppercase tracking-widest px-3 py-1.5 sm:px-2 sm:py-0.5 font-bold"
                   onClick={() => setSelectedTag(null)}
                 >
                   All
@@ -204,7 +205,7 @@ export default function Home() {
                   <Badge
                     key={tag}
                     variant={selectedTag === tag ? 'default' : 'outline'}
-                    className="cursor-pointer text-[10px] uppercase tracking-widest px-2 py-0.5 font-bold"
+                    className="shrink-0 cursor-pointer whitespace-nowrap text-[10px] uppercase tracking-widest px-3 py-1.5 sm:px-2 sm:py-0.5 font-bold"
                     onClick={() => toggleTag(tag)}
                   >
                     {tag}
@@ -345,9 +346,6 @@ export default function Home() {
             </Link>
             <Link href="#" className="text-sm text-muted-foreground hover:text-primary transition-colors">
               Privacy
-            </Link>
-            <Link href="/review/login" className="text-sm font-semibold text-primary hover:underline">
-              Committee Portal
             </Link>
           </div>
         </div>

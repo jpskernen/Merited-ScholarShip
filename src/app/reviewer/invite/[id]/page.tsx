@@ -12,6 +12,7 @@ import { ShieldCheck, Loader2, Eye, EyeOff, Key } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { acceptInvite } from '@/app/admin/invite-actions';
+import { AppLogo } from '@/components/shared/AppLogo';
 
 export default function ReviewerOnboardingPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: inviteId } = use(params);
@@ -83,15 +84,18 @@ export default function ReviewerOnboardingPage({ params }: { params: Promise<{ i
 
   if (isInviteLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50">
+      <div className="flex min-h-screen items-center justify-center bg-background">
         <Loader2 className="h-10 w-10 animate-spin text-primary" />
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
+    <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <div className="w-full max-w-md">
+        <div className="mb-8 flex justify-center">
+          <AppLogo />
+        </div>
         <form onSubmit={handleSignup}>
           <Card className="border-primary/20 shadow-xl">
             <CardHeader className="space-y-1">

@@ -59,14 +59,14 @@ export default function AdminScholarshipsPage() {
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Manage Scholarships</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold">Manage Scholarships</h1>
           <p className="text-muted-foreground">
             Add, edit, or remove scholarship listings for your institution.
           </p>
         </div>
-        <Button asChild>
+        <Button asChild className="w-full sm:w-auto">
           <Link href="/admin/scholarships/new">
             <PlusCircle className="mr-2 h-4 w-4" />
             Add New Scholarship
@@ -74,7 +74,33 @@ export default function AdminScholarshipsPage() {
         </Button>
       </div>
 
-      <div className="overflow-hidden rounded-lg border bg-card">
+      {scholarships && scholarships.length > 0 && (
+        <div className="space-y-3 md:hidden">
+          {scholarships.map((scholarship) => (
+            <div key={scholarship.id} className="space-y-3 rounded-lg border bg-card p-4">
+              <p className="font-bold [overflow-wrap:anywhere]">{scholarship.name}</p>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                <Badge variant="secondary">{scholarship.amount}</Badge>
+                <span className="text-muted-foreground">Deadline: {formatDeadline(scholarship.deadline)}</span>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" asChild className="flex-1">
+                  <Link href={`/admin/scholarships/edit/${scholarship.id}`}>
+                    <Edit className="h-4 w-4 mr-2" />
+                    Edit
+                  </Link>
+                </Button>
+                <Button variant="outline" size="sm" className="flex-1" onClick={() => handleDelete(scholarship.id!)}>
+                  <Trash2 className="h-4 w-4 mr-2 text-destructive" />
+                  Delete
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="hidden overflow-hidden rounded-lg border bg-card md:block">
         <Table>
           <TableHeader>
             <TableRow>

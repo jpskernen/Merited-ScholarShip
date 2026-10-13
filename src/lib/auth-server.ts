@@ -27,7 +27,7 @@ export async function requireUser(idToken: string | null | undefined): Promise<C
   if (!idToken) throw new AuthError('You must be signed in to do this.');
   let decoded;
   try {
-    decoded = await getAdminAuth().verifyIdToken(idToken);
+    decoded = await getAdminAuth().verifyIdToken(idToken, true);
   } catch {
     throw new AuthError('Your session has expired. Please sign in again.');
   }

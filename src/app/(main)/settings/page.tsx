@@ -279,6 +279,8 @@ export default function SettingsPage() {
         <p className="text-sm text-muted-foreground">Manage your profile, credentials and security preferences.</p>
       </div>
 
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 items-start">
+      <div className="space-y-5">
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
@@ -305,7 +307,6 @@ export default function SettingsPage() {
         </form>
       </Card>
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 items-start">
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
@@ -331,26 +332,9 @@ export default function SettingsPage() {
                 </Button>
               )}
             </div>
-
-            <form onSubmit={handleEmailChange} className="space-y-3 pt-3 border-t">
-              <p className="text-[11px] font-bold uppercase text-muted-foreground">Change Login Email</p>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div className="grid gap-1.5">
-                  <Label htmlFor="new-email" className="sr-only">New Email</Label>
-                  <Input id="new-email" className="h-9" type="email" placeholder="New email address" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} disabled={isChangingEmail} />
-                </div>
-                <div className="grid gap-1.5">
-                  <Label htmlFor="email-current-password" className="sr-only">Current Password</Label>
-                  <Input id="email-current-password" className="h-9" type="password" placeholder="Current password" value={emailPassword} onChange={(e) => setEmailPassword(e.target.value)} disabled={isChangingEmail} />
-                </div>
-              </div>
-              <Button type="submit" variant="outline" size="sm" className="h-9 font-bold border-primary/20 hover:bg-primary/5" disabled={isChangingEmail || !newEmail.trim() || !emailPassword}>
-                {isChangingEmail ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : null}
-                Send Confirmation Link
-              </Button>
-            </form>
           </CardContent>
         </Card>
+      </div>
 
         <Card>
           <CardHeader className="pb-3">

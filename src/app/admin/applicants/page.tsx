@@ -324,7 +324,9 @@ function AdminApplicantsBoard() {
       'Status': row.applicationStatus,
       'Avg Score': row.reviewCount === 0 ? '' : row.averageScore.toFixed(2),
       'Reviews': row.reviewCount
-    })));
+    })), {
+      escapeFormulae: true,
+    });
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -340,11 +342,11 @@ function AdminApplicantsBoard() {
     <div className="space-y-8">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Committee Review Board</h1>
+          <h1 className="text-xl sm:text-3xl font-bold">Committee Review Board</h1>
           <p className="text-muted-foreground">Aggregate scoring and decision workflow oversight.</p>
         </div>
-        <div className="flex flex-wrap gap-2 items-center">
-          <div className="relative">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
+          <div className="relative col-span-2 sm:col-span-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               value={search}
@@ -353,9 +355,9 @@ function AdminApplicantsBoard() {
               className="h-10 w-full sm:w-64 pl-9"
             />
           </div>
-          <Button variant="outline" onClick={handleExportCSV}><Download className="mr-2 h-4 w-4" /> Export CSV</Button>
+          <Button variant="outline" onClick={handleExportCSV} className="col-span-2 sm:col-span-1"><Download className="mr-2 h-4 w-4" /> Export CSV</Button>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="h-10 w-[170px]"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="h-10 w-full sm:w-[170px]"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All statuses</SelectItem>
               <SelectItem value="submitted">Submitted</SelectItem>
@@ -365,7 +367,7 @@ function AdminApplicantsBoard() {
             </SelectContent>
           </Select>
           <Select value={scholarshipFilter} onValueChange={setScholarshipFilter}>
-            <SelectTrigger className="h-10 w-[200px]"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="h-10 w-full sm:w-[200px]"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All scholarships</SelectItem>
               {scholarshipOptions.map(option => (
@@ -376,7 +378,7 @@ function AdminApplicantsBoard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-6">
         <Card className="bg-primary/5 border-primary/20">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
@@ -413,11 +415,11 @@ function AdminApplicantsBoard() {
       </div>
 
       {selectedIds.length > 0 && (
-        <Card className="p-4 bg-primary/5 border-primary/20 flex items-center justify-between gap-4 animate-in slide-in-from-top-4">
-          <div className="flex items-center gap-4">
+        <Card className="p-4 bg-primary/5 border-primary/20 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 animate-in slide-in-from-top-4">
+          <div className="flex flex-wrap items-center gap-3 sm:gap-4">
             <Badge className="h-8 px-4 font-bold">{selectedIds.length} Selected</Badge>
             <Select value={bulkStatus} onValueChange={setBulkStatus}>
-              <SelectTrigger className="w-[200px] h-10"><SelectValue placeholder="Institutional Decision..." /></SelectTrigger>
+              <SelectTrigger className="w-full sm:w-[200px] h-10"><SelectValue placeholder="Institutional Decision..." /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="Awarded">Grant Award</SelectItem>
                 <SelectItem value="Not Awarded">Deny Application</SelectItem>
@@ -472,6 +474,62 @@ function AdminApplicantsBoard() {
       
 
       <div className="rounded-xl border bg-card overflow-hidden shadow-sm">
+        <div className="divide-y md:hidden">
+          {pagedData.map((row) => (
+            <div key={row.rowId} className="space-y-3 p-4">
+              <div className="flex items-start gap-3">
+                <Checkbox
+                  className="mt-1"
+                  checked={selectedIds.includes(row.rowId)}
+                  onCheckedChange={() => setSelectedIds(prev => prev.includes(row.rowId) ? prev.filter(i => i !== row.rowId) : [...prev, row.rowId])}
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="font-bold">{row.name || 'Unnamed applicant'}</p>
+                  <p className="text-[10px] font-black uppercase tracking-tighter text-muted-foreground">{row.school || 'Institution not recorded'}</p>
+                  {row.email && <p className="text-[11px] text-muted-foreground [overflow-wrap:anywhere]">{row.email}</p>}
+                </div>
+                <Badge variant="outline" className={cn(
+                  "shrink-0 font-bold uppercase tracking-widest text-[10px]",
+                  row.applicationStatus === 'Awarded' ? 'bg-green-50 text-green-700 border-green-200' :
+                  row.applicationStatus === 'Not Awarded' ? 'bg-red-50 text-red-700 border-red-200' :
+                  row.applicationStatus === 'In Review' ? 'bg-amber-50 text-amber-700 border-amber-200' : ''
+                )}>
+                  {row.applicationStatus || 'Unknown'}
+                </Badge>
+              </div>
+              <p className="text-sm font-medium">{row.scholarshipName || <span className="text-xs italic text-muted-foreground">Not linked to a scholarship</span>}</p>
+              <div className="grid grid-cols-3 gap-2 rounded-lg bg-muted/30 p-3 text-center">
+                <div>
+                  <p className="text-[10px] font-black uppercase text-muted-foreground">GPA</p>
+                  <p className="font-mono text-sm font-bold">{typeof row.gpa === 'number' ? row.gpa.toFixed(2) : '—'}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase text-muted-foreground">Avg score</p>
+                  <p className={cn("text-sm font-black", row.reviewCount === 0 ? "text-muted-foreground" : row.averageScore >= 8 ? "text-green-600" : row.averageScore >= 6 ? "text-primary" : "text-amber-600")}>
+                    {row.reviewCount === 0 ? '—' : row.averageScore.toFixed(2)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase text-muted-foreground">Reviews</p>
+                  <p className="flex items-center justify-center gap-1 text-sm font-bold">
+                    {row.reviewCount}
+                    {row.needsDiscussion && <MessageSquare className="h-3 w-3 text-amber-600" />}
+                  </p>
+                </div>
+              </div>
+              {row.hasOutlier && (
+                <Badge variant="outline" className="bg-red-50 text-[10px] text-red-600 border-red-200">High Variance</Badge>
+              )}
+              <Button variant="outline" size="sm" asChild className="w-full font-bold">
+                <Link href={`/admin/applicants/${row.studentId}${row.applicationId ? `?application=${encodeURIComponent(row.applicationId)}` : ''}`}>
+                  Detail View <ExternalLink className="ml-2 h-3 w-3" />
+                </Link>
+              </Button>
+            </div>
+          ))}
+        </div>
+
+        <div className="hidden md:block">
         <Table>
           <TableHeader className="bg-muted/50">
             <TableRow>
@@ -552,6 +610,7 @@ function AdminApplicantsBoard() {
 
           </TableBody>
         </Table>
+        </div>
 
         {tableData.length === 0 && (
           <div className="py-20 text-center flex flex-col items-center gap-2">
@@ -578,7 +637,7 @@ function AdminApplicantsBoard() {
               </Select>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {/* Selections survive paging, so a decision can span pages. */}
               {selectedIds.length > 0 && (
                 <span className="text-xs text-muted-foreground mr-2">{selectedIds.length} selected across all pages</span>

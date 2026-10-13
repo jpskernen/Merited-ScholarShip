@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { useAuth, useFirestore, useDoc, useMemoFirebase, useFirebase } from '@/firebase';
 import { doc } from 'firebase/firestore';
 import { ShieldCheck, Loader2, Eye, EyeOff, UserCog, Key } from 'lucide-react';
+import { AppLogo } from '@/components/shared/AppLogo';
 import { useToast } from '@/hooks/use-toast';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { acceptInvite } from '@/app/admin/invite-actions';
@@ -79,15 +80,18 @@ export default function AdminOnboardingPage({ params }: { params: Promise<{ id: 
 
   if (isInviteLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50">
+      <div className="flex min-h-screen items-center justify-center bg-background">
         <Loader2 className="h-10 w-10 animate-spin text-primary" />
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-amber-50/30 p-4">
+    <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <div className="w-full max-w-md">
+        <div className="mb-8 flex justify-center">
+          <AppLogo />
+        </div>
         <form onSubmit={handleSignup}>
           <Card className="border-amber-200 shadow-2xl">
             <CardHeader className="space-y-1">

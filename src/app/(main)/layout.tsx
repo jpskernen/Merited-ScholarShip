@@ -25,7 +25,6 @@ import {
   ShieldCheck,
   Loader2,
   History,
-  FlaskConical,
   Settings
 } from 'lucide-react';
 import Link from 'next/link';
@@ -55,7 +54,6 @@ const adminNav = [
   { href: '/admin/reviewers', label: 'Manage Reviewers', icon: Award },
   { href: '/admin/scholarships', label: 'Programs', icon: Award },
   { href: '/admin/audit-log', label: 'Audit Log', icon: History },
-  { href: '/admin/test-utils', label: 'Dev Utils', icon: FlaskConical },
 ];
 
 function DashboardLayoutContent({

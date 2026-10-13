@@ -219,7 +219,7 @@ function ReviewerDashboardContent() {
           <Button variant={sortByRandom ? 'secondary' : 'outline'} onClick={() => setSortByRandom(!sortByRandom)} size="sm">
             <ArrowUpDown className="h-4 w-4 mr-2" /> Randomize Order
           </Button>
-          <Button variant={filter === 'discussion' ? 'secondary' : 'outline'} onClick={() => navigateFilter('discussion')} size="sm">
+          <Button variant={filter === 'discussion' ? 'secondary' : 'outline'} onClick={() => navigateFilter(filter === 'discussion' ? 'all' : 'discussion')} size="sm">
             <MessageSquare className="h-4 w-4 mr-2" /> Flagged by me
           </Button>
         </div>

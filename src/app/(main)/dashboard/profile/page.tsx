@@ -18,14 +18,16 @@ import { useForm } from 'react-hook-form';
 import { saveApplication, ensureLegacyApplication, sendRecommendationRequest, sendRecommendationReminder, cancelRecommendationRequest } from './actions';
 import { useEffect, useState, useRef, useCallback, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { applicationId as buildApplicationId } from '@/types/application';
 import { Separator } from '@/components/ui/separator';
 import { useDoc, useFirebase, useMemoFirebase } from '@/firebase';
 import { orgIdOf } from '@/lib/org';
 import { doc, setDoc, serverTimestamp, updateDoc, arrayUnion } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { 
-  CheckCircle, 
+import {
+  ArrowLeft,
+  CheckCircle,
   Send, 
   Save, 
   Loader2, 
@@ -484,6 +486,12 @@ function ProfilePageContent() {
     <form ref={formRef} className="space-y-6 md:space-y-8" noValidate>
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="space-y-1">
+          <Link
+            href="/dashboard/applications"
+            className="mb-1 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" /> Back to My Applications
+          </Link>
           <h1 className="text-2xl md:text-3xl font-bold">{scholarshipName}</h1>
           <p className="text-xs md:text-sm text-muted-foreground">
             {isAlreadySubmitted
@@ -514,7 +522,7 @@ function ProfilePageContent() {
                 <div className="space-y-2"><Label htmlFor="gpa" className="text-xs font-bold uppercase tracking-wider">Cumulative GPA</Label><Input id="gpa" type="number" step="0.01" {...register('gpa')} disabled={isAlreadySubmitted} className="h-10" /></div>
                 <div className="space-y-2"><Label htmlFor="major" className="text-xs font-bold uppercase tracking-wider">Intended Major</Label><Input id="major" {...register('major')} disabled={isAlreadySubmitted} className="h-10" /></div>
                 <div className="space-y-2"><Label htmlFor="interests" className="text-xs font-bold uppercase tracking-wider">Academic Interests</Label><Input id="interests" {...register('interests')} placeholder="e.g. Robotics, Public Policy" disabled={isAlreadySubmitted} className="h-10" /></div>
-                <div className="space-y-2 sm:col-span-2"><Label htmlFor="address" className="text-xs font-bold uppercase tracking-wider">Permanent Mailing Address</Label><Input id="address" {...register('address')} disabled={isAlreadySubmitted} className="h-10" /></div>
+                <div className="space-y-2 sm:col-span-2"><Label htmlFor="address" className="text-xs font-bold uppercase tracking-wider">Permanent Mailing Address</Label><Input id="address" {...register('address')} placeholder="e.g. 123 Maple Street, Apt 4B, Springfield, IL 62704, USA" disabled={isAlreadySubmitted} className="h-10" /></div>
               </div>
             </CardContent>
           </Card>

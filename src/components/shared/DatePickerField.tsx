@@ -43,10 +43,18 @@ export function DatePickerField({ id, value, onChange, disabled, placeholder = '
           type="button"
           variant="outline"
           disabled={disabled}
-          className={cn('w-full justify-start text-left font-normal', !selected && 'text-muted-foreground')}
+          className={cn('w-full min-w-0 justify-start text-left font-normal', !selected && 'text-muted-foreground')}
         >
-          <CalendarIcon className="mr-2 h-4 w-4" />
-          {selected ? format(selected, 'PPP') : placeholder}
+          <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+        
+          {selected ? (
+            <>
+              <span className="truncate sm:hidden">{format(selected, 'PP')}</span>
+              <span className="hidden truncate sm:inline">{format(selected, 'PPP')}</span>
+            </>
+          ) : (
+            <span className="truncate">{placeholder}</span>
+          )}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0" align="start">
