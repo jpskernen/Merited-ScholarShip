@@ -82,8 +82,8 @@ export default function DashboardPage() {
             </CardTitle>
             <CardDescription>
               {summary.awarded.length === 1
-                ? 'The selection committee has chosen you for this award. We’ll email you with the next steps — keep an eye on your inbox.'
-                : 'The selection committee has chosen you for these awards. We’ll email you with the next steps — keep an eye on your inbox.'}
+                ? 'The selection committee has chosen you for this award. Check your email for the decision, and contact the organization if you have questions about what happens next.'
+                : 'The selection committee has chosen you for these awards. Check your email for the decisions, and contact the organization if you have questions about what happens next.'}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">

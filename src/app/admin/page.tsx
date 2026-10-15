@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Award, FileCheck, Users, Clock, Mail, ExternalLink, Loader2, FileText, CheckCircle, Search, ClipboardList, Activity, ShieldCheck, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import { useCollection, useFirebase, useMemoFirebase, useUser } from '@/firebase';
-import { collection, collectionGroup, query, orderBy, limit, where, onSnapshot } from 'firebase/firestore';
+import { collection, collectionGroup, query, orderBy, limit, where, getCountFromServer, getAggregateFromServer, count, average } from 'firebase/firestore';
 import { Badge } from '@/components/ui/badge';
 import { useState, useEffect, useMemo } from 'react';
 import { getSystemHealth } from './actions';
@@ -18,8 +18,8 @@ export default function AdminDashboardPage() {
   const orgId = orgIdOf(userData);
 
  
-  const [applications, setApplications] = useState<any[] | null>(null);
-  const [reviews, setReviews] = useState<any[] | null>(null);
+  const [applications, setApplications] = useState<{ drafts: number; submitted: number; underReview: number; awarded: number; declined: number } | null>(null);
+  const [reviews, setReviews] = useState<{ reviewCount: number; averageScore: number | null } | null>(null);
 
   const [systemHealth, setSystemHealth] = useState<any>(null);
   const [healthError, setHealthError] = useState(false);
@@ -46,55 +46,68 @@ export default function AdminDashboardPage() {
       return;
     }
 
-    const unsubscribeApplications = onSnapshot(
-      query(collection(firestore, 'applications'), where('organizationId', '==', orgId)),
-      (snapshot) => setApplications(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }))),
-      (error) => { console.error('Dashboard applications listener failed:', error.message); setApplications([]); },
-    );
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const applicationsRef = collection(firestore, 'applications');
+        const countStatus = async (status: string) =>
+          (await getCountFromServer(query(applicationsRef, where('organizationId', '==', orgId), where('status', '==', status)))).data().count;
+        const [drafts, submitted, underReview, awarded, declined] = await Promise.all(
+          ['Draft', 'Submitted', 'In Review', 'Awarded', 'Not Awarded'].map(countStatus),
+        );
 
-  
-    const unsubscribeReviews = onSnapshot(
-      query(collectionGroup(firestore, 'reviews'), where('organizationId', '==', orgId)),
-      (snapshot) => setReviews(snapshot.docs.map((d) => ({ id: d.id, ...d.data(), applicationId: d.ref.parent.parent?.id }))),
-      (error) => { console.error('Dashboard reviews listener failed:', error.message); setReviews([]); },
-    );
+        const filedQuery = query(collectionGroup(firestore, 'reviews'), where('organizationId', '==', orgId), where('status', '==', 'Submitted'));
+        let reviewStats: { reviewCount: number; averageScore: number | null };
+        try {
+          const filed = await getAggregateFromServer(filedQuery, { reviewCount: count(), averageScore: average('totalScore') });
+          reviewStats = { reviewCount: filed.data().reviewCount, averageScore: filed.data().averageScore };
+        } catch {
+          const filed = await getCountFromServer(filedQuery);
+          reviewStats = { reviewCount: filed.data().count, averageScore: null };
+        }
 
-    return () => { unsubscribeApplications(); unsubscribeReviews(); };
+        if (cancelled) return;
+        setApplications({ drafts, submitted, underReview, awarded, declined });
+        setReviews(reviewStats);
+      } catch (error: any) {
+        console.error('Dashboard counts failed:', error?.message);
+        if (!cancelled) {
+          setApplications({ drafts: 0, submitted: 0, underReview: 0, awarded: 0, declined: 0 });
+          setReviews({ reviewCount: 0, averageScore: null });
+        }
+      }
+    };
+
+    load();
+    const refresh = setInterval(load, 60000);
+    return () => { cancelled = true; clearInterval(refresh); };
   }, [firestore, orgId]);
 
   const counts = useMemo(() => {
-    const all = applications || [];
-    const by = (status: string) => all.filter((a: any) => a.status === status).length;
+    const c = applications || { drafts: 0, submitted: 0, underReview: 0, awarded: 0, declined: 0 };
     return {
-    
-      total: all.filter((a: any) => a.status && a.status !== 'Draft').length,
-      drafts: by('Draft'),
-      submitted: by('Submitted'),
-      underReview: by('In Review'),
-      awarded: by('Awarded'),
-      declined: by('Not Awarded'),
+      total: c.submitted + c.underReview + c.awarded + c.declined,
+      drafts: c.drafts,
+      submitted: c.submitted,
+      underReview: c.underReview,
+      awarded: c.awarded,
+      declined: c.declined,
     };
   }, [applications]);
 
-
   const committee = useMemo(() => {
-    const filed = (reviews || []).filter((r: any) => r.status !== 'Draft');
-    const decidable = (applications || []).filter((a: any) =>
-      ['Submitted', 'In Review', 'Awarded', 'Not Awarded'].includes(a.status));
-    const reviewedIds = new Set(filed.map((r: any) => r.applicationId));
-    const covered = decidable.filter((a: any) => reviewedIds.has(a.id)).length;
-    const scored = filed.filter((r: any) => typeof r.totalScore === 'number');
-
+    const decidable = counts.total;
+    const awaiting = counts.submitted;
+    const covered = decidable - awaiting;
+    const average = reviews?.averageScore;
     return {
-      reviewCount: filed.length,
-      averageScore: scored.length
-        ? Number((scored.reduce((sum: number, r: any) => sum + r.totalScore, 0) / scored.length).toFixed(2))
-        : null,
+      reviewCount: reviews?.reviewCount ?? 0,
+      averageScore: typeof average === 'number' ? Number(average.toFixed(2)) : null,
       covered,
-      coverage: decidable.length ? Math.round((covered / decidable.length) * 100) : null,
-      awaiting: decidable.length - covered,
+      coverage: decidable ? Math.round((covered / decidable) * 100) : null,
+      awaiting,
     };
-  }, [applications, reviews]);
+  }, [counts, reviews]);
 
   const isLoadingCounts = orgId ? applications === null : false;
 
