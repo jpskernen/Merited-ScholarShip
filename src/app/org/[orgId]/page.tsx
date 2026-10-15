@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { AppLogo } from '@/components/shared/AppLogo';
-import { ArrowRight, Building2, Loader2, Search } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Building2, Loader2, Search } from 'lucide-react';
 import { getPublicOrganization, getPublicScholarships, type PublicScholarship } from '@/app/org-actions';
 import { formatDeadline } from '@/lib/deadline';
 
@@ -89,6 +89,11 @@ export default function OrganizationLandingPage({ params }: { params: Promise<{ 
       <main className="flex-1">
         <section className="py-16 md:py-20 text-center border-b bg-muted/10">
           <div className="container mx-auto px-4 md:px-6">
+            <div className="mb-6 text-left">
+              <Link href="/organizations" className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground">
+                <ArrowLeft className="h-4 w-4" /> All organizations
+              </Link>
+            </div>
             <Badge variant="outline" className="mb-4 bg-primary/5 text-primary border-primary/20">{orgName}</Badge>
             <h1 className="text-3xl md:text-5xl font-bold tracking-tight">Scholarships from {orgName}</h1>
             <p className="mt-4 text-muted-foreground max-w-xl mx-auto">

@@ -213,10 +213,8 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
     status,
     ...(status === 'Submitted' ? { submittedAt: serverTimestamp() } : {}),
   });
-
-  // Must live in the 'reviews' subcollection: both the reviewer dashboard and
-  // the admin committee board read reviews via a collection-group query, so a
-  // scores[] array on the applicant doc is invisible to them.
+  
+  
   const myReviewDoc = () => doc(firestore!, 'applications', applicationId, 'reviews', reviewer!.uid);
 
   const handleSaveDraft = async () => {

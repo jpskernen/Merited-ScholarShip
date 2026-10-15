@@ -29,6 +29,15 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    try {
+      if (sessionStorage.getItem('accessRemoved')) {
+        sessionStorage.removeItem('accessRemoved');
+        setError('Your access to this account has been removed. Please contact your administrator.');
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
     if (user && role && !isUserLoading && isSigningIn) {
       const normalizedRole = role.toLowerCase();
       if (normalizedRole === 'admin') {

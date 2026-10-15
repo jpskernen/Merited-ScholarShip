@@ -27,14 +27,17 @@ export function StaffAccessCard({ kind }: { kind: StaffKind }) {
 
   const [members, setMembers] = useState<StaffMember[] | null>(null);
   const [busyUid, setBusyUid] = useState<string | null>(null);
+  const [callerIsOwner, setCallerIsOwner] = useState(true);
 
   const noun = kind === 'admin' ? 'administrator' : 'reviewer';
 
   const refresh = useCallback(async () => {
     if (!user) return;
     const result = await listStaff(await user.getIdToken(), kind);
-    if (result.success) setMembers(result.members);
-    else {
+    if (result.success) {
+      setMembers(result.members);
+      setCallerIsOwner(result.callerIsOwner);
+    } else {
       setMembers([]);
       toast({ title: 'Could not load the list', description: result.error, variant: 'destructive' });
     }
@@ -117,11 +120,20 @@ export function StaffAccessCard({ kind }: { kind: StaffKind }) {
               </TableRow>
             ) : members.map((member) => {
               const isSelf = !!user && member.uid === user.uid;
+              const removeBlocked = kind === 'admin' && (member.isOwner || !callerIsOwner);
+              const removeTitle = isSelf
+                ? 'You cannot remove your own access'
+                : member.isOwner
+                  ? 'The main administrator cannot be removed'
+                  : kind === 'admin' && !callerIsOwner
+                    ? 'Only the main administrator can remove administrators'
+                    : `Remove ${noun} access`;
               return (
               <TableRow key={member.uid}>
                 <TableCell className="font-medium">
                   {member.name || '—'}
                   {isSelf && <Badge variant="outline" className="ml-2 text-[10px] font-bold">You</Badge>}
+                  {member.isOwner && <Badge variant="secondary" className="ml-2 text-[10px] font-bold">Main admin</Badge>}
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">{member.email || '—'}</TableCell>
                 <TableCell>
@@ -155,10 +167,10 @@ export function StaffAccessCard({ kind }: { kind: StaffKind }) {
                         <Button
                           variant="ghost"
                           size="sm"
-                          disabled={busyUid === member.uid || isSelf}
-                          title={isSelf ? 'You cannot remove your own access' : `Remove ${noun} access`}
+                          disabled={busyUid === member.uid || isSelf || removeBlocked}
+                          title={removeTitle}
                         >
-                          <UserMinus className={`h-4 w-4 ${isSelf ? 'text-muted-foreground' : 'text-destructive'}`} />
+                          <UserMinus className={`h-4 w-4 ${isSelf || removeBlocked ? 'text-muted-foreground' : 'text-destructive'}`} />
                         </Button>
                       </AlertDialogTrigger>
                       <AlertDialogContent>

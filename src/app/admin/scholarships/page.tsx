@@ -9,12 +9,22 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { PlusCircle, Trash2, Edit, Loader2 } from 'lucide-react';
 import { useCollection, useFirebase, useMemoFirebase } from '@/firebase';
-import { collection, query, where } from 'firebase/firestore';
+import { collection, getCountFromServer, query, where } from 'firebase/firestore';
+import { useState } from 'react';
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { deleteScholarship } from '@/app/admin/scholarship-actions';
 import { orgIdOf } from '@/lib/org';
 import { formatDeadline } from '@/lib/deadline';
@@ -33,19 +43,42 @@ export default function AdminScholarshipsPage() {
 
   const { data: scholarships, isLoading } = useCollection<Scholarship>(scholarshipsQuery);
 
-  const handleDelete = async (id: string) => {
-    if (!user || !id) return;
-    if (!confirm('Are you sure you want to delete this scholarship?')) return;
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
+  const [applicationCount, setApplicationCount] = useState<number | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
+  const askToDelete = async (scholarship: Scholarship) => {
+    if (!scholarship.id) return;
+    setPendingDelete({ id: scholarship.id, name: scholarship.name });
+    setApplicationCount(null);
+    if (!firestore || !orgId) return;
     try {
-      const result = await deleteScholarship(await user.getIdToken(), id);
+      const counted = await getCountFromServer(query(
+        collection(firestore, 'applications'),
+        where('organizationId', '==', orgId),
+        where('scholarshipId', '==', scholarship.id),
+      ));
+      setApplicationCount(counted.data().count);
+    } catch {
+      setApplicationCount(null);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!user || !pendingDelete) return;
+    setIsDeleting(true);
+    try {
+      const result = await deleteScholarship(await user.getIdToken(), pendingDelete.id);
       if (!result.success) {
         toast({ title: "Could not delete", description: result.error, variant: "destructive" });
         return;
       }
-      toast({ title: "Deleted", description: "Scholarship removed successfully." });
+      toast({ title: "Deleted", description: `"${pendingDelete.name}" was removed.` });
+      setPendingDelete(null);
     } catch (error) {
       toast({ title: "Error", description: "Failed to delete scholarship.", variant: "destructive" });
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -90,7 +123,7 @@ export default function AdminScholarshipsPage() {
                     Edit
                   </Link>
                 </Button>
-                <Button variant="outline" size="sm" className="flex-1" onClick={() => handleDelete(scholarship.id!)}>
+                <Button variant="outline" size="sm" className="flex-1" onClick={() => askToDelete(scholarship)}>
                   <Trash2 className="h-4 w-4 mr-2 text-destructive" />
                   Delete
                 </Button>
@@ -126,7 +159,7 @@ export default function AdminScholarshipsPage() {
                       Edit
                     </Link>
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => handleDelete(scholarship.id!)}>
+                  <Button variant="ghost" size="sm" onClick={() => askToDelete(scholarship)}>
                     <Trash2 className="h-4 w-4 mr-2 text-destructive" />
                     Delete
                   </Button>
@@ -141,6 +174,40 @@ export default function AdminScholarshipsPage() {
           No scholarships have been added yet. Click "Add New Scholarship" to begin.
         </div>
       )}
+
+      <AlertDialog open={!!pendingDelete} onOpenChange={(open) => { if (!open && !isDeleting) setPendingDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete &ldquo;{pendingDelete?.name}&rdquo;?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>This removes the scholarship from your organization&apos;s public page and from the applicant list. This cannot be undone.</p>
+                {applicationCount !== null && applicationCount > 0 ? (
+                  <p className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                    <strong>{applicationCount} application{applicationCount === 1 ? '' : 's'}</strong> already {applicationCount === 1 ? 'exists' : 'exist'} for this scholarship.
+                    {applicationCount === 1 ? ' It' : ' They'} will be kept on record, but applicants can no longer edit or submit {applicationCount === 1 ? 'it' : 'them'}, and reviewers will lose the scoring rubric.
+                  </p>
+                ) : applicationCount === 0 ? (
+                  <p className="text-sm">Nobody has applied yet, so no applications are affected.</p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Checking for existing applications&hellip;</p>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Keep scholarship</AlertDialogCancel>
+            <Button
+              className={buttonVariants({ variant: 'destructive' })}
+              onClick={handleDelete}
+              disabled={isDeleting}
+            >
+              {isDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+              Delete scholarship
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

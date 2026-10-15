@@ -5,6 +5,7 @@
 // is open to the invitee (the invite ID is the credential) and is checked in
 // acceptInviteAs.
 import { AuthError, requireOrgRole } from '@/lib/auth-server';
+import { getOrgOwnerUid } from '@/lib/org-server';
 import {
   acceptInviteAs,
   createInviteFor,
@@ -24,9 +25,18 @@ function failure(err: unknown) {
   };
 }
 
+async function requireMainAdminForAdminInvites(caller: { uid: string; orgId: string }, kind: InviteKind) {
+  if (kind !== 'admin') return;
+  const ownerUid = await getOrgOwnerUid(caller.orgId);
+  if (ownerUid && ownerUid !== caller.uid) {
+    throw new AuthError('Only the main administrator can manage administrator invitations.');
+  }
+}
+
 export async function createInvite(idToken: string, kind: InviteKind, email: string) {
   try {
     const inviter = await requireOrgRole(idToken, ['org_admin']);
+    await requireMainAdminForAdminInvites(inviter, kind);
     return { success: true as const, ...(await createInviteFor(inviter, kind, email)) };
   } catch (err) {
     return failure(err);
@@ -36,6 +46,7 @@ export async function createInvite(idToken: string, kind: InviteKind, email: str
 export async function resendInvite(idToken: string, kind: InviteKind, inviteId: string) {
   try {
     const inviter = await requireOrgRole(idToken, ['org_admin']);
+    await requireMainAdminForAdminInvites(inviter, kind);
     return { success: true as const, ...(await resendInviteFor(inviter, kind, inviteId)) };
   } catch (err) {
     return failure(err);
@@ -45,6 +56,7 @@ export async function resendInvite(idToken: string, kind: InviteKind, inviteId: 
 export async function revokeInvite(idToken: string, kind: InviteKind, inviteId: string) {
   try {
     const caller = await requireOrgRole(idToken, ['org_admin']);
+    await requireMainAdminForAdminInvites(caller, kind);
     return { success: true as const, ...(await revokeInviteFor(caller, kind, inviteId)) };
   } catch (err) {
     return failure(err);

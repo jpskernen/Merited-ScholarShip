@@ -111,7 +111,8 @@ function ProfilePageContent() {
     return doc(firestore, 'programs', scholarshipId);
   }, [firestore, scholarshipId]);
 
-  const { data: programData } = useDoc<any>(programDocRef);
+  const { data: programData, isLoading: isProgramLoading } = useDoc<any>(programDocRef, { silent: true });
+  const programMissing = !isProgramLoading && !programData;
 
   const scholarshipName =
     applicationData?.scholarshipName || programData?.name || 'Scholarship Application';
@@ -498,6 +499,15 @@ function ProfilePageContent() {
               ? 'This application is locked and undergoing institutional review. You can still manage endorsements below, and your other applications are unaffected.'
               : 'Provide your academic background and supporting evidence for this scholarship.'}
           </p>
+          {programMissing && (
+            <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                This scholarship is no longer available. It may have been removed or closed by the organization.
+                {isAlreadySubmitted ? ' Your submitted application is kept on record.' : ' You can no longer submit this application.'}
+              </span>
+            </div>
+          )}
           {!isAlreadySubmitted && (
             <div className="flex items-center pt-1">
               {saveStatus === 'saving' && <Badge variant="outline" className="animate-pulse text-primary border-primary/20 text-[10px]"><CloudUpload className="h-3 w-3 mr-1" /> Auto-Saving...</Badge>}
@@ -516,11 +526,11 @@ function ProfilePageContent() {
             </CardHeader>
             <CardContent className="space-y-6 p-4 md:p-6">
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                <div className="space-y-2"><Label htmlFor="name" className="text-xs font-bold uppercase tracking-wider">Full Legal Name</Label><Input id="name" {...register('name')} disabled={isAlreadySubmitted} className="h-10" /></div>
+                <div className="space-y-2"><Label htmlFor="name" className="text-xs font-bold uppercase tracking-wider">Full Legal Name</Label><Input id="name" {...register('name')} placeholder="e.g. Sofia Reyes" disabled={isAlreadySubmitted} className="h-10" /></div>
                 <div className="space-y-2"><Label htmlFor="email" className="text-xs font-bold uppercase tracking-wider">Primary Contact Email</Label><Input id="email" {...register('email')} disabled className="h-10 bg-muted/50" /></div>
-                <div className="space-y-2"><Label htmlFor="school" className="text-xs font-bold uppercase tracking-wider">Current Institution</Label><Input id="school" {...register('school')} disabled={isAlreadySubmitted} className="h-10" /></div>
+                <div className="space-y-2"><Label htmlFor="school" className="text-xs font-bold uppercase tracking-wider">Current Institution</Label><Input id="school" {...register('school')} placeholder="e.g. Franklin High School" disabled={isAlreadySubmitted} className="h-10" /></div>
                 <div className="space-y-2"><Label htmlFor="gpa" className="text-xs font-bold uppercase tracking-wider">Cumulative GPA</Label><Input id="gpa" type="number" step="0.01" {...register('gpa')} disabled={isAlreadySubmitted} className="h-10" /></div>
-                <div className="space-y-2"><Label htmlFor="major" className="text-xs font-bold uppercase tracking-wider">Intended Major</Label><Input id="major" {...register('major')} disabled={isAlreadySubmitted} className="h-10" /></div>
+                <div className="space-y-2"><Label htmlFor="major" className="text-xs font-bold uppercase tracking-wider">Intended Major</Label><Input id="major" {...register('major')} placeholder="e.g. Computer Science" disabled={isAlreadySubmitted} className="h-10" /></div>
                 <div className="space-y-2"><Label htmlFor="interests" className="text-xs font-bold uppercase tracking-wider">Academic Interests</Label><Input id="interests" {...register('interests')} placeholder="e.g. Robotics, Public Policy" disabled={isAlreadySubmitted} className="h-10" /></div>
                 <div className="space-y-2 sm:col-span-2"><Label htmlFor="address" className="text-xs font-bold uppercase tracking-wider">Permanent Mailing Address</Label><Input id="address" {...register('address')} placeholder="e.g. 123 Maple Street, Apt 4B, Springfield, IL 62704, USA" disabled={isAlreadySubmitted} className="h-10" /></div>
               </div>
@@ -676,7 +686,7 @@ function ProfilePageContent() {
                     checks mirror the Submission Checklist. */}
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
-                    <Button type="button" className="font-black uppercase tracking-widest w-full sm:w-auto h-12 px-10 shadow-lg" disabled={isSaving || isSubmitting || isPastDeadline}>Finalize & Submit</Button>
+                    <Button type="button" className="font-black uppercase tracking-widest w-full sm:w-auto h-12 px-10 shadow-lg" disabled={isSaving || isSubmitting || isPastDeadline || programMissing}>Finalize & Submit</Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     {(() => {

@@ -118,6 +118,10 @@ export async function saveApplication(
       }
 
       
+      if (!program && scholarshipId !== LEGACY_SCHOLARSHIP_ID) {
+        return { error: 'This scholarship is no longer available, so the application can no longer be saved or submitted.' };
+      }
+
       const organizationId = program
         ? programOrg(program)
         : (existingApplication.organizationId || existingProfile.organizationId || existingProfile.schoolId);

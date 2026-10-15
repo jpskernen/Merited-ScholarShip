@@ -187,7 +187,10 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
     return onSnapshot(
       doc(firestore, 'users', signedInUid),
       (snapshot) => {
-        if (snapshot.data()?.role === 'revoked') void signOut(auth);
+        if (snapshot.data()?.role === 'revoked') {
+          try { sessionStorage.setItem('accessRemoved', '1'); } catch {}
+          void signOut(auth);
+        }
       },
       () => { /* an unreadable profile is handled elsewhere */ },
     );

@@ -29,6 +29,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useUser, useDoc, useMemoFirebase, useFirestore } from '@/firebase';
 import { doc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
+import { isMainAdmin } from '@/app/admin/staff-actions';
 
 const adminNav = [
   { href: '/admin', label: 'Admin Dashboard', icon: LayoutDashboard },
@@ -60,8 +61,23 @@ export default function AdminLayout({
     setMounted(true);
   }, []);
 
-  // role comes from the token's claims (src/firebase/provider.tsx).
+
   const isAdmin = role?.toLowerCase() === 'admin';
+
+  const [isMainAdminUser, setIsMainAdminUser] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!user || !isAdmin) return;
+    let cancelled = false;
+    (async () => {
+      const result = await isMainAdmin(await user.getIdToken());
+      if (!cancelled) setIsMainAdminUser(result.success ? result.isMainAdmin : false);
+    })();
+    return () => { cancelled = true; };
+  }, [user, isAdmin]);
+
+  useEffect(() => {
+    if (isMainAdminUser === false && pathname.startsWith('/admin/admins')) router.replace('/admin');
+  }, [isMainAdminUser, pathname, router]);
 
   useEffect(() => {
     if (isPublicInvite) return;
@@ -108,7 +124,9 @@ export default function AdminLayout({
             <SidebarGroup>
               <SidebarGroupLabel className="text-[10px] font-black uppercase tracking-widest text-primary/60 px-4 mb-2">System Admin</SidebarGroupLabel>
               <SidebarMenu>
-                {[...(userData?.platformAdmin === true ? platformNav : []), ...adminNav].map((item) => (
+                {[...(userData?.platformAdmin === true ? platformNav : []), ...adminNav]
+                  .filter((item) => item.href !== '/admin/admins' || isMainAdminUser === true)
+                  .map((item) => (
                   <SidebarMenuItem key={item.href}>
                     <Link href={item.href} className="w-full">
                        <SidebarMenuButton isActive={isActive(item.href)} tooltip={item.label}>

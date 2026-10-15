@@ -40,7 +40,9 @@ export interface UseDocResult<T> {
  */
 export function useDoc<T = any>(
   memoizedDocRef: DocumentReference<DocumentData> | null | undefined,
+  options: { silent?: boolean } = {},
 ): UseDocResult<T> {
+  const silent = !!options.silent;
   type StateDataType = WithId<T> | null;
 
   const [data, setData] = useState<StateDataType>(null);
@@ -85,13 +87,14 @@ export function useDoc<T = any>(
         setData(null)
         setIsLoading(false)
 
-        // trigger global error propagation
-        errorEmitter.emit('permission-error', contextualError);
+        // A caller that handles a missing or unreadable document itself (for
+        // example a deleted scholarship) opts out of the app-wide crash.
+        if (!silent) errorEmitter.emit('permission-error', contextualError);
       }
     );
 
     return () => unsubscribe();
-  }, [memoizedDocRef]); // Re-run if the memoizedDocRef changes.
+  }, [memoizedDocRef, silent]); // Re-run if the memoizedDocRef changes.
 
   return { data, isLoading, error };
 }

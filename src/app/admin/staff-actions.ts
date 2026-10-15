@@ -4,6 +4,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { getAdminAuth, getAdminDb } from '@/firebase/admin';
 import { AuthError, profileRoleFor, requireOrgRole, setUserClaims } from '@/lib/auth-server';
 import { writeAudit } from '@/lib/audit';
+import { getOrgOwnerUid } from '@/lib/org-server';
 
 export type StaffKind = 'reviewer' | 'admin';
 
@@ -19,6 +20,7 @@ export type StaffMember = {
   claimRole: string | null;
   claimsOk: boolean;
   panels: number;
+  isOwner: boolean;
 };
 
 function failure(error: unknown) {
@@ -33,6 +35,16 @@ function failure(error: unknown) {
 
 class StaffActionError extends Error {}
 
+export async function isMainAdmin(idToken: string) {
+  try {
+    const caller = await requireOrgRole(idToken, ['org_admin']);
+    const ownerUid = await getOrgOwnerUid(caller.orgId);
+    return { success: true as const, isMainAdmin: !ownerUid || ownerUid === caller.uid };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
 export async function listStaff(idToken: string, kind: StaffKind) {
   try {
     const caller = await requireOrgRole(idToken, ['org_admin']);
@@ -42,6 +54,11 @@ export async function listStaff(idToken: string, kind: StaffKind) {
       .where('organizationId', '==', caller.orgId)
       .where('role', '==', PROFILE_ROLE[kind])
       .get();
+
+    const ownerUid = kind === 'admin' ? await getOrgOwnerUid(caller.orgId) : null;
+    if (ownerUid && ownerUid !== caller.uid) {
+      throw new StaffActionError('Only the main administrator can see the list of administrators.');
+    }
 
     const programs = kind === 'reviewer'
       ? (await db.collection('programs').where('organizationId', '==', caller.orgId).get()).docs
@@ -64,11 +81,12 @@ export async function listStaff(idToken: string, kind: StaffKind) {
         claimRole: typeof claims.role === 'string' ? claims.role : null,
         claimsOk: claims.orgId === caller.orgId && claims.role === CLAIM_ROLE[kind],
         panels: programs.filter((program) => (program.data().reviewerIds || []).includes(docSnap.id)).length,
+        isOwner: docSnap.id === ownerUid,
       };
     }));
 
     members.sort((a, b) => (a.name || a.email || '').localeCompare(b.name || b.email || ''));
-    return { success: true as const, members };
+    return { success: true as const, members, callerIsOwner: !ownerUid || ownerUid === caller.uid };
   } catch (error) {
     return failure(error);
   }
@@ -136,6 +154,14 @@ export async function removeStaffAccess(idToken: string, kind: StaffKind, uid: s
     }
 
     if (kind === 'admin') {
+      const ownerUid = await getOrgOwnerUid(caller.orgId);
+      if (ownerUid && uid === ownerUid) {
+        throw new StaffActionError('This is the main administrator of the organization and cannot be removed.');
+      }
+      if (ownerUid && caller.uid !== ownerUid) {
+        throw new StaffActionError('Only the main administrator can remove other administrators.');
+      }
+
       const admins = await db.collection('users')
         .where('organizationId', '==', caller.orgId)
         .where('role', '==', 'admin')

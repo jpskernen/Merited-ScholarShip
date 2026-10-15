@@ -4,7 +4,7 @@
 // are in ./org.
 import 'server-only';
 
-import { getAdminDb } from '@/firebase/admin';
+import { getAdminAuth, getAdminDb } from '@/firebase/admin';
 import { DEFAULT_ORG_SETTINGS, type OrgSettings } from './org';
 
 /**
@@ -27,7 +27,32 @@ export async function getOrgSettings(orgId: string): Promise<OrgSettings> {
   };
 }
 
-export type PublicOrganization = { id: string; name: string };
+export async function getOrgOwnerUid(orgId: string): Promise<string | null> {
+  const db = getAdminDb();
+  const orgRef = db.collection('organizations').doc(orgId);
+  const stored = (await orgRef.get()).data()?.ownerUid;
+  if (typeof stored === 'string' && stored) return stored;
+
+  const admins = await db.collection('users')
+    .where('organizationId', '==', orgId)
+    .where('role', '==', 'admin')
+    .get();
+  const withAge = await Promise.all(admins.docs.map(async (d) => {
+    try {
+      const created = new Date((await getAdminAuth().getUser(d.id)).metadata.creationTime).getTime();
+      return { uid: d.id, at: Number.isFinite(created) ? created : Number.MAX_SAFE_INTEGER };
+    } catch {
+      return { uid: d.id, at: Number.MAX_SAFE_INTEGER };
+    }
+  }));
+  const earliest = withAge.sort((a, b) => a.at - b.at)[0];
+  if (!earliest) return null;
+
+  await orgRef.set({ ownerUid: earliest.uid }, { merge: true });
+  return earliest.uid;
+}
+
+export type PublicOrganization ={ id: string; name: string };
 
 export async function getActiveOrganization(orgId: string): Promise<PublicOrganization | null> {
   if (!orgId) return null;

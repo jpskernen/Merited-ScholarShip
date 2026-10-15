@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "test:rules": "firebase emulators:exec --only firestore --project demo-merited-rules \"node --test --test-reporter=spec tests/rules/firestore.rules.test.mjs\"",
     "test:unit": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test --test-reporter=spec tests/unit/staff-eligibility.test.mjs",
+    "test:flow": "node --require ./tests/flow/stub-server-only.cjs --import tsx tests/flow/flow.ts",
     "test:storage": "firebase emulators:exec --only storage --project demo-merited-rules \"node --test --test-reporter=spec tests/rules/storage.rules.test.mjs\""
   },
   "dependencies": {
