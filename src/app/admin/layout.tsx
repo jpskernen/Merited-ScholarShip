@@ -94,8 +94,17 @@ export default function AdminLayout({
     }
   }, [mounted, user, isUserLoading, isAdmin, router, isPublicInvite]);
 
+  // Highlight only the deepest matching item: /admin/platform/legal also starts
+  // with /admin/platform, so a plain prefix test lit up both sidebar entries.
   const isActive = (href: string) => {
-    return pathname === href || (href !== '/admin' && pathname.startsWith(href));
+    if (pathname === href) return true;
+    if (href === '/admin') return false;
+    if (!pathname.startsWith(href + '/')) return false;
+    return ![...platformNav, ...adminNav].some(
+      (item) =>
+        item.href.length > href.length &&
+        (pathname === item.href || pathname.startsWith(item.href + '/'))
+    );
   };
 
   if (isPublicInvite) return <>{children}</>;
