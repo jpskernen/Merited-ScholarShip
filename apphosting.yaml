@@ -1,38 +1,108 @@
-# Settings to manage and configure a Firebase App Hosting backend.
+# Firebase App Hosting settings for the deployed site.
 # https://firebase.google.com/docs/app-hosting/configure
+#
+# No secret value is written here. `secret:` names a secret in Google Secret
+# Manager. Create all of them before the first deploy, or the rollout fails:
+# docs/16-APP-HOSTING-SECRETS.md
 
-# The command to build your web framework.
 build:
-  # The command to run to build your app.
   command: 'npm run build'
 
-# The command to run your app on a server.
 run:
-  # The command to run to start your app.
   command: 'npm run start'
 
 runConfig:
-  # Increase this value if you'd like to automatically spin up
-  # more instances in response to increased traffic.
-  maxInstances: 1
+  maxInstances: 10
 
-# Environment variables for build and runtime.
 env:
+  # Public Firebase web config. Reaches the browser by design.
+  # BUILD as well as RUNTIME: Next.js writes NEXT_PUBLIC_* into the bundle.
   - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
     value: "scholarship-hib4j"
+    availability:
+      - BUILD
+      - RUNTIME
   - variable: NEXT_PUBLIC_FIREBASE_API_KEY
     value: "AIzaSyADX4nU03cEdfHuohhEIXmRjnvomVULXEE"
+    availability:
+      - BUILD
+      - RUNTIME
   - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
     value: "scholarship-hib4j.firebaseapp.com"
+    availability:
+      - BUILD
+      - RUNTIME
+  # Change when uploads move to the Merited-owned bucket (launch item 1).
   - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
     value: "scholarship-hib4j.firebasestorage.app"
+    availability:
+      - BUILD
+      - RUNTIME
   - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
     value: "345364291560"
+    availability:
+      - BUILD
+      - RUNTIME
   - variable: NEXT_PUBLIC_FIREBASE_APP_ID
     value: "1:345364291560:web:5a490f54f942c3e29b4e5d"
+    availability:
+      - BUILD
+      - RUNTIME
   - variable: NEXT_PUBLIC_DEFAULT_ORG_ID
     value: "scholarship-hib4j"
-  - variable: SENDGRID_API_KEY
-    value: "YOUR_SENDGRID_API_KEY_HERE"
-  - variable: SENDGRID_FROM_EMAIL
-    value: "scholarships@meritedapp.com"
+    availability:
+      - BUILD
+      - RUNTIME
+
+  # Address of the deployed site. Every link in the outgoing emails is built
+  # from it. Put the real address here before deploying; the build stops while
+  # it still reads REPLACE-ME.
+  - variable: NEXT_PUBLIC_APP_URL
+    value: "https://REPLACE-ME.example.com"
+    availability:
+      - BUILD
+      - RUNTIME
+
+  # Everything below is server-only: RUNTIME, never BUILD, so none of it can
+  # be written into anything the browser downloads.
+
+  # Admin SDK. Every server action writes through it.
+  - variable: FIREBASE_CLIENT_EMAIL
+    secret: firebase-client-email
+    availability:
+      - RUNTIME
+  - variable: FIREBASE_PRIVATE_KEY
+    secret: firebase-private-key
+    availability:
+      - RUNTIME
+
+  # Service account for the uploads bucket (resumes, essays, letters).
+  - variable: STORAGE_FIREBASE_PROJECT_ID
+    secret: storage-firebase-project-id
+    availability:
+      - RUNTIME
+  - variable: STORAGE_FIREBASE_CLIENT_EMAIL
+    secret: storage-firebase-client-email
+    availability:
+      - RUNTIME
+  - variable: STORAGE_FIREBASE_PRIVATE_KEY
+    secret: storage-firebase-private-key
+    availability:
+      - RUNTIME
+
+  # AI fit assessment.
+  - variable: GEMINI_API_KEY
+    secret: gemini-api-key
+    availability:
+      - RUNTIME
+
+  # Gmail SMTP account that sends every notification. The password is a
+  # 16-character App Password, not the account password.
+  - variable: GMAIL_USER
+    secret: gmail-user
+    availability:
+      - RUNTIME
+  - variable: GMAIL_APP_PASSWORD
+    secret: gmail-app-password
+    availability:
+      - RUNTIME
