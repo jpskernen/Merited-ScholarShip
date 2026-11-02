@@ -1,15 +1,5 @@
 
 'use server';
-// The recommender submitting this is never signed in - the token ID itself is
-// their only credential. Rather than opening up anonymous writes on the
-// `users` collection's security rules, this runs as a trusted server action
-// via the Admin SDK (bypasses rules entirely) and re-validates the token
-// itself server-side before writing anything.
-//
-// Both submission paths (typed letter and uploaded PDF) go through here. The
-// PDF path used to write from the browser instead, which meant its writes were
-// rejected by the security rules while the token had already been flipped to
-// used — burning the link and leaving the student on "Pending" forever.
 
 import { FieldValue } from 'firebase-admin/firestore';
 import { getAdminDb } from '@/firebase/admin';
@@ -17,6 +7,7 @@ import { sendNotification } from '@/app/lib/notifications';
 import { appUrl, escapeHtml, renderEmail } from '@/app/lib/email-template';
 import { applicationId, LEGACY_SCHOLARSHIP_ID } from '@/types/application';
 import { writeAudit } from '@/lib/audit';
+import { assertPdf, uploadPdf } from '@/lib/storage-server';
 
 type LetterPayload =
   | { kind: 'text'; text: string }
@@ -132,6 +123,29 @@ function isOwnLetterUrl(tokenId: string, fileUrl: string): boolean {
   const prefix = `/v0/b/${bucket}/o/`;
   if (!url.pathname.startsWith(prefix)) return false;
   return decodeURIComponent(url.pathname.slice(prefix.length)) === `recommendations/${tokenId}.pdf`;
+}
+
+
+export async function uploadRecommendationLetterFile(tokenId: string, file: File) {
+  try {
+    const invalid = assertPdf(file);
+    if (invalid) return { success: false, error: invalid };
+
+    const tokenSnap = await getAdminDb().collection('recommendationTokens').doc(tokenId).get();
+    if (!tokenSnap.exists) return { success: false, error: 'This recommendation link is no longer valid.' };
+    const token = tokenSnap.data()!;
+    if (token.used) return { success: false, error: 'This recommendation has already been submitted.' };
+    if (token.cancelled) return { success: false, error: 'This recommendation request has been cancelled by the student.' };
+    if (isTokenExpired(token.expiresAt)) {
+      return { success: false, error: 'This recommendation link has expired. Please ask the student to send a new request.' };
+    }
+
+    const url = await uploadPdf(`recommendations/${tokenId}.pdf`, file);
+    return { success: true, url };
+  } catch (error: any) {
+    console.error('Recommendation letter upload failed:', error);
+    return { success: false, error: 'Your letter could not be uploaded. Please try again.' };
+  }
 }
 
 async function submitRecommendation(tokenId: string, payload: LetterPayload) {

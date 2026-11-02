@@ -1,18 +1,11 @@
 rules_version = '2';
 
-// Tenant isolation (docs/07 §3.4, T6).
-//
 // Roles come only from the login token's custom claims, which only server code
 // can set (src/lib/auth-server.ts setUserClaims):
 //   { orgId: string, role: 'org_admin' | 'reviewer' | 'applicant', platformAdmin?: true }
-// No role documents and no hardcoded emails are consulted.
-//
 // Every tenant document carries `organizationId`, and access requires it to
-// equal the caller's `orgId` claim. A platform admin passes the organization
-// check. Server actions use the Admin SDK and bypass these rules; everything
-// trust-sensitive (submit, invites, recommendation letters, claims, audit log,
-// email) goes through them (docs/07 §3.5). Anything not matched below is denied.
-//
+// equal the caller's `orgId` claim. Server actions use the Admin SDK and bypass
+// these rules. Anything not matched below is denied.
 // Tests: tests/rules/ (npm run test:rules).
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -37,14 +30,11 @@ service cloud.firestore {
       return isPlatformAdmin() || (inOrg(orgId) && claim('role') == 'org_admin');
     }
 
-    // Reviewers and org admins of the organization.
     function isOrgStaff(orgId) {
       return isOrgAdmin(orgId) || (inOrg(orgId) && claim('role') == 'reviewer');
     }
 
-    // The organization whose scholarships the public landing page lists
-    // (docs/07 D7). Must equal NEXT_PUBLIC_DEFAULT_ORG_ID: rules can't read
-    // environment variables.
+    // Must equal NEXT_PUBLIC_DEFAULT_ORG_ID: rules can't read env variables.
     function defaultOrgId() {
       return 'scholarship-hib4j';
     }
@@ -58,8 +48,6 @@ service cloud.firestore {
     }
 
     // ---------------------------------------------------------------- users
-    // Shared profile. The user can't set or change their role, organization
-    // or status: the server sets those (completeSignup, invites, migrations).
     match /users/{userId} {
       function protectedUserFields() {
         return ['id', 'role', 'organizationId', 'schoolId', 'status', 'welcomeEmailSentAt'];
@@ -80,9 +68,6 @@ service cloud.firestore {
     }
 
     // -------------------------------------------------------- organizations
-    // Created and suspended by the server (Platform Admin actions). The
-    // former organizations/{orgId}/{document=**} wildcard, which let any
-    // signed-in user write anything here, is gone (S4).
     match /organizations/{orgId} {
       allow get: if inOrg(orgId) || isPlatformAdmin();
       allow list: if isPlatformAdmin();
@@ -90,7 +75,6 @@ service cloud.firestore {
         && !changed().hasAny(['id', 'status', 'createdAt', 'createdBy']);
       allow create, delete: if false;
 
-      // Self-service settings (docs/07 §4).
       match /config/{docId} {
         allow read: if inOrg(orgId) || isPlatformAdmin();
         allow write: if isOrgAdmin(orgId);
@@ -98,9 +82,6 @@ service cloud.firestore {
     }
 
     // ------------------------------------------------- programs (scholarships)
-    // Option A (docs/07 D7): a signed-in user reads only their organization's
-    // scholarships. The default organization's scholarships are public, for
-    // the landing page.
     match /programs/{programId} {
       allow read: if resource.data.organizationId == defaultOrgId()
         || inOrg(resource.data.organizationId)
@@ -113,10 +94,7 @@ service cloud.firestore {
     }
 
     // --------------------------------------------------------- applications
-    // ID is {studentId}_{programId}. Status, submission, recommendation state
-    // and letters are written only by server actions (S1, S2). The browser
-    // writes only uploaded essay files and the free-text fields, and only
-    // while the application is a Draft.
+    // ID is {studentId}_{programId}.
     match /applications/{appId} {
       function studentEditableFields() {
         return ['essay', 'qualificationStatement', 'activities', 'essays', 'updatedAt'];
@@ -134,7 +112,7 @@ service cloud.firestore {
 
       // `resource == null` comes first: opening a scholarship the student
       // hasn't applied to yet reads a missing document, and `resource.data`
-      // on null would deny the whole read. There is nothing to leak.
+      // on null would deny the whole read.
       allow get: if signedIn() && (
         resource == null ||
         resource.data.studentId == request.auth.uid ||
@@ -143,17 +121,13 @@ service cloud.firestore {
       );
       // Every document a query returns must pass this on its own, so the
       // reviewer queue asks for one scholarship at a time with the statuses
-      // spelled out (src/app/(main)/review/page.tsx). A query that reaches
-      // wider is denied rather than silently filtered.
+      // spelled out (src/app/(main)/review/page.tsx).
       allow list: if signedIn() && (
         resource.data.studentId == request.auth.uid ||
         isOrgAdmin(resource.data.organizationId) ||
         readableByReviewer(resource.data)
       );
 
-      // First write to a new application can come from an essay upload. The
-      // application belongs to the scholarship's organization, which must be
-      // the student's own (D7).
       allow create: if signedIn()
         && request.resource.data.studentId == request.auth.uid
         && appId == request.auth.uid + '_' + request.resource.data.scholarshipId
@@ -171,10 +145,8 @@ service cloud.firestore {
         && changed().hasOnly(studentEditableFields());
       allow delete: if isOrgAdmin(resource.data.organizationId);
 
-      // One review per reviewer: the document ID is the reviewer's UID, so a
-      // reviewer can't overwrite someone else's review (S6). Only reviewers
-      // assigned to the scholarship can score (F-06), and a submitted review
-      // is final. Reads are in the collection-group match below.
+      // One review per reviewer: the document ID is the reviewer's UID.
+      // Reads are in the collection-group match below.
       match /reviews/{reviewerId} {
         function application() {
           return get(/databases/$(database)/documents/applications/$(appId)).data;
@@ -194,10 +166,9 @@ service cloud.firestore {
       }
     }
 
-    // Collection-group rule for reviews. Rules on a nested path don't apply
-    // to collectionGroup() queries, which need the {path=**} form; this one
-    // also covers direct reads of applications/{id}/reviews/{uid}. Reviewers
-    // read only their own reviews, so they can't see each other's scores.
+    // Rules on a nested path don't apply to collectionGroup() queries, which
+    // need the {path=**} form; this also covers direct reads of
+    // applications/{id}/reviews/{uid}.
     match /{path=**}/reviews/{reviewId} {
       allow get: if signedIn() && (
         reviewId == request.auth.uid ||
@@ -211,8 +182,7 @@ service cloud.firestore {
 
     // ---------------------------------------------------------------- invites
     // The unguessable invite ID is the credential of a not-yet-registered
-    // invitee, so get-by-ID is public. Creating, re-sending and accepting run
-    // on the server (src/lib/invites-server.ts).
+    // invitee, so get-by-ID is public.
     match /invites/{inviteId} {
       allow get: if true;
       allow list, delete: if isOrgAdmin(resource.data.organizationId);
@@ -233,8 +203,7 @@ service cloud.firestore {
 
     // ------------------------------------------------- recommendation tokens
     // The token ID is the recommender's bearer credential, so get-by-ID is
-    // public; the page reads only used, cancelled and expiry. Creating,
-    // claiming and cancelling are server actions (T5).
+    // public; the page reads only used, cancelled and expiry.
     match /recommendationTokens/{tokenId} {
       allow get: if true;
       allow list, create, update, delete: if false;
@@ -246,8 +215,7 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Email outbox. Entries have no organizationId yet, so only the platform
-    // admin can read them.
+    // Entries have no organizationId yet, so only the platform admin can read.
     match /sent_emails/{emailId} {
       allow read: if isPlatformAdmin();
       allow write: if false;
@@ -256,7 +224,6 @@ service cloud.firestore {
     // ------------------------------------------- legacy role documents
     // No longer a source of roles. The client still reads its own as a
     // fallback for accounts without claims (src/firebase/provider.tsx).
-    // Self-creating one is denied (S3).
     match /reviewers/{uid} {
       allow get: if signedIn() && request.auth.uid == uid;
       allow list, write: if false;

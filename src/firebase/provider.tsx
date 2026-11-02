@@ -87,9 +87,7 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
   });
 
   const resolveUserState = useCallback(async (firebaseUser: User, forceRefresh = false): Promise<UserAuthState> => {
-    // Role and organization come from the ID token's custom claims, which only
-    // server code can set (docs/07 §3.2). users.role is never trusted for
-    // access: a user can edit their own user document.
+
     const [tokenResult, userDoc] = await Promise.all([
       firebaseUser.getIdTokenResult(forceRefresh),
       getDoc(doc(firestore!, 'users', firebaseUser.uid)),
@@ -105,9 +103,7 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
     } else if (claims.role === 'applicant') {
       role = 'applicant';
     } else {
-      // Transitional, for accounts the claims backfill hasn't reached yet
-      // (docs/08 §8 releases code before the backfill). Only the role
-      // documents, which a user can't create for themselves, count here.
+ 
       const [adminDoc, reviewerDoc] = await Promise.all([
         getDoc(doc(firestore!, 'roles_admin', firebaseUser.uid)),
         getDoc(doc(firestore!, 'reviewers', firebaseUser.uid)),

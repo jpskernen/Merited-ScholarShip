@@ -22,7 +22,8 @@ import {
   ShieldCheck,
   Loader2,
   History,
-  Building2
+  Building2,
+  FileText
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -43,6 +44,7 @@ const adminNav = [
 // Only for accounts with the platformAdmin claim (docs/07 §3.1).
 const platformNav = [
   { href: '/admin/platform', label: 'Organizations', icon: Building2 },
+  { href: '/admin/platform/legal', label: 'Legal Content', icon: FileText },
 ];
 
 export default function AdminLayout({

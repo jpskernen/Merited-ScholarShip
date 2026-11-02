@@ -15,7 +15,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Applicant, ApplicantSchema } from '@/types/applicant';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
-import { saveApplication, ensureLegacyApplication, sendRecommendationRequest, sendRecommendationReminder, cancelRecommendationRequest } from './actions';
+import { saveApplication, ensureLegacyApplication, sendRecommendationRequest, sendRecommendationReminder, cancelRecommendationRequest, uploadApplicationFile } from './actions';
 import { useEffect, useState, useRef, useCallback, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
@@ -24,7 +24,6 @@ import { Separator } from '@/components/ui/separator';
 import { useDoc, useFirebase, useMemoFirebase } from '@/firebase';
 import { orgIdOf } from '@/lib/org';
 import { doc, setDoc, serverTimestamp, updateDoc, arrayUnion } from 'firebase/firestore';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import {
   ArrowLeft,
   CheckCircle,
@@ -62,7 +61,7 @@ import {
 
 function ProfilePageContent() {
   const { toast } = useToast();
-  const { user, isUserLoading, firestore, storage, userData } = useFirebase();
+  const { user, isUserLoading, firestore, userData } = useFirebase();
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -128,16 +127,7 @@ function ProfilePageContent() {
       : [{ id: 'personal-statement', title: 'Personal Statement', description: 'Tell your unique story.' }];
   }, [programData]);
 
-  // Shared profile fields live on users/{uid}, application-specific ones on
-  // applications/{id}. The rest of this form reads a single merged object, so
-  // the split stays confined to load and save.
-  //
-  // Only the SHARED fields may be inherited from the user document. Spreading
-  // the whole of it leaked the legacy mirror of a previously submitted
-  // application into every new one — a scholarship the student had never
-  // applied to would show their old essay and their old endorsements as
-  // "Pending"/"Received", and cancelling one blew up on an application document
-  // that didn't exist.
+
   const applicantData = useMemo(() => {
     const shared: Record<string, any> = {};
     if (profileData) {
@@ -164,8 +154,7 @@ function ProfilePageContent() {
 
   const isApplicantDataLoading = isProfileLoading || isApplicationLoading;
 
-  // Students who built a portfolio before applications existed get it backfilled
-  // as an application to the legacy general portfolio, so their work isn't lost.
+  
   useEffect(() => {
     if (user) user.getIdToken().then(ensureLegacyApplication);
   }, [user]);
@@ -200,20 +189,13 @@ function ProfilePageContent() {
   const [essayQualMethod, setEssayQualMethod] = useState<'text' | 'file'>('text');
   const [promptMethod, setPromptMethod] = useState<Record<string, 'text' | 'file'>>({});
 
-  // Mirrors the submit dialog's check. Scholarships define their own prompts,
-  // so the answers live under `prompt:<id>` (or an upload tagged with that id)
-  // and never in the legacy single `essay` field.
   const narrativesComplete = prompts.length > 0 && prompts.every((prompt) => {
     const typed = watch(`prompt:${prompt.id}` as any);
     const uploaded = applicantData?.essays?.some((essay: any) => essay.promptId === prompt.id);
     return !!typed || !!uploaded;
   });
 
-  // The application document changes on every invite, reminder, upload and
-  // autosave. Resetting the whole form each time threw away anything typed but
-  // not yet saved (a changed school, the other endorsement's details), so a
-  // full reset happens once per application and later snapshots keep dirty
-  // fields as the user left them.
+
   const hydratedAppId = useRef<string | null>(null);
 
   useEffect(() => {
@@ -234,12 +216,9 @@ function ProfilePageContent() {
   }, [user, applicantData, isUserLoading, isApplicantDataLoading, appId, reset]);
 
   const finishUpload = async (downloadURL: string, fileName: string, field: string, promptId?: string) => {
-    // Uploads belong to this application, not to the student's shared profile,
-    // so two scholarships can hold two different essay PDFs.
+
     if (!appDocRef || !user || !scholarshipId) return;
-    // The identity fields are included so this write still satisfies the
-    // create rule when it's the first thing written to a brand-new application.
-    // On an existing Draft they are unchanged, so the update rule ignores them.
+
     const organizationId = orgIdOf(userData);
     if (!organizationId) return;
     const identity = { id: appDocRef.id, studentId: user.uid, scholarshipId, organizationId, status: 'Draft' };
@@ -250,8 +229,7 @@ function ProfilePageContent() {
           promptId,
           fileUrl: downloadURL,
           fileName: fileName,
-          // Firestore rejects serverTimestamp() nested inside an array, which
-          // is why this write used to throw and the essay was never attached.
+        
           uploadedAt: new Date().toISOString(),
         }),
         updatedAt: serverTimestamp(),
@@ -262,7 +240,7 @@ function ProfilePageContent() {
   };
 
   const handleFileUpload = useCallback(async (file: File, field: string, promptId?: string) => {
-    if (!file || !user || !storage || !firestore) return;
+    if (!file || !user || !firestore || !scholarshipId) return;
 
     try {
       if (file.type !== 'application/pdf') {
@@ -275,40 +253,30 @@ function ProfilePageContent() {
       }
 
       setUploadStatus(prev => ({ ...prev, [field]: 'uploading' }));
-      // Scoped per scholarship so an essay uploaded for one application can't
-      // overwrite the one uploaded for another.
-      const path = promptId
-        ? `applications/${user.uid}/${scholarshipId}/essays/${promptId}.pdf`
-        : `applications/${user.uid}/${scholarshipId}/${field}.pdf`;
-      
-      const storageRef = ref(storage, path);
-      const uploadTask = uploadBytesResumable(storageRef, file);
+      setUploadProgress(prev => ({ ...prev, [field]: 0 }));
 
-      uploadTask.on('state_changed', 
-        (snapshot) => {
-          const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-          setUploadProgress(prev => ({ ...prev, [field]: progress }));
-        }, 
-        (error) => {
-          setUploadStatus(prev => ({ ...prev, [field]: 'error' }));
-          setUploadErrors(prev => ({ ...prev, [field]: `Upload failed: ${error.message}` }));
-        }, 
-        async () => {
-          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-          await finishUpload(downloadURL, file.name, field, promptId);
-          setUploadStatus(prev => ({ ...prev, [field]: 'complete' }));
-          setUploadProgress(prev => {
-            const next = { ...prev };
-            delete next[field];
-            return next;
-          });
-          toast({ title: "Success", description: "File attached." });
-        }
-      );
+      
+      const idToken = await user.getIdToken();
+      const uploaded = await uploadApplicationFile(idToken, scholarshipId, field, file, promptId);
+      if (!uploaded.success || !uploaded.url) {
+        setUploadStatus(prev => ({ ...prev, [field]: 'error' }));
+        setUploadErrors(prev => ({ ...prev, [field]: uploaded.error || 'Upload failed.' }));
+        return;
+      }
+
+      await finishUpload(uploaded.url, file.name, field, promptId);
+      setUploadStatus(prev => ({ ...prev, [field]: 'complete' }));
+      setUploadProgress(prev => {
+        const next = { ...prev };
+        delete next[field];
+        return next;
+      });
+      toast({ title: "Success", description: "File attached." });
     } catch (err: any) {
       setUploadStatus(prev => ({ ...prev, [field]: 'error' }));
+      setUploadErrors(prev => ({ ...prev, [field]: err?.message || 'Upload failed.' }));
     }
-  }, [user, userData, storage, firestore, toast, scholarshipId, appDocRef]);
+  }, [user, userData, firestore, toast, scholarshipId, appDocRef]);
 
   const handleSendRecommendationRequest = async (index: number) => {
     if (!user || !appId || !scholarshipId) return;
@@ -322,8 +290,7 @@ function ProfilePageContent() {
       return;
     }
 
-    // Same rules as sendRecommendationRequest, which enforces them; checked
-    // here too so the student sees the problem before anything is sent.
+
     const normalized = String(email).trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
       setRecErrors(prev => ({ ...prev, [index]: "Please enter a valid recommender email address." }));
@@ -345,8 +312,7 @@ function ProfilePageContent() {
 
     setIsRequestingRec(prev => ({ ...prev, [index]: true }));
     try {
-      // The server takes the student, application, scholarship name and link
-      // address from the signed-in account and the database, not from here.
+
       const result = await sendRecommendationRequest(await user.getIdToken(), {
         scholarshipId,
         recommenderName: name,
@@ -408,10 +374,7 @@ function ProfilePageContent() {
     }
   };
 
-  // Routed through the same server action as an explicit save so the shared /
-  // application field split lives in exactly one place. It also means autosave
-  // no longer blind-writes the whole form object, which used to be able to put
-  // an empty essays[] back over a freshly uploaded file.
+
   const performAutoSave = useCallback(async () => {
     const status = applicationData?.status;
     if (!user || !scholarshipId || !formRef.current || !isDirty || (status && status !== 'Draft')) {
@@ -468,19 +431,11 @@ function ProfilePageContent() {
     );
   }
 
-  // Read from the application, never from the merged object: the user document
-  // carries a legacy mirror of the last submitted application, and using that
-  // here would lock a brand-new application to a different scholarship.
   const applicationStatus = applicationData?.status;
   const isAlreadySubmitted = !!applicationStatus && applicationStatus !== 'Draft';
   const isPastDeadline = !!programData?.deadline && new Date(programData.deadline).getTime() < Date.now();
 
-  // Endorsements outlive submission deliberately. A recommender's deadline is
-  // normally later than the application's, and chasing or replacing a teacher
-  // who hasn't replied is the one thing a student can't do any other way — so
-  // inviting, reminding and cancelling stay available after Finalize & Submit.
-  // Everything else on the form stays locked. Once a decision is recorded there
-  // is nothing left to influence, so it closes for good.
+ 
   const canManageEndorsements = applicationStatus !== 'Awarded' && applicationStatus !== 'Not Awarded';
 
   return (
@@ -553,8 +508,11 @@ function ProfilePageContent() {
               </div>
               <Separator />
               {prompts.map((prompt, index) => {
-                const method = promptMethod[prompt.id] || 'text';
                 const uploaded = applicantData?.essays?.find((essay: any) => essay.promptId === prompt.id);
+                // Defaults to whichever mode actually has content, so a file
+                // uploaded in an earlier session isn't hidden behind an empty
+                // "Direct Entry" view after the page reloads.
+                const method = promptMethod[prompt.id] || (uploaded ? 'file' : 'text');
                 return (
                   <div key={prompt.id} className="space-y-4">
                     {index > 0 && <Separator />}

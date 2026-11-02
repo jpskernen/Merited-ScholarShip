@@ -1,31 +1,5 @@
 #!/usr/bin/env node
-/**
- * Organization foundation migration (runbook T3, docs/08 §7).
- *
- *  1. Creates organizations/{orgId} and organizations/{orgId}/config/settings
- *     (with defaults) for every organization ID found in the data.
- *  2. Backfills `organizationId` on users, programs, applications,
- *     applications/{id}/reviews, recommendationTokens, invites and admin_invites.
- *
- * Only FILLS IN a missing organizationId. It never overwrites an existing value
- * and never deletes anything. Conflicts and orphans are reported, not changed.
- * Idempotent: a second --apply run changes nothing.
- *
- * Where each organizationId comes from:
- *   programs, users, invites -> their legacy schoolId, else --default-org
- *   applications             -> the scholarship's (programs) organization, else the student's
- *   reviews                  -> the parent application
- *   recommendationTokens     -> the application the token belongs to
- *
- *   node scripts/migrate-org-ids.js                     # dry run: report only, writes nothing
- *   node scripts/migrate-org-ids.js --apply             # write the changes
- *   node scripts/migrate-org-ids.js --org-name "ABC University"
- *   node scripts/migrate-org-ids.js --default-org <id>  # for records with no org at all
- *
- * Safety: refuses to run against anything but the sandbox (scholarship-dev-7ddad).
- * For the production release (docs/08 §8) set MIGRATE_ALLOW_PROJECT=<project id>
- * to the exact project ID, after taking a Firestore export.
- */
+
 require('dotenv').config();
 
 const { cert, getApps, initializeApp } = require('firebase-admin/app');

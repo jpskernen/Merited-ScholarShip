@@ -1,36 +1,25 @@
 'use server';
 
-// Student-side actions. Every export takes the caller's Firebase ID token and
-// works only on the caller's own applications: the student is the uid in the
-// verified token, never a uid the browser passes in (docs/13 S5). These run
-// with the Admin SDK, which bypasses the security rules, so the checks here
-// are the only thing standing between a crafted request and another
-// student's data.
+
 
 import { FieldValue } from 'firebase-admin/firestore';
 import { getAdminAuth, getAdminDb } from '@/firebase/admin';
 import { ProfileSchema } from '@/types/applicant';
 import { ApplicationSchema, applicationId, LEGACY_SCHOLARSHIP_ID } from '@/types/application';
-import { sendSubmissionConfirmation, sendNotification, sendRecommendationReminderEmail } from '@/app/lib/notifications';
+import { sendSubmissionConfirmation, sendNotification, sendRecommendationReminderEmail, sendNewApplicantEmail } from '@/app/lib/notifications';
 import { escapeHtml, renderEmail } from '@/app/lib/email-template';
 import { AuthError, requireUser, type Caller } from '@/lib/auth-server';
 import { writeAudit } from '@/lib/audit';
 import { appLink } from '@/lib/app-url';
+import { assertPdf, uploadPdf } from '@/lib/storage-server';
 
-/**
- * Entered once by the student and reused by every application they open. The
- * client's 2026-09-29 answer: "basic profile details like name and GPA shared".
- */
+
 const SHARED_PROFILE_FIELDS = new Set([
   'name', 'email', 'secondaryEmail', 'address', 'gpa',
   'major', 'school', 'interests',
 ]);
 
-/**
- * The only application fields a student may write (docs/13 S1). Anything else
- * the form sends (status, recommendationStatus*, letters, organizationId,
- * scores, ...) is ignored: those are set by the server or by the recommender.
- */
+
 const APPLICATION_TEXT_FIELDS = new Set(['essay', 'qualificationStatement', 'activities']);
 const RECOMMENDER_FIELD = /^recommender(Name|Email|Title)([12])$/;
 const PROMPT_FIELD = /^prompt:(.+)$/;
@@ -42,7 +31,7 @@ const TOKEN_DAYS = 30;
 
 type Student = Caller & { orgId: string };
 
-/** The verified caller, who must belong to an organization (set at signup, docs/07 §3.2). */
+
 async function requireStudent(idToken: string): Promise<Student> {
   const caller = await requireUser(idToken);
   if (!caller.orgId) {
@@ -227,9 +216,58 @@ export async function saveApplication(
       if (student.email) {
         await sendSubmissionConfirmation(student.email, outcome.name || 'Student');
       }
+      // Notify the scholarship's assigned reviewers that there's a new
+      // application waiting. Best-effort: a mail failure must not fail the
+      // submission, which is already saved.
+      try {
+        await notifyAssignedReviewers(scholarshipId, outcome.application.scholarshipName);
+      } catch (error) {
+        console.error('Reviewer notification failed:', error);
+      }
     }
 
     return { success: true, id: appId };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+
+export async function uploadApplicationFile(
+  idToken: string,
+  scholarshipId: string,
+  field: string,
+  file: File,
+  promptId?: string,
+) {
+  try {
+    const student = await requireStudent(idToken);
+    if (!scholarshipId) {
+      return { success: false, error: 'No scholarship selected for this application.' };
+    }
+
+    const invalid = assertPdf(file);
+    if (invalid) return { success: false, error: invalid };
+
+    const db = getAdminDb();
+    const [programSnap, existingApp] = await Promise.all([
+      db.collection('programs').doc(scholarshipId).get(),
+      db.collection('applications').doc(applicationId(student.uid, scholarshipId)).get(),
+    ]);
+    const program = programSnap.exists ? programSnap.data()! : null;
+    const organizationId = program
+      ? programOrg(program)
+      : (existingApp.exists ? existingApp.data()!.organizationId : null) || student.orgId;
+
+    if (!organizationId || organizationId !== student.orgId) {
+      return { success: false, error: 'This scholarship is not available to your account.' };
+    }
+
+    const slot = promptId ? `essays/${promptId}` : `documents/${field}`;
+    const path = `orgs/${organizationId}/applications/${student.uid}/${scholarshipId}/${slot}.pdf`;
+    const url = await uploadPdf(path, file);
+
+    return { success: true, url };
   } catch (error) {
     return failure(error);
   }
@@ -254,6 +292,35 @@ async function mirrorSubmissionStatus(userId: string, application: any) {
     legacyMirrorOf: application.id,
     updatedAt: FieldValue.serverTimestamp(),
   }, { merge: true });
+}
+
+/**
+ * Emails every reviewer assigned to a scholarship that a new application has
+ * been submitted. Reviewer identities (name/email) come from the Auth record,
+ * since that's the authoritative login address. The legacy general portfolio
+ * has no program document and therefore no assigned reviewers.
+ */
+async function notifyAssignedReviewers(scholarshipId: string, scholarshipName: string) {
+  if (scholarshipId === LEGACY_SCHOLARSHIP_ID) return;
+  const db = getAdminDb();
+  const programSnap = await db.collection('programs').doc(scholarshipId).get();
+  const reviewerIds: string[] = programSnap.exists ? (programSnap.data()!.reviewerIds || []) : [];
+  if (reviewerIds.length === 0) return;
+
+  const auth = getAdminAuth();
+  await Promise.all(reviewerIds.map(async (uid) => {
+    try {
+      const account = await auth.getUser(uid);
+      if (!account.email) return;
+      await sendNewApplicantEmail({
+        email: account.email,
+        reviewerName: account.displayName || 'Reviewer',
+        scholarshipName: scholarshipName || 'a scholarship',
+      });
+    } catch (error) {
+      console.error(`Could not notify reviewer ${uid}:`, error);
+    }
+  }));
 }
 
 /**
@@ -451,11 +518,7 @@ export async function sendRecommendationRequest(idToken: string, params: {
       return { success: false, error: 'The invitation email could not be sent. Please check the address and try again.' };
     }
 
-    // Identity fields are included because this can be the first write to a
-    // brand-new application (a student may invite a recommender before saving
-    // a draft). Without them the document would be created with no studentId,
-    // making it invisible to the student's own query and unwritable under the
-    // applications security rule.
+
     const slotFields = {
       [`recommenderName${requestIndex}`]: recommenderName,
       [`recommenderEmail${requestIndex}`]: recommenderEmail,
@@ -566,9 +629,7 @@ export async function cancelRecommendationRequest(idToken: string, params: {
     // 1. Cancel every open link for this slot, not just one.
     const cancelled = await cancelOpenTokens(appId, requestIndex);
 
-    // 2. Reset this application's recommender slot. Cancel is a recovery path,
-    //    so it must not fail on an application that was never created — there
-    //    is simply nothing to reset in that case.
+
     if (appSnap.exists) {
       const reset = {
         [`recommendationStatus${requestIndex}`]: 'Not Requested',

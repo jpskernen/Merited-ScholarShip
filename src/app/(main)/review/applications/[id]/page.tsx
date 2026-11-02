@@ -425,67 +425,101 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
                       so never assume it's a number here. */}
                   <div><Label className="text-muted-foreground">GPA</Label><p className="font-bold">{typeof application.gpa === 'number' ? application.gpa.toFixed(2) : '—'}</p></div>
                   <div><Label className="text-muted-foreground">Intended Major</Label><p className="font-bold">{application.major || '—'}</p></div>
+                  <div><Label className="text-muted-foreground">Institution</Label><p className="font-bold">{application.school || '—'}</p></div>
+                  <div><Label className="text-muted-foreground">Academic Interests</Label><p className="font-bold">{application.interests || '—'}</p></div>
                   <div className="col-span-2">
                      <Label className="text-muted-foreground flex items-center gap-1.5"><GraduationCap className="h-3.5 w-3.5" /> Program</Label>
                      <p className="font-medium text-primary">{activeScholarship?.name || 'Assigned Program'}</p>
                   </div>
-                  {profileSnapshot?.capturedAt ? (
-                    <p className="col-span-2 text-[11px] text-muted-foreground italic">
-                      Profile as submitted on {new Date(profileSnapshot.capturedAt).toLocaleDateString()}. Later edits by the student do not change it.
-                    </p>
-                  ) : (
-                    <p className="col-span-2 text-[11px] text-muted-foreground italic">
-                      This application was submitted before the academic details were recorded with it, so they are not shown here.
-                    </p>
-                  )}
                 </div>
               </section>
               <Separator />
               <section>
+                <h4 className="font-semibold text-sm mb-2 uppercase tracking-tight">Qualification Summary</h4>
+                <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{application.qualificationStatement || 'Not provided.'}</p>
+              </section>
+              <section>
                 <h4 className="font-semibold text-sm mb-2 uppercase tracking-tight">Activities & Leadership</h4>
                 <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{application.activities || 'Not provided.'}</p>
               </section>
-              {promptResponses.length > 0 ? (
-                promptResponses.map((response) => (
-                  <section key={response.promptId}>
-                    <h4 className="font-semibold text-sm mb-2 uppercase tracking-tight">{response.title}</h4>
-                    <div className="p-4 rounded-lg bg-muted/20 border text-sm leading-relaxed whitespace-pre-wrap">
-                      {response.answer || 'No answer provided.'}
-                    </div>
-                  </section>
-                ))
+              {(activeScholarship?.prompts || []).length > 0 ? (
+                // One section per scholarship prompt, text or PDF — a prompt
+                // the student answered with a PDF upload has no entry in
+                // promptResponses, so without this it silently read as
+                // "No answer provided" even though a file is attached below.
+                (activeScholarship!.prompts as any[]).map((prompt) => {
+                  const response = promptResponses.find((r) => r.promptId === prompt.id);
+                  const essayFile = application.essays?.find((e) => e.promptId === prompt.id);
+                  return (
+                    <section key={prompt.id}>
+                      <h4 className="font-semibold text-sm mb-2 uppercase tracking-tight">{prompt.title}</h4>
+                      {response?.answer ? (
+                        <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{response.answer}</p>
+                      ) : essayFile ? (
+                        <Button variant="outline" className="h-auto justify-start whitespace-normal py-2 text-left [overflow-wrap:anywhere]" asChild>
+                          <Link href={essayFile.fileUrl} target="_blank">
+                            <FileText className="h-4 w-4 mr-2" /> {essayFile.fileName}
+                          </Link>
+                        </Button>
+                      ) : (
+                        <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">No answer provided.</p>
+                      )}
+                    </section>
+                  );
+                })
               ) : (
                 <section>
                   <h4 className="font-semibold text-sm mb-2 uppercase tracking-tight">Personal Statement</h4>
-                  <div className="p-4 rounded-lg bg-muted/20 border text-sm leading-relaxed whitespace-pre-wrap">
-                    {application.essay || "No text essay provided."}
-                  </div>
+                  <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{application.essay || "No text essay provided."}</p>
                 </section>
               )}
               <Separator />
               <section>
                 <h3 className="text-lg font-semibold mb-4">Supporting Evidence</h3>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {application.essays?.map((essay, i) => {
-                    const title = promptResponses.find((response) => response.promptId === essay.promptId)?.title
-                      || (activeScholarship?.prompts || []).find((prompt: any) => prompt.id === essay.promptId)?.title;
-                    return (
-                      <Button key={i} variant="outline" className="h-auto justify-start whitespace-normal py-2 text-left [overflow-wrap:anywhere]" asChild>
-                        <Link href={essay.fileUrl} target="_blank">
-                          <FileText className="h-4 w-4 mr-2" /> {title || 'Essay'}: {essay.fileName}
-                        </Link>
-                      </Button>
-                    );
-                  })}
-                  {[1, 2].map((i) => {
-                    const url = (application as any)?.[`recommendationLetter${i}`];
-                    if (!url) return null;
-                    const name = (application as any)?.[`recommenderName${i}`];
-                    return (
-                      <Button key={`rec-pdf-${i}`} variant="outline" className="h-auto justify-start whitespace-normal py-2 text-left [overflow-wrap:anywhere]" asChild><Link href={url} target="_blank"><FileText className="h-4 w-4 mr-2" /> Recommendation Letter {i}{name ? ` — ${name}` : ''}</Link></Button>
-                    );
-                  })}
-                </div>
+
+                {(() => {
+                  // An essay tied to one of this scholarship's prompts is
+                  // already shown inline, above, next to that prompt's
+                  // question — listing it again here would be a duplicate.
+                  // Only an essay with no matching prompt (e.g. older data)
+                  // falls back to showing up in this list.
+                  const scholarshipPromptIds = new Set((activeScholarship?.prompts || []).map((p: any) => p.id));
+                  const unplacedEssays = (application.essays || []).filter((essay) => !scholarshipPromptIds.has(essay.promptId));
+                  if (unplacedEssays.length === 0) return null;
+                  return (
+                    <div className="mb-4">
+                      <h4 className="text-xs font-semibold uppercase tracking-tight text-muted-foreground mb-2">Essays</h4>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        {unplacedEssays.map((essay, i) => {
+                          const title = promptResponses.find((response) => response.promptId === essay.promptId)?.title;
+                          return (
+                            <Button key={i} variant="outline" className="h-auto justify-start whitespace-normal py-2 text-left [overflow-wrap:anywhere]" asChild>
+                              <Link href={essay.fileUrl} target="_blank">
+                                <FileText className="h-4 w-4 mr-2" /> {title || 'Essay'}: {essay.fileName}
+                              </Link>
+                            </Button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {[1, 2].some((i) => (application as any)?.[`recommendationLetter${i}`]) && (
+                  <div>
+                    <h4 className="text-xs font-semibold uppercase tracking-tight text-muted-foreground mb-2">Recommendation Letters</h4>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      {[1, 2].map((i) => {
+                        const url = (application as any)?.[`recommendationLetter${i}`];
+                        if (!url) return null;
+                        const name = (application as any)?.[`recommenderName${i}`];
+                        return (
+                          <Button key={`rec-pdf-${i}`} variant="outline" className="h-auto justify-start whitespace-normal py-2 text-left [overflow-wrap:anywhere]" asChild><Link href={url} target="_blank"><FileText className="h-4 w-4 mr-2" /> Recommendation Letter {i}{name ? ` — ${name}` : ''}</Link></Button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {[1, 2].map((i) => {
                   const text = (application as any)?.[`recommendationLetterText${i}`];

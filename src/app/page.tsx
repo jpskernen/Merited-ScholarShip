@@ -9,9 +9,10 @@ import {
   CardTitle,
   CardFooter,
 } from '@/components/ui/card';
-import { AppLogo } from '@/components/shared/AppLogo';
+import { SiteHeader } from '@/components/shared/SiteHeader';
+import { SiteFooter } from '@/components/shared/SiteFooter';
 import { Badge } from '@/components/ui/badge';
-import { Building2, FileText, CheckCircle, Search, ArrowRight, Loader2, AlertCircle, LayoutDashboard } from 'lucide-react';
+import { Building2, FileText, CheckCircle, Search, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { useFirebase, useUser } from '@/firebase';
 import { getAllPublicScholarships, type PublicScholarshipWithOrg } from '@/app/org-actions';
@@ -24,7 +25,7 @@ const VISIBLE_PROGRAMS = 6;
 export default function Home() {
   const [mounted, setMounted] = useState(false);
   const { areServicesAvailable } = useFirebase();
-  const { user, role, isUserLoading } = useUser();
+  const { user, role } = useUser();
 
   useEffect(() => {
     setMounted(true);
@@ -116,33 +117,7 @@ export default function Home() {
 
   return (
     <div className="flex min-h-screen flex-col overflow-x-clip bg-background text-foreground font-sans">
-      <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur-md">
-        <div className="container mx-auto flex h-16 items-center justify-between px-4 md:px-6">
-          <AppLogo />
-          <nav className="flex items-center space-x-1 sm:space-x-4">
-            {mounted && !isUserLoading && user ? (
-              <Button asChild variant="outline" className="font-bold">
-                <Link href={dashboardLink}><LayoutDashboard className="mr-2 h-4 w-4" /> My Portal</Link>
-              </Button>
-            ) : (
-              <>
-                <Button variant="ghost" asChild className="hidden sm:inline-flex">
-                  <Link href="/organizations">Browse Organizations</Link>
-                </Button>
-
-                <Button variant="ghost" asChild>
-                  <Link href="/login">Log In</Link>
-                </Button>
-
-                <Button asChild>
-                  <Link href="/signup">Sign Up</Link>
-                </Button>
-
-              </>
-            )}
-          </nav>
-        </div>
-      </header>
+      <SiteHeader />
 
       <main className="flex-1">
         
@@ -155,7 +130,7 @@ export default function Home() {
           </div>
         )}
 
-        <section className="bg-secondary/20 py-20 md:py-32">
+        <section className="bg-secondary/20 py-12 md:py-32">
           <div className="container mx-auto px-4 text-center md:px-6">
             <h1 className="text-4xl font-extrabold tracking-tight md:text-6xl text-foreground">
               Your Journey to Excellence Starts Here
@@ -180,7 +155,7 @@ export default function Home() {
           </div>
         </section>
 
-        <section id="scholarships" className="py-20 md:py-24 bg-background">
+        <section id="scholarships" className="py-12 md:py-24 bg-background">
           <div className="container mx-auto px-4 md:px-6">
             <div className="mb-12 text-center">
               <h2 className="text-3xl font-bold tracking-tight text-foreground">
@@ -291,14 +266,14 @@ export default function Home() {
             {filteredScholarships.length > VISIBLE_PROGRAMS && (
               <div className="mt-12 text-center">
                 <Button variant="outline" size="lg" asChild className="rounded-full font-bold px-10">
-                  <Link href={mounted && user ? dashboardLink : '/signup'}>View All Opportunities</Link>
+                  <Link href="/opportunities">View All Opportunities</Link>
                 </Button>
               </div>
             )}
           </div>
         </section>
 
-        <section id="features" className="py-20 md:py-24 bg-secondary/10">
+        <section id="features" className="py-12 md:py-24 bg-secondary/10">
           <div className="container mx-auto px-4 md:px-6">
             <div className="mb-16 text-center">
               <h2 className="text-3xl font-bold tracking-tight text-foreground">
@@ -329,27 +304,7 @@ export default function Home() {
         </section>
       </main>
 
-      <footer className="border-t bg-card">
-        <div className="container mx-auto flex flex-col items-center justify-between gap-6 px-4 py-10 sm:flex-row md:px-6">
-          <div className="flex flex-col items-center sm:items-start gap-2">
-            <AppLogo />
-            <p className="text-xs text-muted-foreground">
-              Empowering students through academic opportunities.
-            </p>
-          </div>
-          <p className="text-sm text-muted-foreground order-last sm:order-none">
-            &copy; {mounted ? new Date().getFullYear() : ''} ScholarShip. All rights reserved.
-          </p>
-          <div className="flex flex-wrap justify-center gap-6 sm:justify-end">
-            <Link href="#" className="text-sm text-muted-foreground hover:text-primary transition-colors">
-              Terms
-            </Link>
-            <Link href="#" className="text-sm text-muted-foreground hover:text-primary transition-colors">
-              Privacy
-            </Link>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

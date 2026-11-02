@@ -4,6 +4,7 @@
 import { requirePlatformAdmin } from '@/lib/auth-server';
 import { assignOrgAdminAs, createOrganizationAs, resendOrgAdminInviteAs } from '@/lib/platform-server';
 import { resolveOrgSwitchRequestAs } from '@/lib/org-switch-server';
+import { saveLegalContentAs, type LegalContent } from '@/lib/legal-server';
 
 function failure(err: unknown) {
   console.error('Platform action failed:', err);
@@ -41,6 +42,16 @@ export async function resolveOrgSwitchRequest(idToken: string, requestId: string
   try {
     const caller = await requirePlatformAdmin(idToken);
     return { success: true as const, ...(await resolveOrgSwitchRequestAs(caller, requestId, approve)) };
+  } catch (err) {
+    return failure(err);
+  }
+}
+
+export async function saveLegalContent(idToken: string, content: LegalContent) {
+  try {
+    const caller = await requirePlatformAdmin(idToken);
+    await saveLegalContentAs(caller, content);
+    return { success: true as const };
   } catch (err) {
     return failure(err);
   }

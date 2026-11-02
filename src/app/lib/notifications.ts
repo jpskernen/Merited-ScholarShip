@@ -33,6 +33,7 @@ export type NotificationType =
   | 'Reviewer Invitation'
   | 'Review Assigned'
   | 'Review Submitted'
+  | 'New Applicant'
   | 'Admin Invitation';
 
 interface EmailParams {
@@ -254,6 +255,30 @@ export async function sendReviewSubmittedEmail(params: {
       body,
       button: { label: 'Open in admin dashboard', url: params.reviewUrl },
       showPlainLink: true,
+    }),
+  });
+}
+
+export async function sendNewApplicantEmail(params: {
+  email: string;
+  reviewerName: string;
+  scholarshipName: string;
+}) {
+  const portalUrl = appUrl('/review');
+  return sendNotification({
+    to: params.email,
+    subject: `New application to review: ${params.scholarshipName}`,
+    type: 'New Applicant',
+    text: `Hello ${params.reviewerName}, a new application has been submitted to ${params.scholarshipName} and is ready for your review${portalUrl ? ` at ${portalUrl}` : ''}.`,
+    html: renderEmail({
+      title: 'A new application is ready for review',
+      preheader: `A new applicant has applied to ${params.scholarshipName}.`,
+      greeting: `Hello <strong>${escapeHtml(params.reviewerName)}</strong>,`,
+      body: [
+        `A new application has been submitted to <strong>${escapeHtml(params.scholarshipName)}</strong>, a program you are on the selection committee for.`,
+        'Open the review portal to read and score it against the evaluation rubric.',
+      ],
+      button: portalUrl ? { label: 'Open the review portal', url: portalUrl } : undefined,
     }),
   });
 }

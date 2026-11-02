@@ -3,8 +3,7 @@
 
 import { useState, useEffect, use, useRef } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
-import { ref, uploadBytesResumable, getDownloadURL, getStorage } from 'firebase/storage';
-import { useFirestore, useFirebase } from '@/firebase';
+import { useFirebase } from '@/firebase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -12,32 +11,32 @@ import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { 
-  FileText, 
-  CheckCircle, 
-  AlertCircle, 
-  Loader2, 
-  GraduationCap, 
-  XCircle, 
-  Type, 
+import {
+  FileText,
+  CheckCircle,
+  AlertCircle,
+  Loader2,
+  GraduationCap,
+  XCircle,
+  Type,
   Upload,
   Bold,
   Italic,
   List,
   ArrowLeft,
   Send,
-  Lock
+  Lock,
+  X
 } from 'lucide-react';import Link from 'next/link';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
-import { submitTypedRecommendation, submitUploadedRecommendation } from './actions';
+import { submitTypedRecommendation, submitUploadedRecommendation, uploadRecommendationLetterFile } from './actions';
 import { cn } from '@/lib/utils';
 
 export default function RecommendUploadPage({ params }: { params: Promise<{ tokenId: string }> }) {
   const { tokenId } = use(params);
   const { firestore } = useFirebase();
-  const storage = getStorage();
   const { toast } = useToast();
 
   const [tokenData, setTokenData] = useState<any>(null);
@@ -47,10 +46,16 @@ export default function RecommendUploadPage({ params }: { params: Promise<{ toke
   const [isSuccess, setIsSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [inputMethod, setInputMethod] = useState<'selection' | 'type' | 'upload'>('selection');
-  
+
   // Typed Letter State
   const [letterText, setLetterText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // File Upload State. Picking a file only stages it — nothing is sent
+  // anywhere until the recommender reviews the name and presses Submit, so a
+  // wrong file picked by mistake can just be removed and replaced first.
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     async function fetchToken() {
@@ -94,53 +99,59 @@ export default function RecommendUploadPage({ params }: { params: Promise<{ toke
   const wordCount = letterText.trim() === '' ? 0 : letterText.trim().split(/\s+/).length;
   const isWordCountValid = wordCount >= 2000 && wordCount <= 5000;
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !tokenData || !tokenId || !firestore) return;
+    if (!file) return;
 
     if (file.type !== 'application/pdf') {
       toast({ title: "Invalid File", description: "Only PDF documents are accepted.", variant: "destructive" });
+      e.target.value = '';
       return;
     }
 
     if (file.size > 10 * 1024 * 1024) {
       toast({ title: "File too large", description: "Maximum file size is 10MB.", variant: "destructive" });
+      e.target.value = '';
       return;
     }
 
+    setSelectedFile(file);
+  };
+
+  const handleRemoveFile = () => {
+    setSelectedFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleFileSubmit = async () => {
+    if (!selectedFile || !tokenData || !tokenId || !firestore || isUploading) return;
+
     setIsUploading(true);
-    const storageRef = ref(storage, `recommendations/${tokenId}.pdf`);
-    const uploadTask = uploadBytesResumable(storageRef, file);
+    setUploadProgress(0);
 
-    uploadTask.on('state_changed', 
-      (snap) => setUploadProgress((snap.bytesTransferred / snap.totalBytes) * 100),
-      (err) => { setIsUploading(false); toast({ title: "Upload Failed", variant: "destructive" }); },
-      async () => {
-        // Everything after the upload runs server-side. The recommender is not
-        // signed in, so the Firestore writes this used to make from the browser
-        // were rejected by the security rules — silently, and only after the
-        // token had already been marked used, which burned the link and left
-        // the student showing "Pending" forever.
-        try {
-          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-          const result = await submitUploadedRecommendation(tokenId, downloadURL);
-
-          if (result.success) {
-            setIsSuccess(true);
-          } else {
-            toast({ title: "Submission Failed", description: result.error, variant: "destructive" });
-          }
-        } catch (err: any) {
-          toast({
-            title: "Submission Failed",
-            description: err?.message || "Your letter could not be attached. Please try again.",
-            variant: "destructive",
-          });
-        } finally {
-          setIsUploading(false);
-        }
+    try {
+      const uploaded = await uploadRecommendationLetterFile(tokenId, selectedFile);
+      if (!uploaded.success || !uploaded.url) {
+        toast({ title: "Upload Failed", description: uploaded.error, variant: "destructive" });
+        return;
       }
-    );
+      setUploadProgress(100);
+
+      const result = await submitUploadedRecommendation(tokenId, uploaded.url);
+      if (result.success) {
+        setIsSuccess(true);
+      } else {
+        toast({ title: "Submission Failed", description: result.error, variant: "destructive" });
+      }
+    } catch (err: any) {
+      toast({
+        title: "Submission Failed",
+        description: err?.message || "Your letter could not be attached. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const handleTextSubmit = async () => {
@@ -371,22 +382,37 @@ export default function RecommendUploadPage({ params }: { params: Promise<{ toke
 
           {inputMethod === 'upload' && (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <div className="p-8 border-2 border-dashed rounded-2xl bg-muted/20 text-center space-y-4">
-                <div className="mx-auto w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
-                  <Upload className="h-6 w-6 text-primary" />
+              {!selectedFile ? (
+                <div className="p-8 border-2 border-dashed rounded-2xl bg-muted/20 text-center space-y-4">
+                  <div className="mx-auto w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
+                    <Upload className="h-6 w-6 text-primary" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold">Choose a PDF file</h4>
+                    <p className="text-xs text-muted-foreground mt-1">Official letterhead preferred. Maximum 10MB.</p>
+                  </div>
+                  <Input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pdf"
+                    onChange={handleFileSelect}
+                    className="max-w-xs mx-auto cursor-pointer"
+                  />
                 </div>
-                <div>
-                  <h4 className="font-bold">Choose a PDF file</h4>
-                  <p className="text-xs text-muted-foreground mt-1">Official letterhead preferred. Maximum 10MB.</p>
+              ) : (
+                <div className="p-6 border-2 rounded-2xl bg-muted/20 flex items-center gap-4">
+                  <div className="w-10 h-10 shrink-0 bg-primary/10 rounded-full flex items-center justify-center">
+                    <FileText className="h-5 w-5 text-primary" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-bold text-sm [overflow-wrap:anywhere]">{selectedFile.name}</p>
+                    <p className="text-xs text-muted-foreground">{(selectedFile.size / (1024 * 1024)).toFixed(2)} MB</p>
+                  </div>
+                  <Button variant="ghost" size="icon" className="shrink-0" onClick={handleRemoveFile} disabled={isUploading} aria-label="Remove file">
+                    <X className="h-4 w-4" />
+                  </Button>
                 </div>
-                <Input 
-                  type="file" 
-                  accept=".pdf" 
-                  onChange={handleFileUpload}
-                  disabled={isUploading}
-                  className="max-w-xs mx-auto cursor-pointer"
-                />
-              </div>
+              )}
 
               {isUploading && (
                 <div className="space-y-3 px-4">
@@ -396,6 +422,17 @@ export default function RecommendUploadPage({ params }: { params: Promise<{ toke
                   </div>
                   <Progress value={uploadProgress} className="h-2" />
                 </div>
+              )}
+
+              {selectedFile && (
+                <Button
+                  className="w-full h-auto min-h-14 whitespace-normal px-4 py-3 text-sm sm:text-lg font-black uppercase tracking-wider sm:tracking-widest shadow-lg"
+                  disabled={isUploading}
+                  onClick={handleFileSubmit}
+                >
+                  {isUploading ? <Loader2 className="mr-2 h-5 w-5 shrink-0 animate-spin" /> : <Send className="mr-2 h-5 w-5 shrink-0" />}
+                  Submit Recommendation
+                </Button>
               )}
             </div>
           )}

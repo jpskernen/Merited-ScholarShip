@@ -103,6 +103,14 @@ export default function AdminApplicantDetail({
 
   const profile = (application?.profileSnapshot as Record<string, any> | undefined) || applicant || {};
 
+
+  const programRef = useMemoFirebase(() => {
+    if (!firestore || !application?.scholarshipId) return null;
+    return doc(firestore, 'programs', application.scholarshipId);
+  }, [firestore, application?.scholarshipId]);
+  const { data: program } = useDoc<any>(programRef);
+  const scholarshipPrompts: any[] = program?.prompts || [];
+
   const [pendingDecision, setPendingDecision] = useState<Decision | null>(null);
   const [isDeciding, setIsDeciding] = useState(false);
 
@@ -328,34 +336,50 @@ export default function AdminApplicantDetail({
                       <Label className="text-[10px] font-black uppercase text-muted-foreground">Academic Focus</Label>
                       <p className="font-bold">{profile.major || '—'}</p>
                     </div>
+                    <div className="space-y-1 sm:col-span-2">
+                      <Label className="text-[10px] font-black uppercase text-muted-foreground">Academic Interests</Label>
+                      <p className="font-bold">{profile.interests || '—'}</p>
+                    </div>
                   </div>
-
-                  {application.profileSnapshot?.capturedAt && (
-                    <p className="text-[11px] text-muted-foreground italic">
-                      Profile as submitted on {new Date(application.profileSnapshot.capturedAt).toLocaleDateString()}. Later edits by the student do not change it.
-                    </p>
-                  )}
 
                   <Separator />
 
-                  <div className="space-y-4">
-                    {(application.promptResponses || []).length > 0 ? (
-                      (application.promptResponses as any[]).map((response) => (
-                        <div key={response.promptId} className="space-y-1.5">
-                          <Label className="text-xs font-black uppercase tracking-tight">{response.title}</Label>
-                          <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">{response.answer || 'Not provided.'}</p>
-                        </div>
-                      ))
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black uppercase tracking-tight">Qualification Summary</Label>
+                    <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">{application.qualificationStatement || 'Not provided.'}</p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black uppercase tracking-tight">Activities & Leadership</Label>
+                    <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">{application.activities || 'Not provided.'}</p>
+                  </div>
+
+                  <div className="space-y-6">
+                    {scholarshipPrompts.length > 0 ? (
+                      scholarshipPrompts.map((prompt) => {
+                        const response = (application.promptResponses as any[] || []).find((r) => r.promptId === prompt.id);
+                        const essayFile = (application.essays as any[] || []).find((e) => e.promptId === prompt.id);
+                        return (
+                          <div key={prompt.id} className="space-y-2">
+                            <Label className="text-xs font-black uppercase tracking-tight">{prompt.title}</Label>
+                            {response?.answer ? (
+                              <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">{response.answer}</p>
+                            ) : essayFile ? (
+                              <Button variant="outline" className="justify-start h-auto py-3" asChild>
+                                <Link href={essayFile.fileUrl} target="_blank"><FileText className="h-4 w-4 mr-2" /> {essayFile.fileName}</Link>
+                              </Button>
+                            ) : (
+                              <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">Not provided.</p>
+                            )}
+                          </div>
+                        );
+                      })
                     ) : (
                       <div className="space-y-1.5">
                         <Label className="text-xs font-black uppercase tracking-tight">Personal Narrative</Label>
                         <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">{application.essay || 'Not provided.'}</p>
                       </div>
                     )}
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-black uppercase tracking-tight">Qualification Summary</Label>
-                      <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">{application.qualificationStatement || 'Not provided.'}</p>
-                    </div>
                   </div>
 
                   <Separator />
@@ -364,14 +388,21 @@ export default function AdminApplicantDetail({
                     <Label className="text-xs font-black uppercase tracking-tight">Evidence & Documentation</Label>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {application.resume && <Button variant="outline" className="justify-start h-auto py-3" asChild><Link href={application.resume as string} target="_blank"><FileText className="h-4 w-4 mr-2" /> Student Resume</Link></Button>}
+                      {((application.essays as any[]) || [])
+                        .filter((essay) => !scholarshipPrompts.some((p) => p.id === essay.promptId))
+                        .map((essay, i) => (
+                          <Button key={`essay-${i}`} variant="outline" className="justify-start h-auto py-3" asChild>
+                            <Link href={essay.fileUrl} target="_blank"><FileText className="h-4 w-4 mr-2" /> {essay.fileName}</Link>
+                          </Button>
+                        ))}
                       {[1, 2].map((i) => {
                         const url = application[`recommendationLetter${i}`];
                         if (!url) return null;
                         const name = application[`recommenderName${i}`];
                         return (
-                          <Button key={`letter-${i}`} variant="outline" className="justify-start h-auto py-3 border-green-200 bg-green-50" asChild>
+                          <Button key={`letter-${i}`} variant="outline" className="justify-start h-auto py-3 border-green-200 bg-green-50 text-green-700 hover:bg-green-100 hover:text-green-800 dark:border-green-900 dark:bg-green-950 dark:text-green-300 dark:hover:bg-green-900 dark:hover:text-green-200" asChild>
                             <Link href={url as string} target="_blank">
-                              <ShieldCheck className="h-4 w-4 mr-2 text-green-600" /> Endorsement #{i}{name ? ` — ${name}` : ''}
+                              <ShieldCheck className="h-4 w-4 mr-2 text-green-600 dark:text-green-400" /> Endorsement #{i}{name ? ` — ${name}` : ''}
                             </Link>
                           </Button>
                         );

@@ -1,27 +1,5 @@
 #!/usr/bin/env node
-/**
- * Role claims backfill (runbook T4, docs/08 §7).
- *
- * For every Firebase Auth account:
- *  - sets custom claims { orgId, role } from the role documents:
- *      roles_admin/{uid} -> 'org_admin',  reviewers/{uid} -> 'reviewer',  otherwise 'applicant'.
- *    users.role is NOT trusted (a user can edit it). An account whose users.role
- *    says reviewer/admin without a role document is reported and gets 'applicant'.
- *  - orgId comes from users/{uid}.organizationId (run scripts/migrate-org-ids.js first).
- *  - --platform-admin <email>[,<email>] also sets platformAdmin: true.
- *  - normalises users/{uid}.role to lowercase 'admin' | 'reviewer' | 'applicant'.
- * And removes the plain-text tempPassword from every invite (S8).
- *
- *   node scripts/backfill-claims.js                                   # dry run: report only
- *   node scripts/backfill-claims.js --platform-admin admin@test.com   # dry run incl. platform admin
- *   node scripts/backfill-claims.js --apply --platform-admin admin@test.com
- *
- * Idempotent. Users pick up new claims on their next token refresh (sign out
- * and in, or within an hour).
- *
- * Safety: refuses to run against anything but the sandbox (scholarship-dev-7ddad).
- * For the production release set MIGRATE_ALLOW_PROJECT=<project id> deliberately.
- */
+
 require('dotenv').config();
 
 const { cert, getApps, initializeApp } = require('firebase-admin/app');
